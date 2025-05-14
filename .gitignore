@@ -1,0 +1,106 @@
+# Archivos de base de datos
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Archivos temporales del sistema
+temp_images/
+temp/
+tmp/
+.temp/
+.tmp/
+
+
+
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+.env/
+.venv/
+env.bak/
+venv.bak/
+
+# Archivos de IDE y editores
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+.DS_Store
+Thumbs.db
+.ipynb_checkpoints/
+
+# Archivos de registro
+*.log
+logs/
+log/
+
+# Archivos de configuración local
+config.local.ini
+*.local.conf
+.env
+
+# Archivos de caché
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.coverage.*
+coverage.xml
+*.cover
+
+# Archivos PDF (opcional, descomenta si no quieres versionar PDFs)
+# *.pdf
+
+# Archivos de Microsoft Office
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+
+# Archivos de imagen (opcional, descomenta si no quieres versionar imágenes)
+# *.jpg
+# *.jpeg
+# *.png
+# *.gif
+# *.bmp
+# *.ico
+
+# Archivos específicos del proyecto
+# Descomenta o agrega según sea necesario
+# config.ini
+# secrets.json
