@@ -32,7 +32,14 @@ class PDFGenerator:
             paths = [
                 r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe",
                 r"C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe",
-                r"wkhtmltopdf.exe"  # Si está en el PATH
+                # Ubicaciones adicionales comunes en Windows
+                r"C:\wkhtmltopdf\bin\wkhtmltopdf.exe",
+                r"C:\wkhtmltopdf\wkhtmltopdf.exe",
+                # Buscar en el directorio actual
+                os.path.join(os.getcwd(), "wkhtmltopdf.exe"),
+                os.path.join(os.getcwd(), "bin", "wkhtmltopdf.exe"),
+                # Si está en el PATH
+                r"wkhtmltopdf.exe"
             ]
         else:
             paths = [
@@ -45,15 +52,21 @@ class PDFGenerator:
         for path in paths:
             try:
                 # Intentar ejecutar wkhtmltopdf con la opción --version
-                subprocess.run([path, "--version"],
+                print(f"Verificando wkhtmltopdf en: {path}")
+                result = subprocess.run([path, "--version"],
                                stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE,
-                               check=True)
-                return path
-            except (subprocess.SubprocessError, FileNotFoundError):
+                               check=False)  # Cambiado a False para no lanzar excepción
+
+                if result.returncode == 0:
+                    print(f"wkhtmltopdf encontrado en: {path}")
+                    return path
+            except (subprocess.SubprocessError, FileNotFoundError) as e:
+                print(f"No se encontró wkhtmltopdf en: {path} - Error: {str(e)}")
                 continue
 
         # Si no se encuentra, devolver None
+        print("ADVERTENCIA: No se encontró wkhtmltopdf en ninguna ubicación. Solo se generarán archivos HTML.")
         return None
 
     def generar_constancia(self, tipo_constancia, datos, output_path=None):
@@ -91,10 +104,18 @@ class PDFGenerator:
 
         try:
             # Cargar la plantilla
-            template = self.env.get_template(template_file)
+            try:
+                template = self.env.get_template(template_file)
+            except Exception as e:
+                print(f"Error al cargar la plantilla {template_file}: {str(e)}")
+                return None
 
             # Renderizar HTML
-            html_out = template.render(**datos)
+            try:
+                html_out = template.render(**datos)
+            except Exception as e:
+                print(f"Error al renderizar HTML con los datos proporcionados: {str(e)}")
+                return None
 
             # Generar nombre de archivo de salida
             curp = datos.get("curp", "sin_curp")
@@ -104,30 +125,42 @@ class PDFGenerator:
             if output_path:
                 output_filename = output_path
             else:
-                output_filename = f"{self.output_dir}/constancia_{tipo_constancia}_{curp}_{timestamp}.pdf"
+                output_filename = os.path.join(self.output_dir, f"constancia_{tipo_constancia}_{curp}_{timestamp}.pdf")
 
             # Guardar siempre el HTML para revisión (en la carpeta de salida predeterminada)
-            html_output_filename = f"{self.output_dir}/constancia_{tipo_constancia}_{curp}_{timestamp}.html"
+            html_output_filename = os.path.join(self.output_dir, f"constancia_{tipo_constancia}_{curp}_{timestamp}.html")
 
             # Crear carpetas para imágenes en la carpeta de salida
             salida_logos_dir = os.path.join(self.output_dir, "logos")
             salida_fotos_dir = os.path.join(self.output_dir, "fotos")
-            os.makedirs(salida_logos_dir, exist_ok=True)
-            os.makedirs(salida_fotos_dir, exist_ok=True)
+            try:
+                os.makedirs(salida_logos_dir, exist_ok=True)
+                os.makedirs(salida_fotos_dir, exist_ok=True)
+            except Exception as e:
+                print(f"Error al crear directorios para imágenes: {str(e)}")
+                # Continuar a pesar del error
 
             # Copiar el logo si existe
-            logo_origen = "logos/logo_educacion.png"
+            logo_origen = os.path.join("logos", "logo_educacion.png")
             logo_destino = os.path.join(salida_logos_dir, "logo_educacion.png")
             if os.path.exists(logo_origen):
-                import shutil
-                shutil.copy2(logo_origen, logo_destino)
+                try:
+                    import shutil
+                    shutil.copy2(logo_origen, logo_destino)
+                except Exception as e:
+                    print(f"Error al copiar el logo: {str(e)}")
+                    # Continuar a pesar del error
 
             # Copiar la foto del alumno si existe
-            foto_origen = f"fotos/{curp}.jpg"
+            foto_origen = os.path.join("fotos", f"{curp}.jpg")
             foto_destino = os.path.join(salida_fotos_dir, f"{curp}.jpg")
             if os.path.exists(foto_origen):
-                import shutil
-                shutil.copy2(foto_origen, foto_destino)
+                try:
+                    import shutil
+                    shutil.copy2(foto_origen, foto_destino)
+                except Exception as e:
+                    print(f"Error al copiar la foto del alumno: {str(e)}")
+                    # Continuar a pesar del error
 
             # Modificar el HTML para usar rutas absolutas para las imágenes en la vista del navegador
             current_dir = os.path.abspath(os.getcwd())
@@ -140,19 +173,34 @@ class PDFGenerator:
             if not os.path.exists(foto_path) and "has_photo" in datos and datos["has_photo"] == True:
                 # Si la foto no existe pero se supone que debería tenerla, intentar copiarla desde foto_path
                 if "foto_path" in datos and datos["foto_path"] and os.path.exists(datos["foto_path"]):
-                    import shutil
-                    shutil.copy2(datos["foto_path"], foto_path)
+                    try:
+                        import shutil
+                        shutil.copy2(datos["foto_path"], foto_path)
+                    except Exception as e:
+                        print(f"Error al copiar la foto desde foto_path: {str(e)}")
+                        # Continuar a pesar del error
 
             # Guardar el HTML modificado
-            with open(html_output_filename, "w", encoding="utf-8") as f:
-                f.write(html_for_browser)
+            try:
+                with open(html_output_filename, "w", encoding="utf-8") as f:
+                    f.write(html_for_browser)
+                print(f"Archivo HTML guardado en: {html_output_filename}")
+            except Exception as e:
+                print(f"Error al guardar el archivo HTML: {str(e)}")
+                return None
 
             # Generar PDF usando wkhtmltopdf si está disponible
             if self.wkhtmltopdf_path:
+                print(f"Generando PDF con wkhtmltopdf: {self.wkhtmltopdf_path}")
                 # Crear archivo HTML temporal
-                with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as temp_html:
-                    temp_html.write(html_out)
-                    temp_html_path = temp_html.name
+                try:
+                    with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as temp_html:
+                        temp_html.write(html_out)
+                        temp_html_path = temp_html.name
+                    print(f"Archivo HTML temporal creado en: {temp_html_path}")
+                except Exception as e:
+                    print(f"Error al crear archivo HTML temporal: {str(e)}")
+                    return html_output_filename
 
                 try:
                     # Modificar el HTML para usar rutas absolutas para las imágenes
@@ -171,7 +219,8 @@ class PDFGenerator:
                         f.write(html_content)
 
                     # Ejecutar wkhtmltopdf para convertir HTML a PDF
-                    subprocess.run([
+                    print(f"Ejecutando wkhtmltopdf para generar PDF: {output_filename}")
+                    result = subprocess.run([
                         self.wkhtmltopdf_path,
                         "--enable-local-file-access",  # Permitir acceso a archivos locales (imágenes)
                         "--page-size", "Letter",
@@ -181,21 +230,42 @@ class PDFGenerator:
                         "--margin-right", "5mm",
                         temp_html_path,
                         output_filename
-                    ], check=True)
+                    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+
+                    print(f"wkhtmltopdf ejecutado exitosamente. Salida: {result.stdout.decode('utf-8', errors='ignore')}")
 
                     # Eliminar archivo HTML temporal
                     os.unlink(temp_html_path)
-
+                    print(f"PDF generado exitosamente: {output_filename}")
                     return output_filename
 
                 except subprocess.SubprocessError as e:
+                    print(f"Error al ejecutar wkhtmltopdf: {str(e)}")
+                    # Intentar capturar la salida de error
+                    if hasattr(e, 'stderr') and e.stderr:
+                        print(f"Error de wkhtmltopdf: {e.stderr.decode('utf-8', errors='ignore')}")
                     # Eliminar archivo HTML temporal en caso de error
-                    os.unlink(temp_html_path)
+                    try:
+                        os.unlink(temp_html_path)
+                    except:
+                        pass
+                    return html_output_filename
+                except Exception as e:
+                    print(f"Error inesperado al generar PDF: {str(e)}")
+                    # Eliminar archivo HTML temporal en caso de error
+                    try:
+                        os.unlink(temp_html_path)
+                    except:
+                        pass
                     return html_output_filename
             else:
+                print("wkhtmltopdf no está disponible. Generando solo archivo HTML.")
                 return html_output_filename
 
         except Exception as e:
+            print(f"Error general en generar_constancia: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
 
 
@@ -210,3 +280,8 @@ class PDFGenerator:
             print("Advertencia: No se encontró la plantilla de constancia de calificaciones")
         if not os.path.exists(os.path.join(self.template_dir, "constancia_traslado.html")):
             print("Advertencia: No se encontró la plantilla de constancia de traslado")
+
+        # Verificar que el directorio de plantillas exista
+        if not os.path.exists(self.template_dir):
+            print(f"Creando directorio de plantillas: {self.template_dir}")
+            os.makedirs(self.template_dir, exist_ok=True)

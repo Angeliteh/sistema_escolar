@@ -800,7 +800,15 @@ class ConstanciasApp(QMainWindow):
 
         # Seleccionar la tarjeta clickeada
         selected_card.set_selected(True)
-        self.selected_cert_type = selected_card.value
+
+        # Asegurarse de que el valor sea válido
+        if selected_card.value in ["estudio", "calificaciones", "traslado"]:
+            self.selected_cert_type = selected_card.value
+        else:
+            print(f"Valor de tarjeta no válido: {selected_card.value}, usando 'estudio' por defecto")
+            self.selected_cert_type = "estudio"
+
+        print(f"Tipo de constancia seleccionado: {self.selected_cert_type}")
 
 
 
@@ -1119,6 +1127,11 @@ class ConstanciasApp(QMainWindow):
             # Obtener tipo de constancia seleccionado
             cert_type = self.selected_cert_type
 
+            # Verificar que cert_type sea válido
+            if cert_type not in ["estudio", "calificaciones", "traslado"]:
+                print(f"Tipo de constancia no válido: {cert_type}, usando 'estudio' por defecto")
+                cert_type = "estudio"  # Valor por defecto si no es válido
+
             # Verificar si se puede generar el tipo seleccionado
             if cert_type in ["calificaciones", "traslado"] and not self.tiene_calificaciones:
                 QMessageBox.warning(self, "Advertencia", f"No se puede generar constancia de {cert_type} sin calificaciones")
@@ -1143,7 +1156,14 @@ class ConstanciasApp(QMainWindow):
 
             # Generar el PDF temporal
             generator = PDFGenerator()
+            # Asegurarse de que las plantillas existan
+            generator.crear_todas_plantillas()
             output_path = generator.generar_constancia(cert_type, datos_a_usar, preview_path)
+
+            if output_path is None:
+                QMessageBox.critical(self, "Error", "No se pudo generar la vista previa. Revise la consola para más detalles.")
+                self.statusBar().showMessage("Error al generar vista previa")
+                return
 
             # Mostrar mensaje informativo
             self.statusBar().showMessage(f"Vista previa generada: {output_path}")
@@ -1165,6 +1185,7 @@ class ConstanciasApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al generar vista previa: {str(e)}")
             self.statusBar().showMessage("Error al generar vista previa")
+            print(f"Error detallado en vista previa: {str(e)}")
 
     def generate_certificate(self, cert_type=None):
         """Genera la constancia seleccionada"""
@@ -1176,6 +1197,11 @@ class ConstanciasApp(QMainWindow):
             if cert_type is None:
                 cert_type = self.selected_cert_type
 
+            # Verificar que cert_type sea válido
+            if cert_type not in ["estudio", "calificaciones", "traslado"]:
+                print(f"Tipo de constancia no válido: {cert_type}, usando 'estudio' por defecto")
+                cert_type = "estudio"  # Valor por defecto si no es válido
+
             # Verificar si se puede generar el tipo seleccionado
             if cert_type in ["calificaciones", "traslado"] and not self.tiene_calificaciones:
                 QMessageBox.warning(self, "Advertencia", f"No se puede generar constancia de {cert_type} sin calificaciones")
@@ -1183,6 +1209,9 @@ class ConstanciasApp(QMainWindow):
 
             # Generar constancia
             generator = PDFGenerator()
+
+            # Asegurarse de que las plantillas existan
+            generator.crear_todas_plantillas()
 
             # Asegurarse de que no haya calificaciones en constancias que no deben tenerlas
             datos_a_usar = self.datos_alumno.copy()
@@ -1194,6 +1223,11 @@ class ConstanciasApp(QMainWindow):
 
             # Generar la constancia con los datos adecuados
             output_path = generator.generar_constancia(cert_type, datos_a_usar)
+
+            if output_path is None:
+                QMessageBox.critical(self, "Error", "No se pudo generar la constancia. Revise la consola para más detalles.")
+                self.statusBar().showMessage("Error al generar constancia")
+                return
 
             # Mostrar mensaje de éxito
             QMessageBox.information(self, "Éxito", f"Constancia generada correctamente: {output_path}")
@@ -1216,6 +1250,7 @@ class ConstanciasApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al generar constancia: {str(e)}")
             self.statusBar().showMessage("Error al generar constancia")
+            print(f"Error detallado: {str(e)}")
 
     def reset(self):
         """Reinicia la aplicación"""
