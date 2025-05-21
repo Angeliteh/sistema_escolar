@@ -4,6 +4,8 @@ from datetime import datetime
 import subprocess
 import tempfile
 import platform
+from app.core.config import Config
+from app.core.utils import ensure_directories_exist, copy_file_safely
 
 class PDFGenerator:
     """
@@ -11,16 +13,16 @@ class PDFGenerator:
     usando wkhtmltopdf
     """
 
-    def __init__(self, template_dir="plantillas"):
+    def __init__(self, template_dir=None):
         """Inicializa el generador con el directorio de plantillas"""
-        self.template_dir = template_dir
-        self.output_dir = "salidas"
+        self.template_dir = template_dir or Config.TEMPLATES_DIR
+        self.output_dir = Config.OUTPUT_DIR
 
         # Crear directorio de salida si no existe
-        os.makedirs(self.output_dir, exist_ok=True)
+        ensure_directories_exist()
 
         # Configurar entorno Jinja2
-        self.env = Environment(loader=FileSystemLoader(template_dir))
+        self.env = Environment(loader=FileSystemLoader(self.template_dir))
 
         # Verificar si wkhtmltopdf está instalado
         self.wkhtmltopdf_path = self._find_wkhtmltopdf()
@@ -69,7 +71,7 @@ class PDFGenerator:
         print("ADVERTENCIA: No se encontró wkhtmltopdf en ninguna ubicación. Solo se generarán archivos HTML.")
         return None
 
-    def generar_constancia(self, tipo_constancia, datos, output_path=None):
+    def generar_constancia(self, tipo_constancia, datos, output_path=None, output_dir=None, filename_prefix=""):
         """
         Genera una constancia del tipo especificado con los datos proporcionados
 
@@ -77,6 +79,8 @@ class PDFGenerator:
             tipo_constancia: Tipo de constancia a generar (traslado, estudio, calificaciones)
             datos: Diccionario con los datos a incluir en la constancia
             output_path: Ruta personalizada donde guardar el PDF (opcional)
+            output_dir: Directorio personalizado donde guardar el PDF (opcional)
+            filename_prefix: Prefijo para el nombre del archivo (opcional)
 
         Returns:
             Ruta al archivo PDF generado
@@ -121,18 +125,27 @@ class PDFGenerator:
             curp = datos.get("curp", "sin_curp")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            # Usar la ruta personalizada si se proporciona, de lo contrario usar la ruta predeterminada
+            # Determinar el directorio de salida
+            output_directory = output_dir if output_dir else self.output_dir
+
+            # Usar la ruta personalizada si se proporciona, de lo contrario generar una
             if output_path:
                 output_filename = output_path
             else:
-                output_filename = os.path.join(self.output_dir, f"constancia_{tipo_constancia}_{curp}_{timestamp}.pdf")
+                output_filename = os.path.join(
+                    output_directory,
+                    f"{filename_prefix}constancia_{tipo_constancia}_{curp}_{timestamp}.pdf"
+                )
 
-            # Guardar siempre el HTML para revisión (en la carpeta de salida predeterminada)
-            html_output_filename = os.path.join(self.output_dir, f"constancia_{tipo_constancia}_{curp}_{timestamp}.html")
+            # Crear un archivo HTML temporal (que se eliminará después)
+            html_output_filename = os.path.join(
+                tempfile.gettempdir(),
+                f"{filename_prefix}constancia_{tipo_constancia}_{curp}_{timestamp}.html"
+            )
 
             # Crear carpetas para imágenes en la carpeta de salida
-            salida_logos_dir = os.path.join(self.output_dir, "logos")
-            salida_fotos_dir = os.path.join(self.output_dir, "fotos")
+            salida_logos_dir = os.path.join(output_directory, "logos")
+            salida_fotos_dir = os.path.join(output_directory, "fotos")
             try:
                 os.makedirs(salida_logos_dir, exist_ok=True)
                 os.makedirs(salida_fotos_dir, exist_ok=True)
@@ -141,44 +154,33 @@ class PDFGenerator:
                 # Continuar a pesar del error
 
             # Copiar el logo si existe
-            logo_origen = os.path.join("logos", "logo_educacion.png")
+            logo_origen = os.path.join(Config.LOGOS_DIR, "logo_educacion.png")
             logo_destino = os.path.join(salida_logos_dir, "logo_educacion.png")
             if os.path.exists(logo_origen):
-                try:
-                    import shutil
-                    shutil.copy2(logo_origen, logo_destino)
-                except Exception as e:
-                    print(f"Error al copiar el logo: {str(e)}")
-                    # Continuar a pesar del error
+                copy_file_safely(logo_origen, logo_destino)
 
             # Copiar la foto del alumno si existe
-            foto_origen = os.path.join("fotos", f"{curp}.jpg")
+            foto_origen = os.path.join(Config.PHOTOS_DIR, f"{curp}.jpg")
             foto_destino = os.path.join(salida_fotos_dir, f"{curp}.jpg")
             if os.path.exists(foto_origen):
-                try:
-                    import shutil
-                    shutil.copy2(foto_origen, foto_destino)
-                except Exception as e:
-                    print(f"Error al copiar la foto del alumno: {str(e)}")
-                    # Continuar a pesar del error
+                copy_file_safely(foto_origen, foto_destino)
 
             # Modificar el HTML para usar rutas absolutas para las imágenes en la vista del navegador
-            current_dir = os.path.abspath(os.getcwd())
-            html_for_browser = html_out.replace('src="logos/', f'src="file:///{current_dir}/logos/')
-            html_for_browser = html_for_browser.replace('src="fotos/', f'src="file:///{current_dir}/fotos/')
+            # Usar rutas absolutas para los directorios de salida
+            output_logos_dir = os.path.abspath(salida_logos_dir)
+            output_fotos_dir = os.path.abspath(salida_fotos_dir)
+
+            # Reemplazar las rutas en el HTML
+            html_for_browser = html_out.replace('src="logos/', f'src="file:///{output_logos_dir}/')
+            html_for_browser = html_for_browser.replace('src="fotos/', f'src="file:///{output_fotos_dir}/')
 
             # Verificar si existe la foto del alumno
             curp = datos.get("curp", "")
-            foto_path = os.path.join("fotos", f"{curp}.jpg")
+            foto_path = os.path.join(Config.PHOTOS_DIR, f"{curp}.jpg")
             if not os.path.exists(foto_path) and "has_photo" in datos and datos["has_photo"] == True:
                 # Si la foto no existe pero se supone que debería tenerla, intentar copiarla desde foto_path
                 if "foto_path" in datos and datos["foto_path"] and os.path.exists(datos["foto_path"]):
-                    try:
-                        import shutil
-                        shutil.copy2(datos["foto_path"], foto_path)
-                    except Exception as e:
-                        print(f"Error al copiar la foto desde foto_path: {str(e)}")
-                        # Continuar a pesar del error
+                    copy_file_safely(datos["foto_path"], foto_path)
 
             # Guardar el HTML modificado
             try:
@@ -207,12 +209,13 @@ class PDFGenerator:
                     with open(temp_html_path, 'r', encoding='utf-8') as f:
                         html_content = f.read()
 
-                    # Obtener la ruta absoluta del directorio de trabajo
-                    current_dir = os.path.abspath(os.getcwd())
+                    # Obtener rutas absolutas para los directorios de imágenes
+                    output_logos_dir = os.path.abspath(salida_logos_dir)
+                    output_fotos_dir = os.path.abspath(salida_fotos_dir)
 
                     # Reemplazar rutas relativas con rutas absolutas
-                    html_content = html_content.replace('src="logos/', f'src="file:///{current_dir}/logos/')
-                    html_content = html_content.replace('src="fotos/', f'src="file:///{current_dir}/fotos/')
+                    html_content = html_content.replace('src="logos/', f'src="file:///{output_logos_dir}/')
+                    html_content = html_content.replace('src="fotos/', f'src="file:///{output_fotos_dir}/')
 
                     # Guardar el HTML modificado
                     with open(temp_html_path, 'w', encoding='utf-8') as f:
@@ -234,8 +237,16 @@ class PDFGenerator:
 
                     print(f"wkhtmltopdf ejecutado exitosamente. Salida: {result.stdout.decode('utf-8', errors='ignore')}")
 
-                    # Eliminar archivo HTML temporal
+                    # Eliminar archivos HTML temporales
                     os.unlink(temp_html_path)
+
+                    # También eliminar el HTML de salida si existe
+                    if os.path.exists(html_output_filename):
+                        try:
+                            os.unlink(html_output_filename)
+                        except Exception as e:
+                            print(f"No se pudo eliminar el archivo HTML temporal: {e}")
+
                     print(f"PDF generado exitosamente: {output_filename}")
                     return output_filename
 
@@ -268,20 +279,22 @@ class PDFGenerator:
             traceback.print_exc()
             return None
 
-
-
     def crear_todas_plantillas(self):
         """Crea todas las plantillas si no existen"""
-        # Las plantillas ya existen como archivos físicos, no es necesario crearlas
-        # Solo verificamos que existan
-        if not os.path.exists(os.path.join(self.template_dir, "constancia_estudio.html")):
-            print("Advertencia: No se encontró la plantilla de constancia de estudios")
-        if not os.path.exists(os.path.join(self.template_dir, "constancia_calificaciones.html")):
-            print("Advertencia: No se encontró la plantilla de constancia de calificaciones")
-        if not os.path.exists(os.path.join(self.template_dir, "constancia_traslado.html")):
-            print("Advertencia: No se encontró la plantilla de constancia de traslado")
-
         # Verificar que el directorio de plantillas exista
         if not os.path.exists(self.template_dir):
             print(f"Creando directorio de plantillas: {self.template_dir}")
             os.makedirs(self.template_dir, exist_ok=True)
+
+        # Las plantillas ya existen como archivos físicos, no es necesario crearlas
+        # Solo verificamos que existan
+        plantillas = {
+            "constancia_estudio.html": "constancia de estudios",
+            "constancia_calificaciones.html": "constancia de calificaciones",
+            "constancia_traslado.html": "constancia de traslado"
+        }
+
+        for archivo, descripcion in plantillas.items():
+            ruta_completa = os.path.join(self.template_dir, archivo)
+            if not os.path.exists(ruta_completa):
+                print(f"Advertencia: No se encontró la plantilla de {descripcion} ({ruta_completa})")

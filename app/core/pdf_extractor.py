@@ -5,6 +5,8 @@ import io
 import PyPDF2
 from PIL import Image
 from datetime import datetime
+from app.core.config import Config
+from app.core.utils import ensure_directories_exist, copy_file_safely
 
 class PDFExtractor:
     """
@@ -17,6 +19,9 @@ class PDFExtractor:
         self.text = self._extract_text()
         self.tipo_constancia = self._determinar_tipo_constancia()
         self.has_photo = False  # Indica si se encontró una foto en el PDF
+
+        # Asegurar que los directorios necesarios existan
+        ensure_directories_exist()
 
     def _extract_text(self):
         """Extrae todo el texto del PDF"""
@@ -59,11 +64,11 @@ class PDFExtractor:
         """Extrae los datos básicos comunes a todos los tipos de constancias"""
         datos = {
             "tipo_constancia": self.tipo_constancia,
-            "escuela": "PROF. MAXIMO GAMIZ FERNANDEZ",  # Valor por defecto
-            "cct": "10DPR0392H",  # Valor por defecto
+            "escuela": Config.SCHOOL_NAME,  # Valor por defecto desde configuración
+            "cct": Config.SCHOOL_CCT,  # Valor por defecto desde configuración
             "ciclo": "2024-2025",  # Valor por defecto
             "director": "JOSE ANGEL ALVARADO SOSA",  # Valor por defecto
-            "fecha_actual": datetime.now().strftime("%d días del mes de %B de %Y").capitalize(),
+            "fecha_actual": Config.get_current_date_formatted(),
         }
 
         # Extraer datos según el tipo de constancia
@@ -78,6 +83,9 @@ class PDFExtractor:
             self._extraer_datos_genericos(datos)
 
         return datos
+
+    # Resto de métodos de extracción de datos...
+    # (Aquí irían los métodos _extraer_datos_traslado, _extraer_datos_estudios, etc.)
 
     def _extraer_datos_traslado(self, datos):
         """Extrae datos específicos de constancias de traslado"""
@@ -378,17 +386,16 @@ class PDFExtractor:
         Extrae la foto del alumno del PDF si está disponible
 
         Args:
-            guardar_en_directorio: Si es True, guarda la foto en el directorio 'fotos'
+            guardar_en_directorio: Si es True, guarda la foto en el directorio de fotos
 
         Returns:
             Ruta a la foto guardada o None si no se encontró ninguna foto
         """
-        # Crear directorio de fotos si no existe
-        fotos_dir = "fotos"
-        os.makedirs(fotos_dir, exist_ok=True)
+        # Asegurar que los directorios necesarios existan
+        ensure_directories_exist()
 
         # Crear directorio temporal para imágenes extraídas
-        temp_dir = "temp_images"
+        temp_dir = os.path.join(Config.BASE_DIR, "temp_images")
         os.makedirs(temp_dir, exist_ok=True)
 
         # Obtener el CURP del alumno
@@ -399,7 +406,7 @@ class PDFExtractor:
             curp = os.path.splitext(base_name)[0]
 
         # Ruta donde se guardará la foto final
-        img_path = os.path.join(fotos_dir, f"{curp}.jpg")
+        img_path = os.path.join(Config.PHOTOS_DIR, f"{curp}.jpg")
 
         # Extraer todas las imágenes del PDF
         imagenes_extraidas = self._extraer_todas_imagenes(temp_dir)
@@ -471,22 +478,14 @@ class PDFExtractor:
         Raises:
             Exception: Si no se pudo copiar la imagen después de varios intentos
         """
+        # Usar la función centralizada para copiar archivos de forma segura
+        if copy_file_safely(origen, destino):
+            return
+
+        # Si la función centralizada falla, intentar métodos alternativos
         import time
 
-        # Método 1: Leer y escribir el contenido del archivo
-        try:
-            # Abrir la imagen de origen y leer su contenido
-            with open(origen, 'rb') as src_file:
-                contenido = src_file.read()
-
-            # Escribir el contenido en el archivo de destino
-            with open(destino, 'wb') as dst_file:
-                dst_file.write(contenido)
-            return
-        except Exception:
-            pass
-
-        # Método 2: Usar PIL para abrir y guardar la imagen
+        # Método 1: Usar PIL para abrir y guardar la imagen
         try:
             # Abrir la imagen con PIL
             img = Image.open(origen)
@@ -500,19 +499,18 @@ class PDFExtractor:
         except Exception:
             pass
 
-        # Método 3: Usar shutil con reintentos
-        import shutil
-        max_intentos = 3
-        for _ in range(max_intentos):
-            try:
-                # Esperar un poco antes de intentar copiar
-                time.sleep(1.0)  # Esperar más tiempo
+        # Método 2: Leer y escribir el contenido del archivo
+        try:
+            # Abrir la imagen de origen y leer su contenido
+            with open(origen, 'rb') as src_file:
+                contenido = src_file.read()
 
-                # Intentar copiar el archivo
-                shutil.copy2(origen, destino)
-                return
-            except Exception:
-                pass
+            # Escribir el contenido en el archivo de destino
+            with open(destino, 'wb') as dst_file:
+                dst_file.write(contenido)
+            return
+        except Exception:
+            pass
 
         # Si llegamos aquí, todos los métodos fallaron
         raise Exception("No se pudo copiar la imagen después de intentar todos los métodos disponibles")
@@ -557,7 +555,7 @@ class PDFExtractor:
         except Exception:
             pass
 
-        # Extraer imágenes con PyPDF2
+        # Extraer imágenes con PyPDF2 (método alternativo)
         try:
             with open(self.pdf_path, 'rb') as file:
                 reader = PyPDF2.PdfReader(file)
@@ -625,6 +623,22 @@ class PDFExtractor:
 
         # Extraer datos básicos
         datos = self.extraer_datos_basicos()
+
+        # Asegurarse de que el grado sea un entero
+        if 'grado' in datos and datos['grado']:
+            try:
+                # Intentar convertir el grado a entero
+                datos['grado'] = int(datos['grado'])
+                print(f"Grado convertido a entero: {datos['grado']}")
+            except (ValueError, TypeError):
+                # Si no se puede convertir, usar el valor por defecto
+                print(f"ADVERTENCIA: No se pudo convertir el grado '{datos['grado']}' a entero. Usando valor por defecto.")
+                datos['grado'] = Config.DEFAULT_GRADE
+
+        # Asegurarse de que el grupo sea una cadena
+        if 'grupo' in datos and datos['grupo'] is not None:
+            datos['grupo'] = str(datos['grupo'])
+            print(f"Grupo convertido a cadena: '{datos['grupo']}'")
 
         # Verificar si la constancia original tiene calificaciones
         tiene_calificaciones = self.tiene_calificaciones()

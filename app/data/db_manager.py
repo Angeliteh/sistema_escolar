@@ -2,15 +2,16 @@ import sqlite3
 import os
 import json
 from datetime import datetime
+from app.core.config import Config
 
 class DBManager:
     """
     Clase para gestionar la base de datos de alumnos
     """
     
-    def __init__(self, db_path="alumnos.db"):
+    def __init__(self, db_path=None):
         """Inicializa el gestor de base de datos"""
-        self.db_path = db_path
+        self.db_path = db_path or Config.DB_PATH
         self.conn = None
         self.cursor = None
         self._connect()

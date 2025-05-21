@@ -1,0 +1,147 @@
+import os
+import shutil
+import tempfile
+import platform
+import subprocess
+import fnmatch
+from datetime import datetime, timedelta
+from app.core.config import Config
+
+def ensure_directories_exist():
+    """Asegura que todos los directorios necesarios existan"""
+    for directory in [Config.TEMPLATES_DIR, Config.LOGOS_DIR, Config.PHOTOS_DIR, Config.OUTPUT_DIR]:
+        os.makedirs(directory, exist_ok=True)
+
+def copy_file_safely(source, destination):
+    """Copia un archivo de forma segura, creando directorios si es necesario"""
+    try:
+        # Crear directorio de destino si no existe
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+
+        # Copiar el archivo
+        shutil.copy2(source, destination)
+        return True
+    except Exception as e:
+        print(f"Error al copiar archivo {source} a {destination}: {e}")
+        return False
+
+def generate_timestamp():
+    """Genera un timestamp para nombres de archivo"""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def open_file_with_default_app(file_path):
+    """Abre un archivo con la aplicación predeterminada del sistema"""
+    try:
+        if platform.system() == 'Windows':
+            os.startfile(file_path)
+        elif platform.system() == 'Darwin':  # macOS
+            subprocess.call(('open', file_path))
+        else:  # Linux
+            subprocess.call(('xdg-open', file_path))
+        return True
+    except Exception as e:
+        print(f"Error al abrir archivo {file_path}: {e}")
+        return False
+
+def create_temp_file(content, suffix=".html"):
+    """Crea un archivo temporal con el contenido especificado"""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, mode="w", encoding="utf-8") as temp_file:
+            temp_file.write(content)
+            return temp_file.name
+    except Exception as e:
+        print(f"Error al crear archivo temporal: {e}")
+        return None
+
+def format_curp(curp):
+    """Formatea un CURP para asegurar que esté en mayúsculas y sin espacios"""
+    if curp:
+        return curp.strip().upper()
+    return ""
+
+def format_name(name):
+    """Formatea un nombre para asegurar capitalización correcta"""
+    if name:
+        # Capitalizar cada palabra, respetando espacios
+        return " ".join(word.capitalize() for word in name.split())
+    return ""
+
+def is_valid_curp(curp):
+    """Verifica si un CURP tiene el formato correcto"""
+    import re
+    if not curp:
+        return False
+
+    # Patrón básico de CURP (18 caracteres alfanuméricos)
+    pattern = r'^[A-Z]{4}\d{6}[HM][A-Z]{5}[0-9A-Z]\d$'
+    return bool(re.match(pattern, curp))
+
+def backup_database():
+    """Crea una copia de seguridad de la base de datos"""
+    try:
+        # Crear directorio de respaldos si no existe
+        backup_dir = os.path.join(Config.BASE_DIR, "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # Generar nombre de archivo con timestamp
+        timestamp = generate_timestamp()
+        backup_file = os.path.join(backup_dir, f"alumnos_backup_{timestamp}.db")
+
+        # Copiar la base de datos
+        shutil.copy2(Config.DB_PATH, backup_file)
+
+        print(f"Respaldo creado: {backup_file}")
+        return backup_file
+    except Exception as e:
+        print(f"Error al crear respaldo de la base de datos: {e}")
+        return None
+
+def clean_temp_files(directory=None, max_age_days=7, file_patterns=None):
+    """
+    Limpia archivos temporales en un directorio
+
+    Args:
+        directory: Directorio a limpiar (por defecto, el directorio de salida)
+        max_age_days: Edad máxima de los archivos en días
+        file_patterns: Lista de patrones de nombre de archivo a eliminar (por defecto, archivos HTML)
+
+    Returns:
+        Número de archivos eliminados
+    """
+    try:
+        # Usar el directorio de salida por defecto si no se especifica otro
+        if not directory:
+            directory = Config.OUTPUT_DIR
+
+        # Patrones de archivo por defecto
+        if not file_patterns:
+            file_patterns = ["*.html", "preview_*.pdf"]
+
+        # Calcular la fecha límite
+        now = datetime.now()
+        max_age = now - timedelta(days=max_age_days)
+
+        # Contador de archivos eliminados
+        deleted_count = 0
+
+        # Recorrer todos los archivos en el directorio
+        for root, _, files in os.walk(directory):
+            for file in files:
+                file_path = os.path.join(root, file)
+
+                # Verificar si el archivo coincide con alguno de los patrones
+                if any(fnmatch.fnmatch(file, pattern) for pattern in file_patterns):
+                    # Verificar la fecha de modificación
+                    file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                    if file_time < max_age:
+                        try:
+                            os.unlink(file_path)
+                            deleted_count += 1
+                            print(f"Archivo temporal eliminado: {file_path}")
+                        except Exception as e:
+                            print(f"Error al eliminar archivo temporal {file_path}: {e}")
+
+        return deleted_count
+    except Exception as e:
+        print(f"Error al limpiar archivos temporales: {e}")
+        return 0

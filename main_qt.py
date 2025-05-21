@@ -1,13 +1,31 @@
+#!/usr/bin/env python
+"""
+Script para ejecutar la aplicación de constancias escolares
+"""
 import sys
 from PyQt5.QtWidgets import QApplication
-from qt_gui import ConstanciasApp
+from app.ui.menu_principal import MenuPrincipal
+from app.core.utils import clean_temp_files, ensure_directories_exist
 
-if __name__ == "__main__":
+def main():
+    """Función principal"""
+    # Asegurar que los directorios necesarios existan
+    ensure_directories_exist()
+
+    # Limpiar archivos temporales antiguos (más de 3 días)
+    deleted_count = clean_temp_files(max_age_days=3)
+    if deleted_count > 0:
+        print(f"Se eliminaron {deleted_count} archivos temporales antiguos")
+
     app = QApplication(sys.argv)
-    
+
     # Establecer estilo global
     app.setStyle("Fusion")
-    
-    window = ConstanciasApp()
+
+    window = MenuPrincipal()
     window.show()
+
     sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main()
