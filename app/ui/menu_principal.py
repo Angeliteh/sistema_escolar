@@ -73,20 +73,20 @@ class MenuPrincipal(QMainWindow):
         title_font = QFont("Segoe UI", 28)
         title_font.setBold(True)
         title_label.setFont(title_font)
-        title_label.setStyleSheet("color: #2c3e50; margin: 10px;")
+        title_label.setStyleSheet("color: #2c3e50;")
 
         # Subtítulo con estilo moderno
         subtitle_label = QLabel(f"Escuela Primaria {Config.SCHOOL_NAME}")
         subtitle_label.setAlignment(Qt.AlignCenter)
         subtitle_font = QFont("Segoe UI", 16)
         subtitle_label.setFont(subtitle_font)
-        subtitle_label.setStyleSheet("color: #34495e; margin-bottom: 10px;")
+        subtitle_label.setStyleSheet("color: #34495e;")
 
         # Línea divisoria
         divider = QFrame()
         divider.setFrameShape(QFrame.HLine)
         divider.setFrameShadow(QFrame.Sunken)
-        divider.setStyleSheet("background-color: #e0e0e0; max-height: 1px; margin: 10px 50px;")
+        divider.setStyleSheet("background-color: #e0e0e0; max-height: 1px;")
 
         header_layout.addWidget(title_label)
         header_layout.addWidget(subtitle_label)
@@ -175,7 +175,7 @@ class MenuPrincipal(QMainWindow):
         footer_label.setAlignment(Qt.AlignCenter)
         footer_font = QFont("Segoe UI", 10)
         footer_label.setFont(footer_font)
-        footer_label.setStyleSheet("color: #7f8c8d; margin: 5px;")
+        footer_label.setStyleSheet("color: #7f8c8d;")
 
         # Layout para el pie de página con botón de administración
         footer_bottom_layout = QHBoxLayout()
@@ -278,13 +278,11 @@ class MenuPrincipal(QMainWindow):
             }}
             QPushButton:hover {{
                 background-color: {color};
-                filter: brightness(120%);
                 border: 3px solid white;
                 font-weight: bold;
             }}
             QPushButton:pressed {{
                 background-color: {color};
-                filter: brightness(80%);
                 border: 3px solid white;
             }}
         """)

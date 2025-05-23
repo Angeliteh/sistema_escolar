@@ -4,6 +4,8 @@ import tempfile
 import platform
 import subprocess
 import fnmatch
+import unicodedata
+import re
 from datetime import datetime, timedelta
 from app.core.config import Config
 
@@ -59,16 +61,108 @@ def format_curp(curp):
         return curp.strip().upper()
     return ""
 
-def format_name(name):
-    """Formatea un nombre para asegurar capitalización correcta"""
-    if name:
+def format_name(name, uppercase=False, remove_accents=False):
+    """
+    Formatea un nombre para mostrar
+
+    Args:
+        name: Nombre a formatear
+        uppercase: Si se debe convertir a mayúsculas
+        remove_accents: Si se deben eliminar los acentos
+
+    Returns:
+        Nombre formateado
+    """
+    if not name:
+        return ""
+
+    result = name
+
+    # Eliminar acentos si se solicita
+    if remove_accents:
+        # Normalizar caracteres Unicode (NFD descompone los caracteres acentuados)
+        result = unicodedata.normalize('NFD', result)
+        # Eliminar los caracteres no ASCII (como los acentos)
+        result = ''.join(c for c in result if not unicodedata.combining(c))
+
+    if uppercase:
+        # Convertir a mayúsculas
+        return result.upper()
+    else:
         # Capitalizar cada palabra, respetando espacios
-        return " ".join(word.capitalize() for word in name.split())
-    return ""
+        return " ".join(word.capitalize() for word in result.split())
+
+def normalize_text(text):
+    """
+    Normaliza un texto eliminando acentos y convirtiéndolo a minúsculas
+    para facilitar búsquedas insensibles a acentos y mayúsculas/minúsculas
+    """
+    if not text:
+        return ""
+
+    # Convertir a minúsculas
+    text = text.lower()
+
+    # Normalizar caracteres Unicode (NFD descompone los caracteres acentuados)
+    text = unicodedata.normalize('NFD', text)
+
+    # Eliminar los caracteres no ASCII (como los acentos)
+    text = ''.join(c for c in text if not unicodedata.combining(c))
+
+    return text
+
+def tokenize_name(name):
+    """
+    Divide un nombre en tokens (palabras) y los normaliza
+
+    Args:
+        name: Nombre a tokenizar
+
+    Returns:
+        Lista de tokens normalizados
+    """
+    if not name:
+        return []
+
+    # Normalizar el nombre
+    normalized_name = normalize_text(name)
+
+    # Dividir en palabras y filtrar palabras vacías
+    tokens = [token for token in normalized_name.split() if token]
+
+    return tokens
+
+def is_name_match(query, full_name, partial_match=True):
+    """
+    Verifica si una consulta coincide con un nombre completo
+
+    Args:
+        query: Consulta a buscar
+        full_name: Nombre completo donde buscar
+        partial_match: Si se permite coincidencia parcial
+
+    Returns:
+        True si hay coincidencia, False en caso contrario
+    """
+    # Tokenizar la consulta y el nombre completo
+    query_tokens = tokenize_name(query)
+    name_tokens = tokenize_name(full_name)
+
+    if not query_tokens or not name_tokens:
+        return False
+
+    if partial_match:
+        # Verificar si todos los tokens de la consulta están en el nombre completo
+        return all(any(query_token in name_token for name_token in name_tokens) or
+                  any(query_token == name_token for name_token in name_tokens)
+                  for query_token in query_tokens)
+    else:
+        # Para coincidencia exacta, verificar si los conjuntos de tokens son iguales
+        # o si la consulta normalizada es igual al nombre normalizado
+        return set(query_tokens) == set(name_tokens) or normalize_text(query) == normalize_text(full_name)
 
 def is_valid_curp(curp):
     """Verifica si un CURP tiene el formato correcto"""
-    import re
     if not curp:
         return False
 

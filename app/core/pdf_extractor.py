@@ -8,6 +8,14 @@ from datetime import datetime
 from app.core.config import Config
 from app.core.utils import ensure_directories_exist, copy_file_safely
 
+def is_number(s):
+    """Verifica si una cadena es un número"""
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
 class PDFExtractor:
     """
     Clase para extraer datos de diferentes tipos de constancias en PDF
@@ -284,7 +292,13 @@ class PDFExtractor:
         Returns:
             True si el PDF contiene calificaciones, False en caso contrario
         """
-        # Buscar sección de calificaciones con patrones más específicos
+        # Método 1: Verificar si el método extraer_calificaciones devuelve calificaciones
+        calificaciones = self.extraer_calificaciones()
+        if calificaciones and len(calificaciones) > 0:
+            print(f"Detectadas {len(calificaciones)} calificaciones mediante extracción directa")
+            return True
+
+        # Método 2: Buscar sección de calificaciones con patrones más específicos
         # Patrón 1: Encabezado de tabla de calificaciones con MATERIAS
         match = re.search(r"MATERIAS\s+I\s+II\s+III\s+Promedio", self.text, re.DOTALL)
         if match:
@@ -311,7 +325,14 @@ class PDFExtractor:
                 print(f"Detectadas calificaciones (patrón materia: {patron})")
                 return True
 
-        # Verificar si hay una sección que contiene múltiples números que podrían ser calificaciones
+        # Patrón 4: Buscar cualquier sección que pueda contener calificaciones
+        # Buscar secciones con al menos 3 líneas que contengan 4 números entre 0 y 10
+        calificaciones_pattern = r"((?:\w+\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?[\r\n]+){3,})"
+        if re.search(calificaciones_pattern, self.text, re.DOTALL):
+            print("Detectadas calificaciones (patrón de múltiples líneas con números)")
+            return True
+
+        # Patrón 5: Verificar si hay una sección que contiene múltiples números que podrían ser calificaciones
         # Buscar secciones con al menos 3 números entre 0 y 10 con decimales
         calificaciones_pattern = r"(\d(\.\d)?)\s+(\d(\.\d)?)\s+(\d(\.\d)?)\s+(\d(\.\d)?)"
         if re.search(calificaciones_pattern, self.text, re.DOTALL):
@@ -328,10 +349,24 @@ class PDFExtractor:
         """Extrae las calificaciones si están disponibles"""
         calificaciones = []
 
-        # Buscar sección de calificaciones
+        # Buscar sección de calificaciones con diferentes patrones
+        # Patrón 1: Formato tradicional
         match = re.search(r"MATERIAS\s+I\s+II\s+III\s+Promedio(.*?)(?:Se extiende|Se expide)", self.text, re.DOTALL)
         if not match:
-            match = re.search(r"ASIGNATURA\s+P1\s+P2\s+P3\s+Promedio(.*?)(?:Se extiende|Se expide|Analiza)", self.text, re.DOTALL)
+            # Patrón 2: Formato con P1, P2, P3
+            match = re.search(r"ASIGNATURA\s+P1\s+P2\s+P3\s+Promedio(.*?)(?:Se extiende|Se expide|Analiza|NIVELES)", self.text, re.DOTALL)
+        if not match:
+            # Patrón 3: Buscar sección específica de calificaciones
+            match = re.search(r"CALIFICACIONES DE LAS ASIGNATURAS CURSADAS(.*?)(?:Analiza|Se extiende|Se expide)", self.text, re.DOTALL)
+        if not match:
+            # Patrón 4: Nuevo formato sin encabezados específicos
+            match = re.search(r"MATERIAS(.*?)(?:Se extiende|Se expide)", self.text, re.DOTALL)
+        if not match:
+            # Patrón 5: Otro formato nuevo
+            match = re.search(r"TURNO.*?MATUTINO\s*(.*?)(?:Se extiende|Se expide)", self.text, re.DOTALL)
+        if not match:
+            # Patrón 6: Buscar cualquier sección que pueda contener calificaciones
+            match = re.search(r"((?:\w+\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?[\r\n]+){2,})", self.text, re.DOTALL)
 
         if match:
             materias_text = match.group(1).strip()
@@ -345,39 +380,128 @@ class PDFExtractor:
                 # Intentar extraer nombre de materia y calificaciones
                 parts = re.split(r'\s+', line.strip())
 
-                if len(parts) >= 5:  # Nombre + 3 periodos + promedio
-                    # El último elemento es el promedio
-                    promedio = parts[-1]
-                    # Los 3 elementos anteriores son las calificaciones
-                    califs = parts[-4:-1]
-                    # El resto es el nombre de la materia
-                    nombre_materia = " ".join(parts[:-4])
+                # Verificar si tenemos suficientes partes para ser una calificación
+                if len(parts) >= 4:  # Al menos nombre + 2 calificaciones + promedio
+                    # Intentar identificar el patrón de calificaciones
+                    # Buscar desde el final números que podrían ser calificaciones
+                    califs_indices = []
+                    promedio_index = -1
 
-                    # Convertir calificaciones a números
-                    try:
-                        califs_num = [float(c) if c != "0" else 0 for c in califs]
-                        promedio_num = float(promedio)
+                    # Buscar desde el final números que podrían ser calificaciones
+                    # Primero, intentar identificar un patrón claro de calificaciones al final
+                    # Buscamos 4 números consecutivos al final (3 calificaciones + promedio)
+                    last_four = []  # Definir last_four aquí para que esté disponible en todo el ámbito
 
-                        calificaciones.append({
-                            "nombre": nombre_materia,
-                            "i": califs_num[0],
-                            "ii": califs_num[1],
-                            "iii": califs_num[2],
-                            "promedio": promedio_num
-                        })
-                    except (ValueError, IndexError):
-                        # Si hay error al convertir, intentar otro enfoque
-                        pass
+                    if len(parts) >= 4:
+                        try:
+                            # Verificar si los últimos 4 elementos son números válidos para calificaciones
+                            for i in range(1, 5):
+                                if i <= len(parts):
+                                    val = float(parts[-i])
+                                    if 0 <= val <= 10:  # Rango válido para calificaciones
+                                        last_four.append(len(parts) - i)
 
-        # Si no se encontraron calificaciones y es una constancia de calificaciones o traslado,
-        # devolver datos de ejemplo
-        if not calificaciones and self.tipo_constancia in ["calificaciones", "traslado"]:
-            calificaciones = [
-                {"nombre": "LENGUAJES", "i": 8, "ii": 8, "iii": 8, "promedio": 8.0},
-                {"nombre": "SABERES Y PENSAMIENTOS CIENTÍFICOS", "i": 7, "ii": 8, "iii": 0, "promedio": 7.5},
-                {"nombre": "ETICA, NATURALEZA Y SOCIEDADES", "i": 7, "ii": 9, "iii": 0, "promedio": 8.0},
-                {"nombre": "DE LO HUMANO Y LO COMUNITARIO", "i": 7, "ii": 9, "iii": 0, "promedio": 8.0},
-            ]
+                            # Si encontramos 4 números válidos al final, usarlos como calificaciones
+                            if len(last_four) == 4:
+                                promedio_index = last_four[0]  # El último es el promedio
+                                califs_indices = last_four[1:]  # Los 3 anteriores son calificaciones
+                            else:
+                                # Si no encontramos 4 números consecutivos, usar el enfoque anterior
+                                for i in range(len(parts) - 1, -1, -1):
+                                    try:
+                                        # Intentar convertir a float
+                                        val = float(parts[i])
+                                        if 0 <= val <= 10:  # Rango válido para calificaciones
+                                            if promedio_index == -1:
+                                                promedio_index = i  # El primer número desde el final es el promedio
+                                            else:
+                                                califs_indices.append(i)  # Los demás son calificaciones
+                                    except ValueError:
+                                        # No es un número, podría ser parte del nombre de la materia
+                                        pass
+                        except ValueError:
+                            # Si hay error en la conversión, usar el enfoque anterior
+                            for i in range(len(parts) - 1, -1, -1):
+                                try:
+                                    # Intentar convertir a float
+                                    val = float(parts[i])
+                                    if 0 <= val <= 10:  # Rango válido para calificaciones
+                                        if promedio_index == -1:
+                                            promedio_index = i  # El primer número desde el final es el promedio
+                                        else:
+                                            califs_indices.append(i)  # Los demás son calificaciones
+                                except ValueError:
+                                    # No es un número, podría ser parte del nombre de la materia
+                                    pass
+
+                    # Si encontramos al menos un promedio y una calificación
+                    if promedio_index != -1 and len(califs_indices) > 0:
+                        # El promedio es el último número
+                        promedio = parts[promedio_index]
+
+                        # Ordenar los índices de calificaciones
+                        califs_indices.sort()
+
+                        # Extraer las calificaciones
+                        califs = [parts[i] for i in califs_indices]
+
+                        # El nombre de la materia es todo lo que está antes de la primera calificación
+                        # Ordenar los índices de calificaciones para asegurarnos de que tomamos el correcto
+                        califs_indices.sort()
+
+                        # Si estamos usando el patrón de 4 números consecutivos al final,
+                        # podemos estar más seguros de que todo lo demás es el nombre de la materia
+                        if len(last_four) == 4:
+                            nombre_materia = " ".join(parts[:califs_indices[0]])
+                        else:
+                            # Si no, necesitamos ser más cuidadosos
+                            # Verificar si hay algún número que podría ser parte del nombre de la materia
+                            # (por ejemplo, "FORMACION CIVICA Y ETICA 1")
+                            nombre_parts = []
+                            for i in range(califs_indices[0]):
+                                # Verificar si este elemento es un número pero no una calificación
+                                try:
+                                    val = float(parts[i])
+                                    # Si es un número pero está seguido por texto, probablemente es parte del nombre
+                                    if i < len(parts) - 1 and not is_number(parts[i+1]):
+                                        nombre_parts.append(parts[i])
+                                    # Si es un número pequeño (como 1, 2, 3) y está al final del nombre, probablemente es parte del nombre
+                                    elif val <= 3 and i == califs_indices[0] - 1:
+                                        nombre_parts.append(parts[i])
+                                    # De lo contrario, podría ser una calificación, así que no lo incluimos
+                                except ValueError:
+                                    # No es un número, definitivamente es parte del nombre
+                                    nombre_parts.append(parts[i])
+
+                            nombre_materia = " ".join(nombre_parts)
+
+                        # Asegurarse de que tenemos 3 calificaciones (rellenar con 0 si faltan)
+                        while len(califs) < 3:
+                            califs.append("0")
+
+                        # Tomar solo las primeras 3 calificaciones si hay más
+                        califs = califs[:3]
+
+                        # Convertir calificaciones a números
+                        try:
+                            califs_num = [float(c) if c != "0" else 0 for c in califs]
+                            promedio_num = float(promedio)
+
+                            # Solo agregar si el nombre de la materia no está vacío
+                            if nombre_materia.strip():
+                                calificaciones.append({
+                                    "nombre": nombre_materia,
+                                    "i": califs_num[0],
+                                    "ii": califs_num[1],
+                                    "iii": califs_num[2],
+                                    "promedio": promedio_num
+                                })
+                        except (ValueError, IndexError):
+                            # Ignorar silenciosamente errores de conversión
+                            pass
+
+        # Devolver las calificaciones encontradas (o una lista vacía si no hay)
+        # Ya no usamos datos de ejemplo
 
         return calificaciones
 
@@ -652,26 +776,16 @@ class PDFExtractor:
             datos["mostrar_calificaciones"] = False
 
         elif tipo_constancia_efectivo in ["calificaciones", "traslado"]:
-            # Para constancias de calificaciones y traslado, SIEMPRE incluir calificaciones
-            datos["mostrar_calificaciones"] = True
+            # Para constancias de calificaciones y traslado, incluir calificaciones si están disponibles
+            datos["mostrar_calificaciones"] = tiene_calificaciones
 
-            # Si la constancia original no tiene calificaciones y es de tipo calificaciones, devolver error
-            if not tiene_calificaciones and tipo_constancia_efectivo == "calificaciones":
-                # Para constancia de calificaciones, es obligatorio tener calificaciones
-                raise ValueError("No se puede generar una constancia de calificaciones sin calificaciones.")
+            # Si la constancia original no tiene calificaciones y es de tipo calificaciones o traslado, devolver error
+            if not tiene_calificaciones and tipo_constancia_efectivo in ["calificaciones", "traslado"]:
+                # Para constancia de calificaciones y traslado, es obligatorio tener calificaciones
+                raise ValueError(f"No se puede generar una constancia de {tipo_constancia_efectivo} sin calificaciones.")
 
-            # Extraer calificaciones o usar datos de ejemplo
+            # Extraer calificaciones (sin usar datos de ejemplo)
             calificaciones = self.extraer_calificaciones()
-
-            if not calificaciones:
-                # Si no se encontraron calificaciones, usar datos de ejemplo
-                calificaciones = [
-                    {"nombre": "LENGUAJES", "i": 8, "ii": 8, "iii": 8, "promedio": 8.0},
-                    {"nombre": "SABERES Y PENSAMIENTOS CIENTÍFICOS", "i": 7, "ii": 8, "iii": 0, "promedio": 7.5},
-                    {"nombre": "ETICA, NATURALEZA Y SOCIEDADES", "i": 7, "ii": 9, "iii": 0, "promedio": 8.0},
-                    {"nombre": "DE LO HUMANO Y LO COMUNITARIO", "i": 7, "ii": 9, "iii": 0, "promedio": 8.0},
-                ]
-
             datos["calificaciones"] = calificaciones
 
         else:

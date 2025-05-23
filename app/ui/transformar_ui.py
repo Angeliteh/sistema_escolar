@@ -6,10 +6,10 @@ import tempfile
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QMessageBox, QFileDialog, QGroupBox,
-    QRadioButton, QButtonGroup, QCheckBox, QDialog
+    QRadioButton, QButtonGroup, QCheckBox, QDialog, QApplication
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QCursor
 
 from app.ui.pdf_viewer import PDFViewer
 from app.core.pdf_extractor import PDFExtractor
@@ -111,9 +111,9 @@ class TransformarWindow(QMainWindow):
 
         # No añadimos espacio flexible al final para aprovechar todo el espacio
 
-        # Panel derecho: Vista previa
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
+        # Panel derecho: Vista previa (inicialmente oculto)
+        self.right_panel = QWidget()
+        right_layout = QVBoxLayout(self.right_panel)
 
         preview_label = QLabel("Vista Previa")
         preview_label.setAlignment(Qt.AlignCenter)
@@ -121,7 +121,7 @@ class TransformarWindow(QMainWindow):
         preview_font.setPointSize(16)
         preview_font.setBold(True)
         preview_label.setFont(preview_font)
-        preview_label.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
+        preview_label.setStyleSheet("color: #2c3e50;")
 
         right_layout.addWidget(preview_label)
 
@@ -129,9 +129,51 @@ class TransformarWindow(QMainWindow):
         self.pdf_viewer = PDFViewer()
         right_layout.addWidget(self.pdf_viewer)
 
+        # Panel de información (mostrado cuando no hay PDF cargado)
+        self.info_panel = QWidget()
+        info_layout = QVBoxLayout(self.info_panel)
+
+        # Mensaje de bienvenida
+        welcome_label = QLabel("Bienvenido al Transformador de Constancias")
+        welcome_label.setAlignment(Qt.AlignCenter)
+        welcome_font = QFont()
+        welcome_font.setPointSize(18)
+        welcome_font.setBold(True)
+        welcome_label.setFont(welcome_font)
+        welcome_label.setStyleSheet("color: #3498db;")
+
+        # Instrucciones
+        instructions_label = QLabel(
+            "Para comenzar, siga estos pasos:\n\n"
+            "1. Seleccione un archivo PDF de constancia usando el botón 'Seleccionar PDF'\n"
+            "2. Revise la información extraída del PDF\n"
+            "3. Elija el tipo de constancia que desea generar\n"
+            "4. Configure las opciones adicionales\n"
+            "5. Haga clic en 'TRANSFORMAR CONSTANCIA' para generar la nueva constancia\n\n"
+            "Una vez cargado el PDF, aparecerá una vista previa en esta área."
+        )
+        instructions_label.setAlignment(Qt.AlignCenter)
+        instructions_label.setWordWrap(True)
+        instructions_label.setStyleSheet("font-size: 14px; color: #34495e;")
+
+        # Imagen o icono (opcional)
+        icon_label = QLabel()
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setStyleSheet("")
+
+        # Añadir elementos al layout de información
+        info_layout.addWidget(welcome_label)
+        info_layout.addWidget(instructions_label)
+        info_layout.addWidget(icon_label)
+        info_layout.addStretch()
+
+        # Inicialmente mostrar el panel de información y ocultar el panel de vista previa
+        self.right_panel.hide()
+
         # Añadir paneles al layout principal
-        content_layout.addWidget(left_panel, 2)  # Aumentamos el espacio para el panel izquierdo
-        content_layout.addWidget(right_panel, 3)
+        content_layout.addWidget(left_panel, 2)  # Panel izquierdo
+        content_layout.addWidget(self.info_panel, 3)  # Panel de información (inicialmente visible)
+        content_layout.addWidget(self.right_panel, 3)  # Panel de vista previa (inicialmente oculto)
 
         main_layout.addLayout(content_layout)
 
@@ -144,7 +186,7 @@ class TransformarWindow(QMainWindow):
                 font-weight: bold;
                 border: 2px solid #3498db;
                 border-radius: 10px;
-                margin-top: 10px;
+                margin: 10px;
                 padding: 10px;
             }
             QGroupBox::title {
@@ -204,7 +246,7 @@ class TransformarWindow(QMainWindow):
                 font-weight: bold;
                 border: 2px solid #2ecc71;
                 border-radius: 10px;
-                margin-top: 10px;
+                margin: 10px;
                 padding: 10px;
             }
             QGroupBox::title {
@@ -273,7 +315,7 @@ class TransformarWindow(QMainWindow):
                 font-weight: bold;
                 border: 2px solid #e74c3c;
                 border-radius: 10px;
-                margin-top: 10px;
+                margin: 10px;
                 padding: 10px;
             }
             QGroupBox::title {
@@ -336,7 +378,7 @@ class TransformarWindow(QMainWindow):
                 font-weight: bold;
                 border: 2px solid #9b59b6;
                 border-radius: 10px;
-                margin-top: 10px;
+                margin: 10px;
                 padding: 10px;
             }
             QGroupBox::title {
@@ -420,6 +462,9 @@ class TransformarWindow(QMainWindow):
             return
 
         try:
+            # Mostrar un cursor de espera mientras se procesan los datos
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+
             # Extraer datos del PDF
             extractor = PDFExtractor(self.pdf_path)
 
@@ -429,27 +474,55 @@ class TransformarWindow(QMainWindow):
             # Guardar esta información para usarla más tarde
             self.tiene_calificaciones = tiene_calificaciones
 
-            # Actualizar la interfaz según si tiene calificaciones o no
-            self.actualizar_opciones_segun_calificaciones(tiene_calificaciones)
-
             # Usar el tipo de constancia seleccionado actualmente
             tipo_constancia = self.get_selected_type()
             incluir_foto = self.check_foto.isChecked()
 
             # Extraer todos los datos
-            self.pdf_data = extractor.extraer_todos_datos(
-                incluir_foto=incluir_foto,
-                tipo_constancia_solicitado=tipo_constancia
-            )
+            try:
+                self.pdf_data = extractor.extraer_todos_datos(
+                    incluir_foto=incluir_foto,
+                    tipo_constancia_solicitado=tipo_constancia
+                )
+            except ValueError as ve:
+                # Si hay un error específico de validación (como falta de calificaciones),
+                # cambiar a constancia de estudios y reintentar
+                if "sin calificaciones" in str(ve):
+                    print(f"Advertencia: {str(ve)}. Cambiando a constancia de estudios.")
+                    self.radio_estudio.setChecked(True)
+                    tipo_constancia = "estudio"
+                    self.pdf_data = extractor.extraer_todos_datos(
+                        incluir_foto=incluir_foto,
+                        tipo_constancia_solicitado=tipo_constancia
+                    )
+                else:
+                    # Si es otro tipo de error de validación, propagarlo
+                    raise
+
+            # Restaurar el cursor normal
+            QApplication.restoreOverrideCursor()
+
+            # Mostrar información sobre el contenido del PDF
+            self.mostrar_info_contenido_pdf()
+
+            # Actualizar la interfaz según si tiene calificaciones o no
+            self.actualizar_opciones_segun_calificaciones(tiene_calificaciones)
 
             # Habilitar botones
             self.btn_transformar.setEnabled(True)
             self.btn_guardar_datos.setEnabled(True)
 
+            # Mostrar el panel de vista previa y ocultar el panel de información
+            self.info_panel.hide()
+            self.right_panel.show()
+
             # Actualizar vista previa
             self.update_preview()
 
         except Exception as e:
+            # Restaurar el cursor normal en caso de error
+            QApplication.restoreOverrideCursor()
+
             QMessageBox.critical(self, "Error", f"Error al extraer datos del PDF: {str(e)}")
             self.btn_transformar.setEnabled(False)
             self.btn_guardar_datos.setEnabled(False)
@@ -463,6 +536,96 @@ class TransformarWindow(QMainWindow):
         elif self.radio_traslado.isChecked():
             return "traslado"
         return "estudio"  # Por defecto
+
+    def mostrar_info_contenido_pdf(self):
+        """Muestra información sobre el contenido del PDF cargado"""
+        # Crear un mensaje con la información del PDF
+        mensaje = "<b>Información del PDF cargado:</b><br><br>"
+
+        # Información sobre datos personales
+        if self.pdf_data:
+            mensaje += "<b>Datos personales:</b> <span style='color: green;'>Disponibles</span><br>"
+            mensaje += f"<b>Nombre:</b> {self.pdf_data.get('nombre', 'No disponible')}<br>"
+            mensaje += f"<b>CURP:</b> {self.pdf_data.get('curp', 'No disponible')}<br>"
+
+            if self.pdf_data.get('matricula'):
+                mensaje += f"<b>Matrícula:</b> {self.pdf_data.get('matricula')}<br>"
+
+            if self.pdf_data.get('nacimiento'):
+                mensaje += f"<b>Fecha de nacimiento:</b> {self.pdf_data.get('nacimiento')}<br>"
+
+            # Datos escolares
+            mensaje += "<br><b>Datos escolares:</b><br>"
+            mensaje += f"<b>Grado:</b> {self.pdf_data.get('grado', 'No disponible')}<br>"
+            mensaje += f"<b>Grupo:</b> {self.pdf_data.get('grupo', 'No disponible')}<br>"
+            mensaje += f"<b>Turno:</b> {self.pdf_data.get('turno', 'No disponible')}<br>"
+            mensaje += f"<b>Ciclo escolar:</b> {self.pdf_data.get('ciclo', 'No disponible')}<br>"
+        else:
+            mensaje += "<b>Datos personales:</b> <span style='color: red;'>No disponibles</span><br>"
+
+        # Información sobre calificaciones
+        mensaje += "<br><b>Calificaciones:</b> "
+        if self.tiene_calificaciones:
+            mensaje += "<span style='color: green;'>Disponibles</span><br>"
+            mensaje += "Se podrán generar constancias de calificaciones y traslado.<br><br>"
+
+            # Mostrar resumen de calificaciones
+            calificaciones = self.pdf_data.get('calificaciones', [])
+            if calificaciones:
+                mensaje += "<b>Resumen de calificaciones:</b><br>"
+                mensaje += "<table border='1' cellpadding='4' style='border-collapse: collapse; width: 100%;'>"
+                mensaje += "<tr style='background-color: #f2f2f2;'><th>Materia</th><th>P1</th><th>P2</th><th>P3</th><th>Promedio</th></tr>"
+
+                for cal in calificaciones:  # Mostrar todas las calificaciones
+                    mensaje += f"<tr><td>{cal.get('nombre', '')}</td><td align='center'>{cal.get('i', '')}</td><td align='center'>{cal.get('ii', '')}</td><td align='center'>{cal.get('iii', '')}</td><td align='center'><b>{cal.get('promedio', '')}</b></td></tr>"
+
+                mensaje += "</table>"
+            else:
+                # Si tiene_calificaciones es True pero no hay calificaciones en los datos,
+                # intentar extraerlas nuevamente
+                try:
+                    extractor = PDFExtractor(self.pdf_path)
+                    calificaciones_nuevas = extractor.extraer_calificaciones()
+                    if calificaciones_nuevas:
+                        mensaje += "<b>Resumen de calificaciones:</b><br>"
+                        mensaje += "<table border='1' cellpadding='4' style='border-collapse: collapse; width: 100%;'>"
+                        mensaje += "<tr style='background-color: #f2f2f2;'><th>Materia</th><th>P1</th><th>P2</th><th>P3</th><th>Promedio</th></tr>"
+
+                        for cal in calificaciones_nuevas:
+                            mensaje += f"<tr><td>{cal.get('nombre', '')}</td><td align='center'>{cal.get('i', '')}</td><td align='center'>{cal.get('ii', '')}</td><td align='center'>{cal.get('iii', '')}</td><td align='center'><b>{cal.get('promedio', '')}</b></td></tr>"
+
+                        mensaje += "</table>"
+
+                        # Actualizar los datos con las nuevas calificaciones
+                        self.pdf_data['calificaciones'] = calificaciones_nuevas
+                except Exception as e:
+                    mensaje += f"<br><span style='color: red;'>Error al extraer calificaciones: {str(e)}</span><br>"
+        else:
+            mensaje += "<span style='color: red;'>No disponibles</span><br>"
+            mensaje += "Solo se podrán generar constancias de estudios.<br>"
+
+        # Mostrar el mensaje en un diálogo informativo
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Contenido del PDF")
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setText(mensaje)
+        msg_box.setTextFormat(Qt.RichText)
+
+        # Hacer el diálogo más grande
+        msg_box.setMinimumWidth(500)
+        msg_box.setMinimumHeight(400)
+
+        # Aplicar estilo al QMessageBox para evitar advertencias de "Unknown property filter"
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: white;
+            }
+            QLabel {
+                color: black;
+            }
+        """)
+
+        msg_box.exec_()
 
     def actualizar_opciones_segun_calificaciones(self, tiene_calificaciones):
         """
@@ -483,13 +646,7 @@ class TransformarWindow(QMainWindow):
             if self.radio_calificaciones.isChecked():
                 self.radio_estudio.setChecked(True)
 
-            # Mostrar un mensaje informativo
-            QMessageBox.information(
-                self,
-                "Constancia sin calificaciones",
-                "La constancia cargada no contiene calificaciones.\n\n"
-                "No se podrá generar una constancia con calificaciones a partir de ella."
-            )
+            # El mensaje informativo ahora se muestra en mostrar_info_contenido_pdf
         else:
             # Si tiene calificaciones, habilitar todas las opciones
             self.radio_calificaciones.setEnabled(True)
@@ -504,6 +661,20 @@ class TransformarWindow(QMainWindow):
         if not self.pdf_data:
             return
 
+        # Verificar si el tipo seleccionado es compatible con las calificaciones disponibles
+        tipo_constancia = self.get_selected_type()
+        if tipo_constancia in ["calificaciones", "traslado"] and not self.tiene_calificaciones:
+            # Si se seleccionó un tipo que requiere calificaciones pero no hay,
+            # mostrar un mensaje y cambiar a constancia de estudios
+            QMessageBox.warning(
+                self,
+                "Advertencia",
+                f"No se puede generar una constancia de {tipo_constancia} porque la constancia original no contiene calificaciones.\n\n"
+                "Se cambiará automáticamente a constancia de estudios."
+            )
+            self.radio_estudio.setChecked(True)
+
+        # Generar la vista previa
         self.generate_preview()
 
     def generate_preview(self):
@@ -514,7 +685,16 @@ class TransformarWindow(QMainWindow):
         tipo_constancia = self.get_selected_type()
         incluir_foto = self.check_foto.isChecked()
 
+        # Si se seleccionó un tipo que requiere calificaciones pero no hay,
+        # cambiar automáticamente a constancia de estudios
+        if tipo_constancia in ["calificaciones", "traslado"] and not self.tiene_calificaciones:
+            tipo_constancia = "estudio"
+            self.radio_estudio.setChecked(True)
+
         try:
+            # Mostrar un cursor de espera mientras se genera la vista previa
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+
             # Crear un directorio temporal específico para esta vista previa
             temp_dir = tempfile.mkdtemp(prefix="constancia_preview_")
 
@@ -524,8 +704,16 @@ class TransformarWindow(QMainWindow):
             # Crear una copia de los datos para no modificar los originales
             preview_data = self.pdf_data.copy()
 
-            # Actualizar datos según opciones seleccionadas
-            preview_data['mostrar_calificaciones'] = tipo_constancia in ["traslado", "calificaciones"]
+            # Actualizar datos según opciones seleccionadas y disponibilidad de calificaciones
+            preview_data['mostrar_calificaciones'] = (tipo_constancia in ["traslado", "calificaciones"]) and self.tiene_calificaciones
+
+            # Asegurarse de que las calificaciones estén disponibles si se requieren
+            if preview_data['mostrar_calificaciones'] and (not 'calificaciones' in preview_data or not preview_data['calificaciones']):
+                # Si no hay calificaciones en los datos pero se supone que debería haberlas,
+                # intentar extraerlas nuevamente
+                extractor = PDFExtractor(self.pdf_path)
+                calificaciones = extractor.extraer_calificaciones()
+                preview_data['calificaciones'] = calificaciones
 
             # Manejar correctamente la opción de foto
             if incluir_foto:
@@ -556,14 +744,24 @@ class TransformarWindow(QMainWindow):
 
                 # Guardar la ruta del directorio temporal para limpiarlo después
                 self.temp_preview_dir = temp_dir
+
+                # Restaurar el cursor normal
+                QApplication.restoreOverrideCursor()
                 return True
 
             # Limpiar el directorio temporal si algo falló
             self._clean_temp_dir(temp_dir)
+
+            # Restaurar el cursor normal
+            QApplication.restoreOverrideCursor()
             return False
 
         except Exception as e:
+            # Restaurar el cursor normal en caso de error
+            QApplication.restoreOverrideCursor()
+
             print(f"Error al generar vista previa: {e}")
+            QMessageBox.warning(self, "Error", f"Error al generar vista previa: {str(e)}")
             return False
 
     def _clean_temp_dir(self, temp_dir):
@@ -608,29 +806,19 @@ class TransformarWindow(QMainWindow):
             # Crear una copia de los datos para no modificar los originales
             transform_data = self.pdf_data.copy()
 
-            # Actualizar datos según opciones seleccionadas
-            transform_data['mostrar_calificaciones'] = tipo_constancia in ["traslado", "calificaciones"]
+            # Actualizar datos según opciones seleccionadas y disponibilidad de calificaciones
+            transform_data['mostrar_calificaciones'] = (tipo_constancia in ["traslado", "calificaciones"]) and self.tiene_calificaciones
 
             # Verificar si se necesitan calificaciones pero no están disponibles
-            if transform_data['mostrar_calificaciones'] and not self.tiene_calificaciones:
-                # Para constancias de traslado, podemos usar calificaciones de ejemplo
-                if tipo_constancia == "traslado":
-                    # Mostrar advertencia
-                    QMessageBox.warning(
-                        self,
-                        "Advertencia",
-                        "La constancia original no contiene calificaciones, pero se generará una constancia de traslado "
-                        "con calificaciones de ejemplo.\n\n"
-                        "Esto es solo para fines de demostración y no refleja las calificaciones reales del alumno."
-                    )
-                else:
-                    # Para otros tipos que requieren calificaciones, mostrar error
-                    QMessageBox.critical(
-                        self,
-                        "Error",
-                        "No se puede generar una constancia que requiere calificaciones porque la constancia original no las contiene."
-                    )
-                    return
+            if (tipo_constancia in ["traslado", "calificaciones"]) and not self.tiene_calificaciones:
+                # Mostrar error para cualquier tipo que requiera calificaciones
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"No se puede generar una constancia de {tipo_constancia} porque la constancia original no contiene calificaciones.\n\n"
+                    "Por favor, seleccione otro tipo de constancia o cargue un PDF que contenga calificaciones."
+                )
+                return
 
             # Manejar correctamente la opción de foto
             if incluir_foto:
@@ -702,7 +890,13 @@ class TransformarWindow(QMainWindow):
 
             # Crear un diálogo personalizado para mostrar y confirmar los datos
             from app.ui.confirmar_datos_dialog import ConfirmarDatosDialog
-            dialog = ConfirmarDatosDialog(self, datos_alumno, self.pdf_path, incluir_foto)
+            dialog = ConfirmarDatosDialog(
+                self,
+                datos_alumno,
+                self.pdf_path,
+                incluir_foto,
+                tiene_calificaciones=self.tiene_calificaciones
+            )
             dialog.setWindowTitle("Confirmar Datos del Alumno")
 
             # Ejecutar el diálogo y procesar el resultado

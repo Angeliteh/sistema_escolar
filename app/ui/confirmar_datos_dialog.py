@@ -2,31 +2,32 @@
 Diálogo para confirmar los datos extraídos de un PDF antes de guardarlos
 """
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QGroupBox, QScrollArea, QWidget, QFrame,
-    QMessageBox, QComboBox, QCheckBox
+    QMessageBox
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QPixmap
+from PyQt5.QtGui import QFont
 
 from app.services.constancia_service import ConstanciaService
-from app.core.utils import format_curp, format_name
+from app.core.utils import format_curp
 from app.core.config import Config
 
 class ConfirmarDatosDialog(QDialog):
     """Diálogo para confirmar los datos extraídos de un PDF antes de guardarlos"""
 
-    def __init__(self, parent=None, datos=None, pdf_path=None, incluir_foto=False):
+    def __init__(self, parent=None, datos=None, pdf_path=None, incluir_foto=False, tiene_calificaciones=False):
         super().__init__(parent)
         self.setWindowTitle("Confirmar Datos")
         self.setMinimumWidth(800)
         self.setMinimumHeight(600)
-        
+
         self.datos = datos or {}
         self.pdf_path = pdf_path
         self.incluir_foto = incluir_foto
+        self.tiene_calificaciones = tiene_calificaciones
         self.constancia_service = ConstanciaService()
-        
+
         self.setup_ui()
         self.cargar_datos()
 
@@ -46,7 +47,7 @@ class ConfirmarDatosDialog(QDialog):
         title_label.setStyleSheet("color: #2c3e50; margin-bottom: 20px;")
 
         main_layout.addWidget(title_label)
-        
+
         # Instrucciones
         instrucciones = QLabel("Por favor, revise y corrija los datos extraídos del PDF antes de guardarlos en la base de datos.")
         instrucciones.setWordWrap(True)
@@ -133,9 +134,47 @@ class ConfirmarDatosDialog(QDialog):
         datos_escolares_layout.addWidget(self.escuela_edit)
         datos_escolares_layout.addWidget(self.cct_edit)
 
+        # Sección de calificaciones (solo si están disponibles)
+        self.calificaciones_group = QGroupBox("Calificaciones")
+        self.calificaciones_group.setStyleSheet("""
+            QGroupBox {
+                font-size: 16px;
+                font-weight: bold;
+                border: 2px solid #e74c3c;
+                border-radius: 10px;
+                margin-top: 15px;
+                padding: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 10px;
+                color: #e74c3c;
+            }
+        """)
+
+        calificaciones_layout = QVBoxLayout(self.calificaciones_group)
+
+        # Etiqueta para mostrar si hay calificaciones
+        self.lbl_estado_calificaciones = QLabel()
+        self.lbl_estado_calificaciones.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                padding: 10px;
+                border-radius: 5px;
+            }
+        """)
+        calificaciones_layout.addWidget(self.lbl_estado_calificaciones)
+
+        # Contenedor para la lista de calificaciones
+        self.calificaciones_container = QWidget()
+        self.calificaciones_container_layout = QVBoxLayout(self.calificaciones_container)
+        calificaciones_layout.addWidget(self.calificaciones_container)
+
         # Añadir secciones al layout del scroll
         scroll_layout.addWidget(datos_personales)
         scroll_layout.addWidget(datos_escolares)
+        scroll_layout.addWidget(self.calificaciones_group)
         scroll_layout.addStretch()
 
         scroll_area.setWidget(scroll_content)
@@ -240,11 +279,11 @@ class ConfirmarDatosDialog(QDialog):
 
         # Cargar datos personales
         self.nombre_edit.campo_editable.setText(self.datos.get('nombre', ''))
-        
+
         curp = self.datos.get('curp', '')
         curp_formateado = format_curp(curp) if curp else ''
         self.curp_edit.campo_editable.setText(curp_formateado)
-        
+
         self.matricula_edit.campo_editable.setText(self.datos.get('matricula', ''))
         self.fecha_nacimiento_edit.campo_editable.setText(self.datos.get('nacimiento', ''))
 
@@ -255,6 +294,75 @@ class ConfirmarDatosDialog(QDialog):
         self.ciclo_edit.campo_editable.setText(self.datos.get('ciclo', Config.CURRENT_SCHOOL_YEAR))
         self.escuela_edit.campo_editable.setText(self.datos.get('escuela', Config.SCHOOL_NAME))
         self.cct_edit.campo_editable.setText(self.datos.get('cct', Config.SCHOOL_CCT))
+
+        # Cargar calificaciones si están disponibles
+        self.cargar_calificaciones()
+
+    def cargar_calificaciones(self):
+        """Carga y muestra las calificaciones si están disponibles"""
+        # Limpiar el contenedor de calificaciones
+        for i in reversed(range(self.calificaciones_container_layout.count())):
+            widget = self.calificaciones_container_layout.itemAt(i).widget()
+            if widget:
+                widget.deleteLater()
+
+        # Verificar si hay calificaciones
+        calificaciones = self.datos.get('calificaciones', [])
+
+        if self.tiene_calificaciones:
+            # Mostrar mensaje de que hay calificaciones
+            self.lbl_estado_calificaciones.setText("El PDF contiene calificaciones que se guardarán en la base de datos.")
+            self.lbl_estado_calificaciones.setStyleSheet("""
+                QLabel {
+                    font-size: 14px;
+                    padding: 10px;
+                    border-radius: 5px;
+                    background-color: #d5f5e3;
+                    color: #27ae60;
+                }
+            """)
+
+            # Crear tabla de calificaciones
+            for calificacion in calificaciones:
+                # Crear widget para cada calificación
+                cal_widget = QWidget()
+                cal_layout = QHBoxLayout(cal_widget)
+                cal_layout.setContentsMargins(0, 0, 0, 0)
+
+                # Nombre de la materia
+                lbl_materia = QLabel(calificacion.get('nombre', ''))
+                lbl_materia.setStyleSheet("font-weight: bold; min-width: 250px;")
+
+                # Calificaciones por periodo
+                lbl_p1 = QLabel(f"P1: {calificacion.get('i', 0)}")
+                lbl_p2 = QLabel(f"P2: {calificacion.get('ii', 0)}")
+                lbl_p3 = QLabel(f"P3: {calificacion.get('iii', 0)}")
+
+                # Promedio
+                lbl_promedio = QLabel(f"Promedio: {calificacion.get('promedio', 0)}")
+                lbl_promedio.setStyleSheet("font-weight: bold; color: #e74c3c;")
+
+                # Añadir a layout
+                cal_layout.addWidget(lbl_materia)
+                cal_layout.addWidget(lbl_p1)
+                cal_layout.addWidget(lbl_p2)
+                cal_layout.addWidget(lbl_p3)
+                cal_layout.addWidget(lbl_promedio)
+
+                # Añadir al contenedor
+                self.calificaciones_container_layout.addWidget(cal_widget)
+        else:
+            # Mostrar mensaje de que no hay calificaciones
+            self.lbl_estado_calificaciones.setText("El PDF no contiene calificaciones. No se guardarán calificaciones en la base de datos.")
+            self.lbl_estado_calificaciones.setStyleSheet("""
+                QLabel {
+                    font-size: 14px;
+                    padding: 10px;
+                    border-radius: 5px;
+                    background-color: #fadbd8;
+                    color: #c0392b;
+                }
+            """)
 
     def guardar_datos(self):
         """Guarda los datos en la base de datos"""
@@ -270,29 +378,34 @@ class ConfirmarDatosDialog(QDialog):
                 'turno': self.turno_edit.campo_editable.text(),
                 'ciclo': self.ciclo_edit.campo_editable.text(),
                 'escuela': self.escuela_edit.campo_editable.text(),
-                'cct': self.cct_edit.campo_editable.text()
+                'cct': self.cct_edit.campo_editable.text(),
+                'tiene_calificaciones': self.tiene_calificaciones
             }
-            
+
+            # Asegurarse de que las calificaciones se incluyan si están disponibles
+            if self.tiene_calificaciones and 'calificaciones' in self.datos:
+                datos_actualizados['calificaciones'] = self.datos['calificaciones']
+
             # Validar datos básicos
             if not datos_actualizados['nombre']:
                 QMessageBox.warning(self, "Error", "El nombre del alumno no puede estar vacío.")
                 return
-                
+
             if not datos_actualizados['curp'] or len(datos_actualizados['curp']) != 18:
                 QMessageBox.warning(self, "Error", "La CURP debe tener 18 caracteres.")
                 return
-            
+
             # Guardar los datos en la base de datos
             success, message, _ = self.constancia_service.guardar_alumno_desde_pdf(
-                self.pdf_path, 
+                self.pdf_path,
                 incluir_foto=self.incluir_foto,
                 datos_override=datos_actualizados
             )
-            
+
             if success:
                 self.accept()  # Cerrar el diálogo con éxito
             else:
                 QMessageBox.warning(self, "Error", message)
-                
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al guardar los datos: {str(e)}")

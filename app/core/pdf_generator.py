@@ -95,16 +95,18 @@ class PDFGenerator:
             datos["calificaciones"] = []  # Vaciar las calificaciones para asegurarnos
 
         elif tipo_constancia in ["calificaciones", "traslado"]:
-            datos["mostrar_calificaciones"] = True
+            # Verificar si se debe mostrar calificaciones (respetando el valor que viene de la interfaz)
+            if "mostrar_calificaciones" not in datos:
+                # Si no se especificó, verificar si hay calificaciones disponibles
+                if "tiene_calificaciones" in datos:
+                    datos["mostrar_calificaciones"] = datos["tiene_calificaciones"]
+                else:
+                    # Si no se especificó si tiene calificaciones, verificar si hay calificaciones en los datos
+                    datos["mostrar_calificaciones"] = "calificaciones" in datos and datos["calificaciones"] and len(datos["calificaciones"]) > 0
 
-            # Verificación adicional para asegurarnos de que haya calificaciones
-            if "calificaciones" not in datos or not datos["calificaciones"]:
-                datos["calificaciones"] = [
-                    {"nombre": "LENGUAJES", "i": 8, "ii": 8, "iii": 8, "promedio": 8.0},
-                    {"nombre": "SABERES Y PENSAMIENTOS CIENTÍFICOS", "i": 7, "ii": 8, "iii": 0, "promedio": 7.5},
-                    {"nombre": "ETICA, NATURALEZA Y SOCIEDADES", "i": 7, "ii": 9, "iii": 0, "promedio": 8.0},
-                    {"nombre": "DE LO HUMANO Y LO COMUNITARIO", "i": 7, "ii": 9, "iii": 0, "promedio": 8.0},
-                ]
+            # Asegurarse de que haya una lista de calificaciones (aunque sea vacía)
+            if "calificaciones" not in datos:
+                datos["calificaciones"] = []
 
         try:
             # Cargar la plantilla

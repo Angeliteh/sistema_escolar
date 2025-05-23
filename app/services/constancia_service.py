@@ -201,10 +201,27 @@ class ConstanciaService:
 
             # Obtener datos escolares más recientes
             datos_escolares_list = self.datos_escolares_repository.get_by_alumno(alumno_id, latest_only=True)
-            if not datos_escolares_list:
-                return False, f"No se encontraron datos escolares para el alumno con ID {alumno_id}", None
 
-            datos_escolares = datos_escolares_list[0]
+            # Para constancias de calificaciones o traslado, necesitamos datos escolares con calificaciones
+            if tipo_constancia in ["calificaciones", "traslado"]:
+                if not datos_escolares_list:
+                    return False, f"No se encontraron datos escolares para el alumno con ID {alumno_id}", {
+                        "alumno": alumno.to_dict(),
+                        "error_tipo": "datos_escolares_faltantes"
+                    }
+
+                # Verificar que haya calificaciones
+                datos_escolares = datos_escolares_list[0]
+                if not datos_escolares.calificaciones or len(datos_escolares.calificaciones) == 0:
+                    return False, f"El alumno no tiene calificaciones registradas, necesarias para constancias de {tipo_constancia}", {
+                        "alumno": alumno.to_dict(),
+                        "error_tipo": "calificaciones_faltantes"
+                    }
+
+            # Para otros tipos de constancias, podemos continuar con datos mínimos
+            datos_escolares = None
+            if datos_escolares_list:
+                datos_escolares = datos_escolares_list[0]
 
             # Preparar datos para la constancia
             datos = {
@@ -212,16 +229,34 @@ class ConstanciaService:
                 "nombre": alumno.nombre,
                 "matricula": alumno.matricula,
                 "nacimiento": alumno.fecha_nacimiento,
-                "grado": datos_escolares.grado,
-                "grupo": datos_escolares.grupo,
-                "turno": datos_escolares.turno,
-                "ciclo": datos_escolares.ciclo_escolar,
-                "escuela": datos_escolares.escuela or Config.SCHOOL_NAME,
-                "cct": datos_escolares.cct or Config.SCHOOL_CCT,
-                "calificaciones": datos_escolares.calificaciones,
                 "mostrar_calificaciones": tipo_constancia in ["traslado", "calificaciones"],
                 "has_photo": False  # Por defecto, no incluir foto
             }
+
+            # Añadir datos escolares si están disponibles
+            if datos_escolares:
+                datos.update({
+                    "grado": datos_escolares.grado,
+                    "grupo": datos_escolares.grupo,
+                    "turno": datos_escolares.turno,
+                    "ciclo": datos_escolares.ciclo_escolar,
+                    "escuela": datos_escolares.escuela or Config.SCHOOL_NAME,
+                    "cct": datos_escolares.cct or Config.SCHOOL_CCT,
+                    "calificaciones": datos_escolares.calificaciones,
+                    "tiene_calificaciones": bool(datos_escolares.calificaciones and len(datos_escolares.calificaciones) > 0)
+                })
+            else:
+                # Valores predeterminados para datos escolares
+                datos.update({
+                    "grado": "",
+                    "grupo": "",
+                    "turno": "MATUTINO",
+                    "ciclo": Config.CURRENT_SCHOOL_YEAR,
+                    "escuela": Config.SCHOOL_NAME,
+                    "cct": Config.SCHOOL_CCT,
+                    "calificaciones": [],
+                    "tiene_calificaciones": False
+                })
 
             # Verificar si hay foto y si se debe incluir
             foto_path = os.path.join(Config.PHOTOS_DIR, f"{alumno.curp}.jpg")
@@ -407,8 +442,20 @@ class ConstanciaService:
                 # Verificar si ya existen datos escolares para este alumno
                 datos_escolares_list = self.datos_escolares_repository.get_by_alumno(alumno.id, latest_only=True)
 
-                # Convertir calificaciones a lista si es necesario
+                # Asegurarse de que las calificaciones sean una lista válida
                 calificaciones = datos.get("calificaciones", [])
+
+                # Verificar si hay calificaciones pero están vacías o son None
+                if not calificaciones and "tiene_calificaciones" in datos and datos["tiene_calificaciones"]:
+                    # Intentar extraer calificaciones nuevamente
+                    try:
+                        extractor = PDFExtractor(pdf_path)
+                        calificaciones = extractor.extraer_calificaciones()
+                        print(f"Calificaciones extraídas nuevamente: {calificaciones}")
+                    except Exception as e:
+                        print(f"Error al extraer calificaciones: {e}")
+
+                # Convertir calificaciones a lista si es necesario
                 if isinstance(calificaciones, dict):
                     calificaciones_list = []
                     for asignatura, calificacion in calificaciones.items():
@@ -417,6 +464,10 @@ class ConstanciaService:
                             "calificacion": calificacion
                         })
                     calificaciones = calificaciones_list
+
+                # Asegurarse de que calificaciones sea una lista (no None o cadena vacía)
+                if calificaciones is None:
+                    calificaciones = []
 
                 if datos_escolares_list:
                     # Actualizar datos escolares existentes
@@ -466,6 +517,7 @@ class ConstanciaService:
             return False, f"Error al guardar datos del alumno: {str(e)}", None
 
     def close(self):
-        """Cierra la conexión a la base de datos"""
-        if self.conn:
+        """Cierra la conexión a la base de datos si es propia, no si es compartida"""
+        # Solo cerrar la conexión si fue creada por este servicio (no compartida)
+        if self.conn and not hasattr(self, 'shared_connection'):
             self.conn.close()

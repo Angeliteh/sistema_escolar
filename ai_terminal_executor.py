@@ -134,6 +134,8 @@ def create_prompt(user_text):
     - "Genera una constancia de estudios para el alumno con ID 5" → {{"accion": "generar_constancia", "parametros": {{"alumno_id": 5, "tipo": "estudio", "incluir_foto": false}}}}
     - "Genera una constancia de calificaciones para Juan Pérez" → {{"accion": "generar_constancia", "parametros": {{"nombre": "Juan Pérez", "tipo": "calificaciones", "incluir_foto": false}}}}
     - "Registra a María López con CURP LOPM010101MDFXXX01 en 3° grado grupo B turno matutino" → {{"accion": "registrar_alumno", "parametros": {{"nombre": "María López", "curp": "LOPM010101MDFXXX01", "grado": 3, "grupo": "B", "turno": "MATUTINO"}}}}
+    - "Actualiza los datos del alumno Juan Pérez, cambia su grado a 4 y su grupo a B" → {{"accion": "actualizar_alumno", "parametros": {{"nombre": "Juan Pérez", "datos": {{"grado": 4, "grupo": "B"}}}}}}
+    - "Elimina al alumno Carlos López" → {{"accion": "eliminar_alumno", "parametros": {{"nombre": "Carlos López"}}}}
 
     Si no puedes determinar la acción o faltan parámetros esenciales, responde con:
     {{"accion": "desconocida", "parametros": {{"mensaje": "Explicación del problema"}}}}

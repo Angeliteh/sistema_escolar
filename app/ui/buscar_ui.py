@@ -5,10 +5,11 @@ import os
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QDialog, QComboBox, QCheckBox, QLineEdit, QGroupBox, QScrollArea, QFrame
+    QDialog, QComboBox, QCheckBox, QLineEdit, QGroupBox, QScrollArea, QFrame,
+    QSizePolicy
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QBrush, QColor
 
 from app.core.service_provider import ServiceProvider
 from app.core.utils import open_file_with_default_app, format_curp
@@ -131,9 +132,99 @@ class DetallesAlumnoDialog(QDialog):
 
 
 
+        # Sección de calificaciones
+        self.calificaciones_group = QGroupBox("Calificaciones")
+        self.calificaciones_group.setStyleSheet("""
+            QGroupBox {
+                font-size: 16px;
+                font-weight: bold;
+                border: 2px solid #e74c3c;
+                border-radius: 10px;
+                margin-top: 15px;
+                padding: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 10px;
+                color: #e74c3c;
+            }
+        """)
+
+        calificaciones_layout = QVBoxLayout(self.calificaciones_group)
+
+        # Etiqueta para mostrar si hay calificaciones
+        self.lbl_estado_calificaciones = QLabel()
+        self.lbl_estado_calificaciones.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                padding: 10px;
+                border-radius: 5px;
+            }
+        """)
+        calificaciones_layout.addWidget(self.lbl_estado_calificaciones)
+
+        # Tabla para mostrar las calificaciones
+        self.tabla_calificaciones = QTableWidget()
+        self.tabla_calificaciones.setColumnCount(5)
+        self.tabla_calificaciones.setHorizontalHeaderLabels(["Materia", "P1", "P2", "P3", "Promedio"])
+
+        # Configurar la tabla
+        self.tabla_calificaciones.setAlternatingRowColors(True)
+        self.tabla_calificaciones.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tabla_calificaciones.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)  # Materia (se estira)
+        self.tabla_calificaciones.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)  # P1
+        self.tabla_calificaciones.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)  # P2
+        self.tabla_calificaciones.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)  # P3
+        self.tabla_calificaciones.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Promedio
+
+        # Desactivar la barra de desplazamiento vertical para mostrar todas las filas
+        self.tabla_calificaciones.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # Ajustar el tamaño de la tabla para mostrar todas las filas
+        self.tabla_calificaciones.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        # Estilo de la tabla
+        self.tabla_calificaciones.setStyleSheet("""
+            QTableWidget {
+                border: 2px solid #e74c3c;
+                border-radius: 8px;
+                background-color: white;
+                gridline-color: #ecf0f1;
+                selection-background-color: #f9e4e4;
+                selection-color: #c0392b;
+            }
+            QTableWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid #ecf0f1;
+                font-size: 12px;
+            }
+            QTableWidget::item:selected {
+                background-color: #f9e4e4;
+                color: #c0392b;
+            }
+            QHeaderView::section {
+                background-color: #e74c3c;
+                color: white;
+                padding: 8px;
+                border: none;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QHeaderView::section:first {
+                border-top-left-radius: 6px;
+            }
+            QHeaderView::section:last {
+                border-top-right-radius: 6px;
+            }
+        """)
+
+        calificaciones_layout.addWidget(self.tabla_calificaciones)
+
         # Añadir secciones al layout del scroll
         scroll_layout.addWidget(datos_personales)
         scroll_layout.addWidget(datos_escolares)
+        scroll_layout.addWidget(self.calificaciones_group)
         scroll_layout.addStretch()
 
         scroll_area.setWidget(scroll_content)
@@ -246,9 +337,101 @@ class DetallesAlumnoDialog(QDialog):
             self.lbl_escuela.campo_editable.setText(self.alumno_data.get('escuela', ''))
             self.lbl_cct.campo_editable.setText(self.alumno_data.get('cct', ''))
 
+            # Cargar calificaciones
+            self.cargar_calificaciones()
+
         except Exception as e:
             self.title_label.setText("Error al cargar datos")
             QMessageBox.critical(self, "Error", f"Error al cargar datos del alumno: {str(e)}")
+
+    def cargar_calificaciones(self):
+        """Carga y muestra las calificaciones del alumno"""
+        # Limpiar la tabla de calificaciones
+        self.tabla_calificaciones.setRowCount(0)
+
+        # Verificar si hay calificaciones
+        calificaciones = self.alumno_data.get('calificaciones', [])
+
+        if calificaciones and len(calificaciones) > 0:
+            # Mostrar mensaje de que hay calificaciones
+            self.lbl_estado_calificaciones.setText("El alumno tiene calificaciones registradas.")
+            self.lbl_estado_calificaciones.setStyleSheet("""
+                QLabel {
+                    font-size: 14px;
+                    padding: 10px;
+                    border-radius: 5px;
+                    background-color: #d5f5e3;
+                    color: #27ae60;
+                }
+            """)
+
+            # Llenar la tabla con las calificaciones
+            self.tabla_calificaciones.setRowCount(len(calificaciones))
+
+            for row, cal in enumerate(calificaciones):
+                # Nombre de la materia
+                nombre_item = QTableWidgetItem(cal.get('nombre', ''))
+                self.tabla_calificaciones.setItem(row, 0, nombre_item)
+
+                # Calificaciones por periodo
+                p1_item = QTableWidgetItem(str(cal.get('i', '')))
+                p1_item.setTextAlignment(Qt.AlignCenter)
+                self.tabla_calificaciones.setItem(row, 1, p1_item)
+
+                p2_item = QTableWidgetItem(str(cal.get('ii', '')))
+                p2_item.setTextAlignment(Qt.AlignCenter)
+                self.tabla_calificaciones.setItem(row, 2, p2_item)
+
+                p3_item = QTableWidgetItem(str(cal.get('iii', '')))
+                p3_item.setTextAlignment(Qt.AlignCenter)
+                self.tabla_calificaciones.setItem(row, 3, p3_item)
+
+                # Promedio
+                promedio_item = QTableWidgetItem(str(cal.get('promedio', '')))
+                promedio_item.setTextAlignment(Qt.AlignCenter)
+                promedio_item.setForeground(QBrush(QColor("#e74c3c")))  # Color rojo para el promedio
+                promedio_item.setFont(QFont("Arial", 10, QFont.Bold))
+                self.tabla_calificaciones.setItem(row, 4, promedio_item)
+
+            # Ajustar altura de las filas
+            for row in range(self.tabla_calificaciones.rowCount()):
+                self.tabla_calificaciones.setRowHeight(row, 30)
+
+            # Ajustar la altura total de la tabla para mostrar todas las filas
+            header_height = self.tabla_calificaciones.horizontalHeader().height()
+            content_height = sum(self.tabla_calificaciones.rowHeight(row) for row in range(self.tabla_calificaciones.rowCount()))
+            total_height = header_height + content_height + 4  # +4 para el borde y un poco de espacio extra
+
+            # Limitar la altura máxima a 300px para evitar que la tabla sea demasiado grande
+            max_height = 300
+            if total_height > max_height and self.tabla_calificaciones.rowCount() > 5:
+                # Si hay muchas filas, permitir scroll vertical
+                self.tabla_calificaciones.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+                self.tabla_calificaciones.setFixedHeight(max_height)
+            else:
+                # Si hay pocas filas, mostrar todas sin scroll
+                self.tabla_calificaciones.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                self.tabla_calificaciones.setFixedHeight(total_height)
+
+            # Mostrar la tabla
+            self.tabla_calificaciones.show()
+            self.calificaciones_group.show()
+        else:
+            # Mostrar mensaje de que no hay calificaciones
+            self.lbl_estado_calificaciones.setText("El alumno no tiene calificaciones registradas.")
+            self.lbl_estado_calificaciones.setStyleSheet("""
+                QLabel {
+                    font-size: 14px;
+                    padding: 10px;
+                    border-radius: 5px;
+                    background-color: #fadbd8;
+                    color: #c0392b;
+                }
+            """)
+
+            # Ocultar la tabla
+            self.tabla_calificaciones.hide()
+            self.calificaciones_group.show()
 
 
 

@@ -80,7 +80,7 @@ class AlumnoService:
 
         return result
 
-    def registrar_alumno(self, datos: Dict[str, Any]) -> Tuple[bool, str, Optional[Alumno]]:
+    def registrar_alumno(self, datos: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         """
         Registra un nuevo alumno
 
@@ -88,27 +88,27 @@ class AlumnoService:
             datos: Diccionario con los datos del alumno
 
         Returns:
-            Tupla con (éxito, mensaje, alumno)
+            Tupla con (éxito, mensaje, diccionario con datos del alumno)
         """
         # Validar datos
         if not datos.get("curp"):
-            return False, "La CURP es obligatoria", None
+            return False, "La CURP es obligatoria", {}
 
         if not datos.get("nombre"):
-            return False, "El nombre es obligatorio", None
+            return False, "El nombre es obligatorio", {}
 
         # Formatear datos
         curp = format_curp(datos.get("curp", ""))
-        nombre = format_name(datos.get("nombre", ""))
+        nombre = format_name(datos.get("nombre", ""), uppercase=True, remove_accents=True)
 
         # Validar CURP
         if not is_valid_curp(curp):
-            return False, "La CURP no tiene un formato válido", None
+            return False, "La CURP no tiene un formato válido", {}
 
         # Verificar si ya existe un alumno con esa CURP
         alumno_existente = self.alumno_repository.get_by_curp(curp)
         if alumno_existente:
-            return False, f"Ya existe un alumno con la CURP {curp}", alumno_existente
+            return False, f"Ya existe un alumno con la CURP {curp}", alumno_existente.to_dict()
 
         try:
             # Crear alumno
@@ -121,6 +121,9 @@ class AlumnoService:
 
             # Guardar alumno
             alumno = self.alumno_repository.save(alumno)
+
+            # Convertir a diccionario para el resultado
+            alumno_dict = alumno.to_dict()
 
             # Si hay datos escolares, guardarlos
             if datos.get("grado") and datos.get("grupo"):
@@ -135,12 +138,22 @@ class AlumnoService:
                     calificaciones=datos.get("calificaciones", [])
                 )
 
-                self.datos_escolares_repository.save(datos_escolares)
+                datos_escolares = self.datos_escolares_repository.save(datos_escolares)
 
-            return True, "Alumno registrado correctamente", alumno
+                # Añadir datos escolares al diccionario de resultado
+                datos_escolares_dict = datos_escolares.to_dict()
+                # Eliminar campos redundantes
+                if 'id' in datos_escolares_dict:
+                    del datos_escolares_dict['id']
+                if 'alumno_id' in datos_escolares_dict:
+                    del datos_escolares_dict['alumno_id']
+
+                alumno_dict.update(datos_escolares_dict)
+
+            return True, "Alumno registrado correctamente", {"alumno": alumno_dict}
 
         except Exception as e:
-            return False, f"Error al registrar alumno: {str(e)}", None
+            return False, f"Error al registrar alumno: {str(e)}", {}
 
     def actualizar_alumno_datos(self, alumno_id: int, datos: Dict[str, Any]) -> Tuple[bool, str, Optional[Alumno]]:
         """
@@ -161,7 +174,7 @@ class AlumnoService:
         try:
             # Actualizar datos del alumno
             if "nombre" in datos:
-                alumno.nombre = format_name(datos["nombre"])
+                alumno.nombre = format_name(datos["nombre"], uppercase=True, remove_accents=True)
 
             if "curp" in datos:
                 curp = format_curp(datos["curp"])
@@ -286,12 +299,15 @@ class AlumnoService:
 
             alumno_dict = alumno.to_dict()
             if datos_escolares:
-                alumno_dict.update({
-                    "ciclo_escolar": datos_escolares[0].ciclo_escolar,
-                    "grado": datos_escolares[0].grado,
-                    "grupo": datos_escolares[0].grupo,
-                    "turno": datos_escolares[0].turno
-                })
+                datos_dict = datos_escolares[0].to_dict()
+                # Eliminar campos redundantes
+                if 'id' in datos_dict:
+                    del datos_dict['id']
+                if 'alumno_id' in datos_dict:
+                    del datos_dict['alumno_id']
+
+                # Actualizar el diccionario del alumno con todos los datos escolares
+                alumno_dict.update(datos_dict)
 
             result.append(alumno_dict)
 
@@ -317,12 +333,15 @@ class AlumnoService:
 
             alumno_dict = alumno.to_dict()
             if datos_escolares:
-                alumno_dict.update({
-                    "ciclo_escolar": datos_escolares[0].ciclo_escolar,
-                    "grado": datos_escolares[0].grado,
-                    "grupo": datos_escolares[0].grupo,
-                    "turno": datos_escolares[0].turno
-                })
+                datos_dict = datos_escolares[0].to_dict()
+                # Eliminar campos redundantes
+                if 'id' in datos_dict:
+                    del datos_dict['id']
+                if 'alumno_id' in datos_dict:
+                    del datos_dict['alumno_id']
+
+                # Actualizar el diccionario del alumno con todos los datos escolares
+                alumno_dict.update(datos_dict)
 
             result.append(alumno_dict)
 
@@ -374,6 +393,18 @@ class AlumnoService:
         """
         constancias = self.constancia_repository.get_by_alumno(alumno_id)
         return [c.to_dict() for c in constancias]
+
+    def get_constancias(self, alumno_id: int) -> List[Dict[str, Any]]:
+        """
+        Obtiene todas las constancias generadas para un alumno (alias para get_constancias_by_alumno_id)
+
+        Args:
+            alumno_id: ID del alumno
+
+        Returns:
+            Lista de constancias generadas
+        """
+        return self.get_constancias_by_alumno_id(alumno_id)
 
     def actualizar_alumno(self, alumno_id: int, datos_personales: Dict[str, Any], datos_escolares: Dict[str, Any] = None) -> bool:
         """
@@ -442,6 +473,7 @@ class AlumnoService:
             return False
 
     def close(self):
-        """Cierra la conexión a la base de datos"""
-        if self.conn:
+        """Cierra la conexión a la base de datos si es propia, no si es compartida"""
+        # Solo cerrar la conexión si fue creada por este servicio (no compartida)
+        if self.conn and not hasattr(self, 'shared_connection'):
             self.conn.close()

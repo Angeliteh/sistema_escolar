@@ -62,6 +62,8 @@ constancias_system/
 - Interfaz gráfica intuitiva con botones grandes
 - Visor de PDF integrado para previsualizar constancias
 - Arquitectura en capas con repositorios y servicios
+- Interfaz de chat con IA para interactuar mediante lenguaje natural
+- Carga y transformación de PDFs desde la interfaz de chat
 
 ## Tipos de Constancias
 
@@ -76,6 +78,8 @@ El sistema puede generar tres tipos de constancias:
 - Python 3.7 o superior
 - PyQt5 para la interfaz gráfica
 - PyMuPDF (fitz) para el visor de PDF
+- Google Generative AI (google-generativeai) para la interfaz de IA
+- API Key de Google Gemini para la interpretación de comandos
 - Otras dependencias listadas en `requirements.txt`
 
 ## Instalación
@@ -91,6 +95,11 @@ pip install -r requirements.txt
    - Descargar desde: https://wkhtmltopdf.org/downloads.html
    - Instalar siguiendo las instrucciones para su sistema operativo
    - Asegurarse de que el ejecutable esté en el PATH del sistema
+
+4. Configurar la API Key de Google Gemini (necesario para la interfaz de IA):
+   - Crear un archivo `.env` en la raíz del proyecto
+   - Añadir la siguiente línea: `GEMINI_API_KEY=tu-api-key-aquí`
+   - Obtener una API Key en: https://ai.google.dev/
 
 Si no se instala wkhtmltopdf, el sistema generará archivos HTML en lugar de PDFs, que pueden ser convertidos a PDF manualmente usando un navegador web.
 
@@ -113,6 +122,25 @@ python main_qt.py
 ```
 
 Desde aquí podrás acceder a todas las funcionalidades del sistema a través de botones grandes e intuitivos.
+
+### Interfaz de Chat con IA
+
+Para utilizar la interfaz de chat con IA:
+
+```
+python ai_chat.py
+```
+
+Esta interfaz incluye:
+- Panel de chat para escribir comandos en lenguaje natural
+- Botón para cargar PDFs
+- Vista previa de constancias generadas
+- Procesamiento de lenguaje natural con Google Gemini
+
+Ejemplos de comandos:
+- "Busca al alumno Ana García"
+- "Genera una constancia de estudios para Carlos López"
+- "Transforma este PDF a formato de calificaciones"
 
 ### Transformar Constancias
 
@@ -155,6 +183,19 @@ Esta interfaz incluye:
 - Funciones para agregar, modificar y eliminar alumnos
 - Generación de constancias
 
+### Pruebas Interactivas de IA
+
+Para ejecutar pruebas interactivas del sistema de IA:
+
+```
+python ai_pruebas_interactivas.py
+```
+
+Esta interfaz permite:
+- Seleccionar escenarios específicos para probar
+- Ejecutar comandos personalizados
+- Ver resultados detallados de las pruebas
+
 ## Arquitectura del Sistema
 
 El sistema sigue una arquitectura en capas que separa claramente las responsabilidades:
@@ -186,6 +227,7 @@ Interfaces gráficas para interactuar con el usuario:
 - `TransformarWindow`: Interfaz para transformar PDFs en constancias
 - `BuscarWindow`: Interfaz para buscar alumnos y generar constancias
 - `AlumnoManagerWindow`: Interfaz para gestionar alumnos
+- `AIChatWindow`: Interfaz de chat con IA para interactuar mediante lenguaje natural
 
 ## Flujo de Funcionamiento
 
@@ -216,6 +258,16 @@ Interfaces gráficas para interactuar con el usuario:
 4. El usuario puede editar datos de alumnos existentes
 5. El usuario puede eliminar alumnos
 6. El usuario puede generar constancias para alumnos seleccionados
+
+### 4. Flujo de Interacción con IA
+
+1. El usuario escribe un comando en lenguaje natural
+2. El sistema interpreta el comando utilizando Google Gemini
+3. El sistema ejecuta la acción correspondiente
+4. Se muestra el resultado en el área de chat
+5. Si se generó una constancia, se muestra en el visor de PDF
+6. El usuario puede cargar PDFs para transformación mediante un botón
+7. El usuario puede solicitar transformaciones del PDF cargado mediante comandos en lenguaje natural
 
 ## Base de Datos
 
