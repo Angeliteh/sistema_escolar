@@ -40,7 +40,7 @@ class ConstanciaService:
         # Asegurar que los directorios necesarios existan
         ensure_directories_exist()
 
-    def generar_constancia_desde_pdf(self, pdf_path: str, tipo_constancia: str, incluir_foto: Optional[bool] = None, guardar_alumno: bool = True) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    def generar_constancia_desde_pdf(self, pdf_path: str, tipo_constancia: str, incluir_foto: Optional[bool] = None, guardar_alumno: bool = True, preview_mode: bool = False, output_dir: Optional[str] = None) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """
         Genera una constancia a partir de un PDF existente
 
@@ -49,6 +49,8 @@ class ConstanciaService:
             tipo_constancia: Tipo de constancia a generar (traslado, estudio, calificaciones)
             incluir_foto: Si se debe incluir la foto del alumno
             guardar_alumno: Si se debe guardar el alumno en la base de datos
+            preview_mode: Si es True, genera una vista previa temporal sin guardar en la base de datos
+            output_dir: Directorio de salida para la constancia (opcional, solo usado en preview_mode)
 
         Returns:
             Tupla con (éxito, mensaje, datos)
@@ -88,9 +90,9 @@ class ConstanciaService:
                 datos['has_photo'] = False
                 datos['show_placeholder'] = False
 
-            # Buscar o crear alumno si se debe guardar
+            # Buscar o crear alumno si se debe guardar (solo si no estamos en modo vista previa)
             alumno = None
-            if guardar_alumno:
+            if not preview_mode and guardar_alumno:
                 alumno = self.alumno_repository.get_by_curp(datos["curp"])
                 if not alumno:
                     # Crear nuevo alumno con los datos extraídos
@@ -146,14 +148,24 @@ class ConstanciaService:
                         self.datos_escolares_repository.save(datos_escolares)
 
             # Generar constancia
-            output_path = self.pdf_generator.generar_constancia(tipo_constancia, datos)
+            if preview_mode and output_dir:
+                # En modo vista previa, usar el directorio temporal proporcionado
+                output_path = self.pdf_generator.generar_constancia(
+                    tipo_constancia,
+                    datos,
+                    output_dir=output_dir,
+                    filename_prefix="preview_"
+                )
+            else:
+                # Generación normal
+                output_path = self.pdf_generator.generar_constancia(tipo_constancia, datos)
 
             if not output_path:
                 return False, "Error al generar la constancia", None
 
-            # Registrar constancia en la base de datos si se debe guardar
+            # Registrar constancia en la base de datos si se debe guardar (solo si no estamos en modo vista previa)
             constancia = None
-            if guardar_alumno and alumno:
+            if not preview_mode and guardar_alumno and alumno:
                 constancia = Constancia(
                     alumno_id=alumno.id,
                     tipo=tipo_constancia,

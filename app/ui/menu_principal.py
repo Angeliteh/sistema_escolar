@@ -23,13 +23,13 @@ class MenuPrincipal(QMainWindow):
         self.setWindowTitle(f"Sistema de Constancias Escolares v{Config.VERSION}")
         self.setMinimumSize(1200, 800)  # Ventana más grande
 
-        # Establecer estilo moderno para toda la aplicación
+        # Establecer estilo modo oscuro para toda la aplicación
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #f5f5f5;
+                background-color: #1A1A2E;
             }
             QLabel {
-                color: #2c3e50;
+                color: #FFFFFF;
             }
         """)
 
@@ -51,9 +51,10 @@ class MenuPrincipal(QMainWindow):
         header_container.setObjectName("headerContainer")
         header_container.setStyleSheet("""
             #headerContainer {
-                background-color: white;
+                background-color: #16213E;
                 border-radius: 15px;
                 padding: 20px;
+                border: 1px solid #2C4F7C;
             }
         """)
 
@@ -73,20 +74,20 @@ class MenuPrincipal(QMainWindow):
         title_font = QFont("Segoe UI", 28)
         title_font.setBold(True)
         title_label.setFont(title_font)
-        title_label.setStyleSheet("color: #2c3e50;")
+        title_label.setStyleSheet("color: #FFFFFF; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);")
 
         # Subtítulo con estilo moderno
         subtitle_label = QLabel(f"Escuela Primaria {Config.SCHOOL_NAME}")
         subtitle_label.setAlignment(Qt.AlignCenter)
         subtitle_font = QFont("Segoe UI", 16)
         subtitle_label.setFont(subtitle_font)
-        subtitle_label.setStyleSheet("color: #34495e;")
+        subtitle_label.setStyleSheet("color: #7FB3D5;")
 
         # Línea divisoria
         divider = QFrame()
         divider.setFrameShape(QFrame.HLine)
         divider.setFrameShadow(QFrame.Sunken)
-        divider.setStyleSheet("background-color: #e0e0e0; max-height: 1px;")
+        divider.setStyleSheet("background-color: #2C4F7C; max-height: 1px;")
 
         header_layout.addWidget(title_label)
         header_layout.addWidget(subtitle_label)
@@ -99,9 +100,10 @@ class MenuPrincipal(QMainWindow):
         buttons_container.setObjectName("buttonsContainer")
         buttons_container.setStyleSheet("""
             #buttonsContainer {
-                background-color: white;
+                background-color: #16213E;
                 border-radius: 15px;
                 padding: 40px;
+                border: 1px solid #2C4F7C;
             }
         """)
 
@@ -155,9 +157,10 @@ class MenuPrincipal(QMainWindow):
         footer_container.setObjectName("footerContainer")
         footer_container.setStyleSheet("""
             #footerContainer {
-                background-color: white;
+                background-color: #16213E;
                 border-radius: 15px;
                 padding: 15px;
+                border: 1px solid #2C4F7C;
             }
         """)
 
@@ -175,7 +178,7 @@ class MenuPrincipal(QMainWindow):
         footer_label.setAlignment(Qt.AlignCenter)
         footer_font = QFont("Segoe UI", 10)
         footer_label.setFont(footer_font)
-        footer_label.setStyleSheet("color: #7f8c8d;")
+        footer_label.setStyleSheet("color: #7FB3D5;")
 
         # Layout para el pie de página con botón de administración
         footer_bottom_layout = QHBoxLayout()
@@ -186,14 +189,17 @@ class MenuPrincipal(QMainWindow):
         self.btn_db_admin.setFixedSize(30, 20)
         self.btn_db_admin.setStyleSheet("""
             QPushButton {
-                background-color: #ecf0f1;
-                color: #7f8c8d;
-                border: 1px solid #bdc3c7;
+                background-color: #1E3A5F;
+                color: #7FB3D5;
+                border: 1px solid #2C4F7C;
                 border-radius: 3px;
                 font-size: 8px;
             }
             QPushButton:hover {
-                background-color: #d6dbdf;
+                background-color: #2C4F7C;
+            }
+            QPushButton:pressed {
+                background-color: #3A6095;
             }
         """)
         self.btn_db_admin.clicked.connect(self.open_database_admin)
@@ -234,9 +240,10 @@ class MenuPrincipal(QMainWindow):
 
         # Estilo para el círculo
         circle_label.setStyleSheet(f"""
-            background-color: white;
+            background-color: #1A1A2E;
             color: {color};
             border-radius: 40px;
+            border: 2px solid {color};
             font-weight: bold;
         """)
 
