@@ -1,16 +1,26 @@
 """
 Componente personalizado para burbujas de chat
 """
-from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QTextBrowser
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QColor, QFont
+import re
+from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QApplication
+from PyQt5.QtCore import Qt, QSize, QTimer
+from PyQt5.QtGui import QColor, QFont, QFontMetrics
 
 class ChatBubble(QWidget):
     """Widget personalizado para mostrar burbujas de chat"""
 
+    # Tipos de mensaje
     TYPE_USER = "user"
     TYPE_ASSISTANT = "assistant"
     TYPE_SYSTEM = "system"
+
+    # Constantes de configuración
+    FONT_FAMILY = 'Inter, "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+    FONT_SIZE = 15
+    MAX_SINGLE_LINE_WIDTH = 600
+    PADDING_MARGIN = 59  # Margen total para padding del layout + bordes
+    MAX_WIDTH = 800
+    MIN_WIDTH = 80
 
     def __init__(self, message_type, text, timestamp=None, parent=None):
         super().__init__(parent)
@@ -18,8 +28,13 @@ class ChatBubble(QWidget):
 
         # Preprocesar el texto para eliminar saltos de línea no deseados
         if message_type == self.TYPE_USER:
-            # Para mensajes del usuario, eliminar todos los saltos de línea
-            self.text = text.replace("\n", " ").replace("\r", " ")
+            # Para mensajes del usuario, limpiar completamente el texto
+            # Eliminar saltos de línea y múltiples espacios
+            cleaned = text.replace("\n", " ").replace("\r", " ")
+            # Reemplazar múltiples espacios consecutivos con un solo espacio
+            cleaned = re.sub(r'\s+', ' ', cleaned)
+            # Eliminar espacios al inicio y final
+            self.text = cleaned.strip()
         else:
             # Para otros mensajes, mantener el texto original
             self.text = text
@@ -32,54 +47,70 @@ class ChatBubble(QWidget):
         # Configurar layout
         self._setup_ui()
 
+    def _get_text_width(self, text):
+        """Calcula el ancho real que necesita un texto con la fuente configurada"""
+        font = QFont(self.FONT_FAMILY, self.FONT_SIZE)
+        font_metrics = QFontMetrics(font)
+        return font_metrics.horizontalAdvance(text)
+
+    def _copy_message(self):
+        """Copia el contenido del mensaje al portapapeles"""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.text)
+
+    def _position_copy_button(self):
+        """Posiciona el botón copy como overlay en la esquina superior derecha"""
+        if hasattr(self, 'copy_button') and self.copy_button.parent():
+            parent = self.copy_button.parent()
+            parent_width = parent.width()
+            button_width = self.copy_button.width()
+            # Posicionar considerando el padding CSS del contenedor
+            x = parent_width - button_width - 10  # Margen desde el borde interno
+            y = 8  # Margen desde arriba considerando el padding
+            self.copy_button.move(x, y)
+
     def _configure_colors(self):
         """Configura los colores según el tipo de mensaje - estilo modo oscuro con tonos azules"""
         if self.message_type == self.TYPE_USER:
             # Estilo usuario - azul oscuro
-            self.bg_color = QColor("#1E3A5F")       # Azul oscuro
-            self.bg_gradient_start = self.bg_color  # Sin gradiente
-            self.bg_gradient_end = self.bg_color    # Sin gradiente
-            self.text_color = QColor("#FFFFFF")     # Texto blanco
-            self.border_color = QColor("#2C4F7C")   # Borde azul un poco más claro
-            self.header_color = QColor("#88CCFF")   # Azul claro para el encabezado
+            self.bg_color = QColor("#1E3A5F")
+            self.text_color = QColor("#FFFFFF")
+            self.border_color = QColor("#2C4F7C")
+            self.header_color = QColor("#88CCFF")
             self.align = Qt.AlignRight
         elif self.message_type == self.TYPE_ASSISTANT:
             # Estilo asistente - gris azulado oscuro
-            self.bg_color = QColor("#2C3E50")       # Gris azulado oscuro
-            self.bg_gradient_start = self.bg_color  # Sin gradiente
-            self.bg_gradient_end = self.bg_color    # Sin gradiente
-            self.text_color = QColor("#FFFFFF")     # Texto blanco
-            self.border_color = QColor("#34495E")   # Borde un poco más claro
-            self.header_color = QColor("#7FB3D5")   # Azul claro para el encabezado
+            self.bg_color = QColor("#2C3E50")
+            self.text_color = QColor("#FFFFFF")
+            self.border_color = QColor("#34495E")
+            self.header_color = QColor("#7FB3D5")
             self.align = Qt.AlignLeft
         else:  # System
             # Estilo sistema - gris oscuro
-            self.bg_color = QColor("#2F3542")       # Gris oscuro
-            self.bg_gradient_start = self.bg_color  # Sin gradiente
-            self.bg_gradient_end = self.bg_color    # Sin gradiente
-            self.text_color = QColor("#D3D3D3")     # Texto gris claro
-            self.border_color = QColor("#3C4451")   # Borde un poco más claro
-            self.header_color = QColor("#A4B0BE")   # Gris claro para el encabezado
+            self.bg_color = QColor("#2F3542")
+            self.text_color = QColor("#D3D3D3")
+            self.border_color = QColor("#3C4451")
+            self.header_color = QColor("#A4B0BE")
             self.align = Qt.AlignCenter
 
     def _setup_ui(self):
         """Configura la interfaz del widget"""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(5, 3, 5, 3)  # Reducir márgenes
-        main_layout.setSpacing(0)  # Reducir espacio entre elementos
+        main_layout.setContentsMargins(0, 0, 0, 0)  # SIN márgenes
+        main_layout.setSpacing(0)  # SIN espacio entre elementos
 
         # Contenedor para la burbuja
         bubble_container = QWidget()
         bubble_container.setObjectName("bubbleContainer")
         bubble_layout = QVBoxLayout(bubble_container)
-        bubble_layout.setContentsMargins(8, 8, 8, 8)  # Reducir padding
-        bubble_layout.setSpacing(0)  # Eliminar espacio entre elementos para evitar huecos
+        bubble_layout.setContentsMargins(18, 10, 15, 18)  # left, top, right, bottom
+        bubble_layout.setSpacing(4)  # Pequeño espacio entre header y contenido
 
         # Configurar políticas de tamaño para adaptarse al contenido
-        bubble_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        bubble_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
+        self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
 
-        # Encabezado (remitente)
+        # Encabezado ULTRA SIMPLE - SIN márgenes ni padding
         header_text = ""
         if self.message_type == self.TYPE_USER:
             header_text = "👤 Tú"
@@ -89,197 +120,106 @@ class ChatBubble(QWidget):
             header_text = "🔔 Sistema"
 
         if header_text:
+            # Header simple y unificado
             header_label = QLabel(header_text)
-            header_font = QFont()
-            header_font.setBold(True)
-            header_font.setPointSize(11)  # Aumentado de 9 a 11
-            header_label.setFont(header_font)
             header_label.setStyleSheet(f"""
-                color: {self.header_color.name()};
-                margin-bottom: 4px;
-                font-family: 'Söhne', 'Segoe UI', Arial, sans-serif;
-                font-weight: 500;  /* Semi-bold */
-                background-color: {self.bg_color.name()};  /* Mismo color de fondo que la burbuja */
-                padding: 2px;
+                QLabel {{
+                    color: {self.header_color.name()};
+                    background-color: transparent;
+                    margin: 0px;
+                    padding: 0px;
+                    border: none;
+                    font-weight: bold;
+                    font-size: 12px;
+                    font-family: '{self.FONT_FAMILY}', Arial, sans-serif;
+                }}
             """)
+            header_label.setContentsMargins(0, 0, 0, 0)
             bubble_layout.addWidget(header_label)
 
-        # Contenido del mensaje usando QLabel para una visualización más simple y directa
-        # Esto evita problemas con el procesamiento de texto en QTextBrowser
-        if self.message_type == self.TYPE_USER:
-            # Para mensajes del usuario, usar un QLabel simple
-            self.content_label = QLabel(self.text)
+        # QLabel ADAPTATIVO - configurado para ajustarse al contenido
+        self.content_label = QLabel(self.text)
+
+        # Configurar la fuente ANTES de calcular el ancho
+        font = QFont(self.FONT_FAMILY, self.FONT_SIZE)
+        self.content_label.setFont(font)
+
+        # Calcular el ancho real que necesita el texto SIN word wrap
+        text_width = self._get_text_width(self.text)
+
+        # Configurar el ancho mínimo basado en el texto real
+        # Solo hacer word wrap si el texto es realmente muy largo
+        if text_width <= self.MAX_SINGLE_LINE_WIDTH:
+            # Texto cabe en una línea - no hacer word wrap
+            self.content_label.setWordWrap(False)
+            self.content_label.setMinimumWidth(text_width + 10)  # +10 para margen
+        else:
+            # Texto muy largo - permitir word wrap
             self.content_label.setWordWrap(True)
-            self.content_label.setTextFormat(Qt.PlainText)  # Usar texto plano para evitar problemas de formato
-            self.content_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.content_label.setMinimumWidth(self.MAX_SINGLE_LINE_WIDTH)
 
-            # Estilo para el QLabel
-            self.content_label.setStyleSheet(f"""
-                QLabel {{
-                    color: {self.text_color.name()};
-                    font-size: 14px;
-                    padding: 5px;
-                    background-color: {self.bg_color.name()};
-                    border: none;
-                    margin: 0px;
-                    line-height: 160%;
-                    font-family: 'Söhne', 'Segoe UI', Arial, sans-serif;
-                }}
-            """)
-        else:
-            # Para mensajes del asistente y sistema, usar QTextBrowser para permitir HTML
-            self.content_label = QTextBrowser()
+        self.content_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.content_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
-            # Establecer el texto como HTML
-            if self.text.startswith("<") and (">" in self.text):
-                # Si parece HTML, usarlo directamente
-                self.content_label.setHtml(self.text)
-            else:
-                # Si es texto plano, convertirlo a HTML simple
-                # Usar un estilo de ajuste de texto que preserve los saltos de línea
-                wrap_style = "white-space: pre-wrap; word-wrap: break-word; word-break: normal;"
-                self.content_label.setHtml(f"<div style='{wrap_style}'>{self.text}</div>")
+        # Hacer el texto seleccionable
+        self.content_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
 
-        # Configuración específica para QTextBrowser (solo para mensajes del asistente y sistema)
-        if self.message_type != self.TYPE_USER:
-            # Configurar el QTextBrowser para que se parezca a un QLabel pero con scrollbar cuando sea necesario
-            self.content_label.setFrameStyle(QLabel().frameStyle())  # Sin marco
+        # Estilo SIMPLE pero legible
+        self.content_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.text_color.name()};
+                background-color: transparent;
+                margin: 0px;
+                padding: 3px 0px;  /* Padding vertical para evitar cortes */
+                border: none;
+                font-size: {self.FONT_SIZE}px;
+                line-height: 1.6;  /* Mejor line-height para mayor legibilidad */
+                letter-spacing: 0.3px;  /* Espaciado entre caracteres para mejor legibilidad */
+                font-family: '{self.FONT_FAMILY}', Arial, sans-serif;
+            }}
+        """)
 
-            # Determinar si el texto es lo suficientemente largo para necesitar scrollbar
-            char_count = len(self.text)
-            line_count = self.text.count("\n") + 1
-
-            # Mostrar scrollbar solo para mensajes extremadamente largos
-            if char_count > 1000 or line_count > 20:  # Para mensajes muy largos
-                # Mostrar scrollbar vertical solo cuando sea necesario
-                self.content_label.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-                # Limitar la altura máxima para forzar el scrollbar
-                self.content_label.setMaximumHeight(400)
-            else:
-                # Para mensajes normales, no mostrar scrollbar y mostrar todo el contenido
-                self.content_label.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-                self.content_label.setMaximumHeight(16777215)  # Valor máximo para Qt
-
-            self.content_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            self.content_label.setReadOnly(True)
-            self.content_label.setOpenExternalLinks(True)
-            self.content_label.setLineWrapMode(QTextBrowser.WidgetWidth)
-
-            # Aplicar estilos para QTextBrowser
-            self.content_label.setStyleSheet(f"""
-                QTextBrowser {{
-                    color: {self.text_color.name()};
-                    font-size: 14px;
-                    padding: 5px;
-                    background-color: {self.bg_color.name()};
-                    border: none;
-                    selection-color: white;
-                    selection-background-color: #3498DB;
-                    margin: 0px;
-                    line-height: 160%;
-                    font-family: 'Söhne', 'Segoe UI', Arial, sans-serif;
-                }}
-                QTextBrowser a {{
-                    color: #7FB3D5;
-                    text-decoration: underline;
-                    font-weight: bold;
-                }}
-
-                /* Estilo para la barra de desplazamiento */
-                QScrollBar:vertical {{
-                    background: {self.bg_color.name()};
-                    width: 8px;
-                    margin: 0px;
-                }}
-
-                QScrollBar::handle:vertical {{
-                    background: rgba(255, 255, 255, 0.3);
-                    min-height: 20px;
-                    border-radius: 4px;
-                }}
-
-                QScrollBar::handle:vertical:hover {{
-                    background: rgba(255, 255, 255, 0.5);
-                }}
-
-                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                    height: 0px;
-                }}
-            """)
-
-        # Configurar políticas de tamaño para el contenido
-        self.content_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        # Configuración específica según el tipo de widget
-        if self.message_type == self.TYPE_USER:
-            # Para QLabel, configurar tamaños adecuados
-            self.content_label.setMinimumWidth(200)
-            self.content_label.setMaximumWidth(600)
-
-            # Asegurarse de que todo el texto sea visible
-            # Usar un tamaño mínimo generoso para evitar cortes
-            self.content_label.setMinimumHeight(50)
-
-            # Ajustar el tamaño según el contenido
-            self.content_label.adjustSize()
-        else:
-            # Para QTextBrowser, configurar el documento
-            # Calcular un ancho adecuado basado en el contenido
-            char_count = len(self.text)
-            word_count = len(self.text.split())
-
-            # Calcular un ancho aproximado basado en el número de caracteres por palabra
-            avg_chars_per_word = char_count / max(1, word_count)
-
-            # Ajustar el ancho según la longitud del texto
-            if char_count < 50:  # Mensajes muy cortos
-                text_width = max(300, min(500, char_count * 8))
-            elif char_count < 100:  # Mensajes cortos
-                text_width = max(350, min(550, char_count * 7))
-            elif char_count < 300:  # Mensajes medianos
-                text_width = max(400, min(600, char_count * 5))
-            else:  # Mensajes largos
-                text_width = max(500, min(700, char_count * 3))
-
-            # Establecer ancho mínimo y máximo
-            self.content_label.setMinimumWidth(300)
-            self.content_label.setMaximumWidth(700)
-
-            # Ajustar el documento para que se adapte mejor al contenido
-            self.content_label.document().setDocumentMargin(10)
-            self.content_label.document().setTextWidth(text_width)
-
-            # Calcular la altura basada en el contenido
-            # Asegurarse de que todo el texto sea visible
-            doc_height = int(self.content_label.document().size().height()) + 20
-            self.content_label.setMinimumHeight(doc_height)
+        # SIN configuraciones de tamaño complejas
+        self.content_label.setContentsMargins(0, 0, 0, 0)
 
         bubble_layout.addWidget(self.content_label)
 
-        # Timestamp
-        if self.timestamp:
-            time_label = QLabel(self.timestamp)
-            time_label.setAlignment(Qt.AlignRight)
-            time_label.setStyleSheet(f"""
-                color: rgba(255, 255, 255, 0.6);  /* Blanco semi-transparente para modo oscuro */
-                font-size: 10px;
-                margin-top: 4px;
-                font-family: 'Söhne', 'Segoe UI', Arial, sans-serif;
-                font-style: italic;
-                background-color: {self.bg_color.name()};  /* Mismo color de fondo que la burbuja */
-                padding: 2px;
-            """)
-            bubble_layout.addWidget(time_label)
-
-        # Aplicar estilo al contenedor de la burbuja - estilo minimalista tipo ChatGPT
+        # Estilo SIMPLE del contenedor - padding viene del layout contentsMargins
         bubble_container.setStyleSheet(f"""
             #bubbleContainer {{
                 background-color: {self.bg_color.name()};
                 border: 1px solid {self.border_color.name()};
-                border-radius: 8px;  /* Bordes menos redondeados, más formal */
-                color: {self.text_color.name()};
+                border-radius: 8px;
+                margin: 0px;
             }}
         """)
+
+        # Botón copy como overlay - hijo directo del contenedor, NO del layout
+        self.copy_button = QPushButton("copy", bubble_container)
+        self.copy_button.setStyleSheet(f"""
+            QPushButton {{
+                color: rgba(255, 255, 255, 0.3);
+                background-color: transparent;
+                border: none;
+                font-size: 8px;
+                padding: 1px 3px;
+                margin: 0px;
+                font-family: '{self.FONT_FAMILY}', Arial, sans-serif;
+            }}
+            QPushButton:hover {{
+                color: rgba(255, 255, 255, 0.6);
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 2px;
+            }}
+            QPushButton:pressed {{
+                color: rgba(255, 255, 255, 0.8);
+                background-color: rgba(255, 255, 255, 0.1);
+            }}
+        """)
+        self.copy_button.setContentsMargins(0, 0, 0, 0)
+        self.copy_button.clicked.connect(self._copy_message)
+        self.copy_button.setFixedSize(24, 12)  # Pequeño y discreto
+        self.copy_button.raise_()  # Asegurar que esté encima
 
         # Añadir el contenedor al layout principal con alineación
         container_layout = QHBoxLayout()
@@ -298,61 +238,58 @@ class ChatBubble(QWidget):
 
         main_layout.addLayout(container_layout)
 
-        # Configurar ancho máximo y mínimo de la burbuja
-        # Usar un porcentaje del ancho disponible para adaptarse mejor
-        available_width = 800  # Ancho estimado de la ventana
+        # Timestamp fuera de la burbuja, abajo a la derecha - SIN afectar el ancho
+        if self.timestamp:
+            time_label = QLabel(self.timestamp)
+            time_label.setStyleSheet(f"""
+                QLabel {{
+                    color: rgba(255, 255, 255, 0.4);
+                    background-color: transparent;
+                    font-size: 9px;
+                    margin: 0px;
+                    padding: 0px;
+                    border: none;
+                    font-family: '{self.FONT_FAMILY}', Arial, sans-serif;
+                }}
+            """)
+            time_label.setContentsMargins(0, 0, 0, 0)
+            time_label.setAlignment(Qt.AlignRight)
+            time_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
-        # Ancho mínimo adaptado a la longitud del texto
-        char_count = len(self.text)
-        if char_count < 50:  # Mensajes muy cortos
-            min_width = max(200, min(400, char_count * 6))
-        elif char_count < 100:  # Mensajes cortos
-            min_width = max(250, min(450, char_count * 5))
-        else:  # Mensajes más largos
-            min_width = max(350, min(600, char_count * 3))
+            # Añadir directamente sin layout horizontal que pueda expandir
+            main_layout.addWidget(time_label, 0, Qt.AlignRight)
 
-        bubble_container.setMinimumWidth(min_width)
+        # Dejar que el contenedor se adapte completamente al contenido
+        # Sin restricciones de ancho
 
-        # Limitar el ancho máximo para evitar burbujas demasiado anchas
-        bubble_container.setMaximumWidth(int(available_width * 0.85))  # 85% del ancho disponible
+        # Posicionar el botón copy después de que todo esté renderizado
+        QTimer.singleShot(0, self._position_copy_button)
 
     def sizeHint(self):
-        """Sugerencia de tamaño para el widget"""
-        # Calcular el ancho basado en el contenido
-        char_count = len(self.text)
+        """Sugerencia de tamaño ADAPTATIVO al contenido"""
+        # Usar el tamaño del QLabel como base
+        label_size = self.content_label.sizeHint()
 
-        # Usar anchos más generosos para asegurar que todo el texto sea visible
-        if char_count < 50:  # Mensajes muy cortos
-            base_width = max(300, min(500, char_count * 8))
-        elif char_count < 100:  # Mensajes cortos
-            base_width = max(350, min(550, char_count * 7))
-        elif char_count < 300:  # Mensajes medianos
-            base_width = max(400, min(600, char_count * 5))
-        else:  # Mensajes largos
-            base_width = max(500, min(700, char_count * 3))
+        # Calcular el ancho real del texto usando la misma fuente
+        text_width = self._get_text_width(self.text)
 
-        # Añadir margen para los bordes de la burbuja
-        width = base_width + 100  # Margen más amplio
+        # Usar el ancho real del texto o el del QLabel, el que sea mayor
+        content_width = max(text_width, label_size.width())
 
-        # Calcular la altura según el tipo de widget
-        if self.message_type == self.TYPE_USER:
-            # Para QLabel, usar el tamaño sugerido por el widget
-            label_size = self.content_label.sizeHint()
-            content_height = label_size.height() + 20  # Añadir margen extra
-        else:
-            # Para QTextBrowser, calcular la altura basada en el documento
-            doc = self.content_label.document()
-            doc.setTextWidth(base_width)  # Establecer el ancho para calcular la altura correctamente
-            content_height = int(doc.size().height()) + 30  # Añadir margen extra
+        # Solo añadir margen para padding y bordes
+        width = max(self.MIN_WIDTH, min(content_width + self.PADDING_MARGIN, self.MAX_WIDTH))
 
-        # Añadir margen para encabezado y timestamp
-        header_height = 30  # Margen para el encabezado
-        timestamp_height = 20 if self.timestamp else 0
-        height = content_height + header_height + timestamp_height + 20  # Margen adicional
+        # Calcular altura - incluir padding del layout y espaciado
+        timestamp_height = 12 if self.timestamp else 0
+        header_height = 20 if hasattr(self, 'content_label') else 0
+        layout_padding_vertical = 28  # 10px top + 18px bottom del layout
+        layout_spacing = 4
 
-        # Asegurar tamaños mínimos generosos
-        width = max(width, 350)
-        height = max(height, 100)  # Altura mínima aumentada
+        height = label_size.height() + header_height + timestamp_height + layout_padding_vertical + layout_spacing
 
-        # Asegurarse de que los valores sean enteros
         return QSize(int(width), int(height))
+
+    def resizeEvent(self, event):
+        """Reposicionar el botón copy cuando cambia el tamaño"""
+        super().resizeEvent(event)
+        self._position_copy_button()

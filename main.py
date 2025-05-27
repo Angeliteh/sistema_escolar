@@ -4,10 +4,14 @@ from app.services.alumno_service import AlumnoService
 from app.services.constancia_service import ConstanciaService
 from app.data.models.constancia import Constancia
 from app.core.config import Config
+from app.core.logging import get_logger
 import os
 import sys
 import json
 import sqlite3
+
+# Logger para este módulo
+logger = get_logger(__name__)
 
 def mostrar_datos_detallados(datos):
     """Muestra todos los datos extraídos en detalle"""
@@ -88,14 +92,14 @@ def main():
     """Ejecuta el programa en modo consola para depuración"""
     # Verificar argumentos
     if len(sys.argv) < 2:
-        print("Uso: python main.py <archivo_pdf> [tipo_constancia] [--con-foto=si|no|auto] [--debug]")
-        print("Tipos disponibles: traslado, estudio, calificaciones (por defecto: traslado)")
-        print("Opciones:")
-        print("  --con-foto=si    Incluir foto en la constancia (si está disponible)")
-        print("  --con-foto=no    No incluir foto en la constancia")
-        print("  --con-foto=auto  Detectar automáticamente (por defecto)")
-        print("  --debug          Mostrar información detallada para depuración")
-        print("  --solo-extraer   Solo extraer datos, no generar constancia")
+        logger.info("Uso: python main.py <archivo_pdf> [tipo_constancia] [--con-foto=si|no|auto] [--debug]")
+        logger.info("Tipos disponibles: traslado, estudio, calificaciones (por defecto: traslado)")
+        logger.info("Opciones:")
+        logger.info("  --con-foto=si    Incluir foto en la constancia (si está disponible)")
+        logger.info("  --con-foto=no    No incluir foto en la constancia")
+        logger.info("  --con-foto=auto  Detectar automáticamente (por defecto)")
+        logger.info("  --debug          Mostrar información detallada para depuración")
+        logger.info("  --solo-extraer   Solo extraer datos, no generar constancia")
         return
 
     # Obtener argumentos
@@ -121,7 +125,7 @@ def main():
             elif opcion_foto == "auto":
                 incluir_foto = None
             else:
-                print(f"Error: Valor no válido para --con-foto. Opciones: si, no, auto")
+                logger.error(f"Error: Valor no válido para --con-foto. Opciones: si, no, auto")
                 return
         elif arg == "--debug":
             debug_mode = True
@@ -130,23 +134,23 @@ def main():
 
     # Verificar que el archivo existe
     if not os.path.exists(pdf_path):
-        print(f"Error: El archivo {pdf_path} no existe")
+        logger.error(f"Error: El archivo {pdf_path} no existe")
         return
 
     # Verificar tipo de constancia
     tipos_validos = ["traslado", "estudio", "calificaciones"]
     if tipo_constancia not in tipos_validos:
-        print(f"Error: Tipo de constancia no válido. Opciones: {', '.join(tipos_validos)}")
+        logger.error(f"Error: Tipo de constancia no válido. Opciones: {', '.join(tipos_validos)}")
         return
 
     # Extraer datos
-    print(f"Extrayendo datos de {pdf_path}...")
+    logger.info(f"Extrayendo datos de {pdf_path}...")
     extractor = PDFExtractor(pdf_path)
 
     # Pasar el tipo de constancia solicitado para que se respete en la extracción
     datos = extractor.extraer_todos_datos(incluir_foto, tipo_constancia)
 
-    # Mostrar datos extraídos (versión básica)
+    # Mostrar datos extraídos (versión básica) - Mantener prints para interfaz de consola
     print("\nDatos extraídos (resumen):")
     print(f"Nombre: {datos.get('nombre', '')}")
     print(f"CURP: {datos.get('curp', '')}")
@@ -168,6 +172,9 @@ def main():
         else:
             print("Foto: No disponible")
 
+    # Log para debugging interno
+    logger.debug(f"Datos extraídos: {datos.keys()}")
+
     # Si estamos en modo debug, mostrar información detallada
     if debug_mode:
         mostrar_datos_detallados(datos)
@@ -178,12 +185,12 @@ def main():
         return
 
     # Generar constancia
-    print(f"\nGenerando constancia de {tipo_constancia}...")
+    logger.info(f"Generando constancia de {tipo_constancia}...")
     generator = PDFGenerator()
     output_path = generator.generar_constancia(tipo_constancia, datos)
 
     if output_path:
-        print(f"Constancia generada con éxito: {output_path}")
+        logger.info(f"Constancia generada con éxito: {output_path}")
 
         # Preguntar si guardar en base de datos
         respuesta = input("\n¿Desea guardar los datos del alumno en la base de datos? (s/n): ")
@@ -207,9 +214,9 @@ def main():
                     "grado": datos.get('grado', 1),
                     "grupo": datos.get('grupo', 'A'),
                     "turno": datos.get('turno', 'MATUTINO'),
-                    "ciclo_escolar": datos.get('ciclo', Config.CURRENT_SCHOOL_YEAR),
-                    "escuela": datos.get('escuela', Config.SCHOOL_NAME),
-                    "cct": datos.get('cct', Config.SCHOOL_CCT),
+                    "ciclo_escolar": datos.get('ciclo', Config.get_current_year()),
+                    "escuela": datos.get('escuela', Config.get_school_name()),
+                    "cct": datos.get('cct', Config.get_school_cct()),
                     "calificaciones": datos.get('calificaciones', {})
                 }
 
@@ -217,8 +224,8 @@ def main():
                 success, message, alumno = alumno_service.registrar_alumno(datos_alumno)
 
                 if success and alumno and alumno.id:
-                    print(f"Alumno registrado correctamente con ID: {alumno.id}")
-                    print(f"Mensaje: {message}")
+                    logger.info(f"Alumno registrado correctamente con ID: {alumno.id}")
+                    logger.info(f"Mensaje: {message}")
 
                     # Registrar constancia
                     try:
@@ -233,23 +240,23 @@ def main():
                         constancia = constancia_service.constancia_repository.save(constancia)
 
                         if constancia and constancia.id:
-                            print(f"Constancia registrada con ID: {constancia.id}")
-                            print("Todos los datos guardados correctamente en la base de datos")
+                            logger.info(f"Constancia registrada con ID: {constancia.id}")
+                            logger.info("Todos los datos guardados correctamente en la base de datos")
                         else:
-                            print("Error al registrar la constancia")
+                            logger.error("Error al registrar la constancia")
                     except Exception as e:
-                        print(f"Error al registrar la constancia: {str(e)}")
+                        logger.error(f"Error al registrar la constancia: {str(e)}")
                 else:
-                    print(f"Error al registrar el alumno: {message}")
+                    logger.error(f"Error al registrar el alumno: {message}")
 
             except Exception as e:
-                print(f"Error al guardar en la base de datos: {str(e)}")
+                logger.error(f"Error al guardar en la base de datos: {str(e)}")
 
             finally:
                 # Cerrar conexión
                 conn.close()
     else:
-        print("Error al generar constancia")
+        logger.error("Error al generar constancia")
 
 if __name__ == "__main__":
     # Este script ejecuta el modo consola para depuración

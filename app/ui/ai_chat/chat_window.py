@@ -8,20 +8,18 @@ buscar alumnos y transformar PDFs.
 La interfaz incluye un panel de chat y un panel para visualizar PDFs,
 así como funcionalidades para cargar, transformar y guardar constancias.
 """
-import os
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QSplitter, QProgressBar,
     QToolBar, QAction
 )
 from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QPainter, QColor
 
 from app.ui.ai_chat.chat_list import ChatList
-from app.ui.ai_chat.gemini_client import GeminiClient
 from app.ui.ai_chat.pdf_panel import PDFPanel
-from app.ui.ai_chat.message_processor import MessageProcessor
 from app.core.utils import open_file_with_default_app
+from app.core.chat_engine import ChatEngine, ChatResponse
+from app.core.logging import get_logger
 
 class ChatWindow(QMainWindow):
     """Ventana principal de la interfaz de chat con IA.
@@ -59,17 +57,26 @@ class ChatWindow(QMainWindow):
         # Inicializar variables de estado
         self.waiting_for_file_open_response = False  # Esperando respuesta para abrir archivo
         self.waiting_for_save_confirmation = False   # Esperando confirmación para guardar
+        self.waiting_for_constancia_confirmation = False  # Esperando confirmación de constancia
         self.last_generated_file = None              # Último archivo generado
         self.temp_transformed_file = None            # Archivo temporal transformado
+        self.temp_constancia_file = None             # Archivo temporal de constancia
         self.transformation_data = None              # Datos de transformación
 
-        # Inicializar componentes principales
-        self.message_processor = MessageProcessor()  # Procesador de mensajes
-        self.gemini_client = GeminiClient()          # Cliente para API de Gemini
+        # Crear el panel de PDF primero
+        self.pdf_panel = PDFPanel()
 
-        # Conectar señales del cliente Gemini
-        self.gemini_client.response_ready.connect(self.handle_gemini_response)
-        self.gemini_client.error_occurred.connect(self.handle_gemini_error)
+        # 🆕 SISTEMA CENTRALIZADO: Usar ChatEngine como terminal_chat.py
+        self.chat_engine = ChatEngine(
+            file_handler=self._handle_file,
+            confirmation_handler=self._handle_confirmation,
+            pdf_panel=self.pdf_panel
+        )
+
+        # 🆕 LOGGING CENTRALIZADO
+        self.logger = get_logger(__name__)
+
+        self.logger.info("ChatWindow inicializado con ChatEngine centralizado")
 
         # Configurar la interfaz de usuario
         self.setup_ui()
@@ -83,6 +90,8 @@ class ChatWindow(QMainWindow):
                 border-top: 1px solid #2C4F7C;
             }
         """)
+
+
 
     def setup_ui(self):
         """Configura la interfaz de usuario"""
@@ -126,7 +135,10 @@ Para transformar un PDF:
 
 Escribe "ayuda" para ver todas las funciones disponibles."""
 
-        self.chat_list.add_system_message(mensaje_bienvenida, self.message_processor.get_current_time())
+        # 🆕 USAR MÉTODO CENTRALIZADO para timestamp
+        from datetime import datetime
+        current_time = datetime.now().strftime("%H:%M:%S")
+        self.chat_list.add_system_message(mensaje_bienvenida, current_time)
 
         # Área de entrada
         input_container = QWidget()
@@ -140,13 +152,23 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             QLineEdit {
                 border: 1px solid #2C4F7C;
                 border-radius: 20px;
-                padding: 10px 15px;
-                font-size: 14px;
+                padding: 12px 18px;
+                font-size: 15px;
+                font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                letter-spacing: 0.3px;
                 background-color: #16213E;
                 color: #FFFFFF;
+                selection-background-color: #3498DB;
             }
             QLineEdit::placeholder {
                 color: rgba(255, 255, 255, 0.6);
+            }
+            QLineEdit:focus {
+                border: 1px solid #3498DB;
+                background-color: #1A2A4A;
+            }
+            QLineEdit:hover {
+                border: 1px solid #5DADE2;
             }
         """)
         self.input_field.returnPressed.connect(self.send_message)
@@ -154,19 +176,22 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         send_button = QPushButton("Enviar")
         send_button.setStyleSheet("""
             QPushButton {
-                background-color: #1E3A5F;
+                background-color: #2980B9;
                 color: white;
                 border-radius: 20px;
-                padding: 10px 20px;
-                font-size: 14px;
+                padding: 12px 24px;
+                font-size: 15px;
+                font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
                 font-weight: bold;
-                border: 1px solid #2C4F7C;
+                border: 1px solid #3498DB;
+                min-width: 80px;
             }
             QPushButton:hover {
-                background-color: #2C4F7C;
+                background-color: #3498DB;
+                border: 1px solid #5DADE2;
             }
             QPushButton:pressed {
-                background-color: #3A6095;
+                background-color: #1B4F72;
             }
         """)
         send_button.clicked.connect(self.send_message)
@@ -195,9 +220,6 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         chat_layout.addWidget(self.chat_list, 1)
         chat_layout.addWidget(self.progress_bar)
         chat_layout.addWidget(input_container)
-
-        # Crear el panel de PDF
-        self.pdf_panel = PDFPanel()
 
         # Inicialmente ocultar el panel de PDF
         self.pdf_panel.setVisible(False)
@@ -291,6 +313,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                 self.setCursor(Qt.SizeHorCursor)
 
             def paintEvent(self, event):
+                _ = event  # Parámetro requerido por Qt
                 painter = QPainter(self)
                 painter.fillRect(self.rect(), QColor("#1A1A2E"))  # Fondo
 
@@ -336,21 +359,211 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         # Limpiar el campo de entrada
         self.input_field.clear()
 
+        # 🆕 USAR TIMESTAMP CENTRALIZADO
+        from datetime import datetime
+        current_time = datetime.now().strftime("%H:%M:%S")
+
         # Añadir el mensaje del usuario al chat
-        self.chat_list.add_user_message(message_text, self.message_processor.get_current_time())
+        self.chat_list.add_user_message(message_text, current_time)
 
         # Manejar diferentes estados de la conversación
         if self.waiting_for_save_confirmation and self.temp_transformed_file and self.transformation_data:
             # Estamos esperando una respuesta sobre qué hacer con el archivo transformado
             self._handle_save_confirmation_response(message_text)
             return
+        elif self.waiting_for_constancia_confirmation and self.temp_constancia_file:
+            # Estamos esperando confirmación sobre qué hacer con la constancia generada
+            self._handle_constancia_confirmation_response(message_text)
+            return
         elif self.waiting_for_file_open_response and self.last_generated_file:
             # Estamos esperando una respuesta sobre si abrir un archivo
             self._handle_file_open_response(message_text)
             return
 
-        # Para mensajes normales, continuar con el flujo habitual
-        self._process_normal_message(message_text)
+        # 🆕 USAR CHATENGINE CENTRALIZADO para mensajes normales
+        self._process_message_with_chat_engine(message_text)
+
+    def _handle_file(self, file_path: str) -> bool:
+        """Handler para archivos generados por ChatEngine"""
+        try:
+            import os
+            if os.path.exists(file_path):
+                from datetime import datetime
+                current_time = datetime.now().strftime("%H:%M:%S")
+
+                self.chat_list.add_assistant_message(
+                    f"📁 Archivo generado: {os.path.basename(file_path)}",
+                    current_time
+                )
+
+                # Cargar el PDF en el visor si es un PDF
+                if file_path.lower().endswith('.pdf'):
+                    self.pdf_panel.show_pdf(file_path)
+
+                    # Expandir panel de PDF si está oculto
+                    if not self.pdf_panel_expanded:
+                        self.toggle_pdf_panel_visibility()
+
+                # Preguntar si abrir el archivo
+                self.chat_list.add_assistant_message(
+                    "¿Deseas abrir el archivo? Responde 'sí' o 'no'.",
+                    current_time
+                )
+
+                self.last_generated_file = file_path
+                self.waiting_for_file_open_response = True
+                return True
+            else:
+                self.logger.error(f"Archivo no encontrado: {file_path}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error manejando archivo: {e}")
+            return False
+
+    def _handle_confirmation(self, message: str) -> bool:
+        """Handler para confirmaciones de ChatEngine"""
+        from datetime import datetime
+        current_time = datetime.now().strftime("%H:%M:%S")
+
+        self.chat_list.add_assistant_message(
+            f"⚠️ {message}",
+            current_time
+        )
+
+        # En la interfaz gráfica, siempre confirmar por ahora
+        # TODO: Implementar diálogo de confirmación real
+        return True
+
+    def _process_message_with_chat_engine(self, message_text: str):
+        """Procesa mensaje usando ChatEngine centralizado"""
+        try:
+            self.logger.info(f"Procesando mensaje con ChatEngine: {message_text}")
+
+            # Mostrar barra de progreso
+            self.progress_bar.setVisible(True)
+
+            # 🆕 USAR CHATENGINE CENTRALIZADO
+            response = self.chat_engine.process_message(message_text)
+
+            # Ocultar barra de progreso
+            self.progress_bar.setVisible(False)
+
+            # Manejar respuesta
+            self._handle_chat_engine_response(response)
+
+        except Exception as e:
+            self.progress_bar.setVisible(False)
+            self.logger.error(f"Error procesando mensaje: {e}")
+
+            from datetime import datetime
+            current_time = datetime.now().strftime("%H:%M:%S")
+            self.chat_list.add_assistant_message(
+                f"❌ Error procesando mensaje: {str(e)}",
+                current_time
+            )
+
+    def _handle_chat_engine_response(self, response: ChatResponse):
+        """Maneja respuesta de ChatEngine"""
+        from datetime import datetime
+        current_time = datetime.now().strftime("%H:%M:%S")
+
+        # Mostrar texto principal
+        if response.text:
+            self.chat_list.add_assistant_message(response.text, current_time)
+
+        # 🆕 MANEJAR CONSTANCIAS GENERADAS
+        if response.action == "constancia_preview" and response.data:
+            self._handle_constancia_preview_from_engine(response.data, response.files)
+        elif response.action == "pdf_transformation" and response.data:
+            self._handle_transformation_preview_from_engine(response.data, response.files)
+        # Manejar archivos generados (PDFs normales)
+        elif response.files:
+            for file_path in response.files:
+                self._handle_file(file_path)
+
+        # Manejar datos estructurados
+        if response.action == "show_data" and response.data:
+            self._display_structured_data(response.data)
+
+    def _display_structured_data(self, data: dict):
+        """Muestra datos estructurados en el chat"""
+        from datetime import datetime
+        current_time = datetime.now().strftime("%H:%M:%S")
+
+        if "alumno" in data:
+            # Mostrar detalles de un solo alumno
+            self.mostrar_detalle_alumno(data["alumno"])
+        elif "alumnos" in data:
+            # Mostrar lista de alumnos
+            alumnos = data["alumnos"]
+            if alumnos:
+                self.mostrar_alumnos_tabla(alumnos)
+        else:
+            # Mostrar datos genéricos
+            self.chat_list.add_assistant_message(
+                f"📊 Datos adicionales: {data}",
+                current_time
+            )
+
+    def _handle_constancia_preview_from_engine(self, data: dict, files: list):
+        """Maneja vista previa de constancia generada desde ChatEngine"""
+        try:
+            if files and len(files) > 0:
+                constancia_file = files[0]
+
+                # Guardar archivo temporal
+                self.temp_constancia_file = constancia_file
+
+                # Establecer contexto de constancia
+                alumno_data = data.get("alumno", {})
+                self.pdf_panel.set_constancia_context(alumno_data)
+
+                # Mostrar PDF en el panel
+                success = self.pdf_panel.show_pdf(constancia_file)
+
+                if success:
+                    # Expandir panel de PDF si está oculto
+                    if not self.pdf_panel_expanded:
+                        self.toggle_pdf_panel_visibility()
+
+                    # Mostrar opciones de confirmación
+                    self._show_constancia_preview_options()
+                else:
+                    self.logger.error(f"Error cargando vista previa de constancia: {constancia_file}")
+
+        except Exception as e:
+            self.logger.error(f"Error manejando vista previa de constancia: {e}")
+
+    def _handle_transformation_preview_from_engine(self, data: dict, files: list):
+        """Maneja vista previa de transformación PDF desde ChatEngine"""
+        try:
+            if files and len(files) > 0:
+                transformed_file = files[0]
+
+                # Guardar archivo temporal
+                self.temp_transformed_file = transformed_file
+
+                # Establecer contexto de transformación
+                original_data = data.get("datos_originales", {})
+                transformed_data = data.get("datos_transformados", {})
+                self.pdf_panel.set_transformation_context(original_data, transformed_data)
+
+                # Mostrar PDF en el panel
+                success = self.pdf_panel.show_pdf(transformed_file)
+
+                if success:
+                    # Expandir panel de PDF si está oculto
+                    if not self.pdf_panel_expanded:
+                        self.toggle_pdf_panel_visibility()
+
+                    # Mostrar opciones de transformación
+                    self._show_transformation_options()
+                else:
+                    self.logger.error(f"Error cargando vista previa de transformación: {transformed_file}")
+
+        except Exception as e:
+            self.logger.error(f"Error manejando vista previa de transformación: {e}")
 
     def _handle_save_confirmation_response(self, message_text):
         """Maneja la respuesta del usuario sobre qué hacer con el archivo transformado.
@@ -421,9 +634,12 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         # Copiar el archivo temporal al destino permanente
         try:
             shutil.copy2(self.temp_transformed_file, dest_path)
+            from datetime import datetime
+            current_time = datetime.now().strftime("%H:%M:%S")
+
             self.chat_list.add_assistant_message(
                 f"✅ Archivo guardado correctamente en: {dest_path}",
-                self.message_processor.get_current_time()
+                current_time
             )
 
             # Actualizar la ruta del archivo para posible apertura
@@ -432,13 +648,15 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             # Preguntar si desea abrir el archivo
             self.chat_list.add_assistant_message(
                 "¿Deseas abrir el archivo? Responde 'sí' o 'no'.",
-                self.message_processor.get_current_time()
+                current_time
             )
             self.waiting_for_file_open_response = True
         except Exception as e:
+            from datetime import datetime
+            current_time = datetime.now().strftime("%H:%M:%S")
             self.chat_list.add_assistant_message(
                 f"❌ Error al guardar el archivo: {str(e)}",
-                self.message_processor.get_current_time()
+                current_time
             )
 
     def _open_transformed_file(self):
@@ -462,33 +680,37 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         try:
             import subprocess
             import platform
+            from datetime import datetime
+            current_time = datetime.now().strftime("%H:%M:%S")
 
             # En Windows, usar el comando predeterminado para abrir (que permite imprimir)
             if platform.system() == "Windows":
                 subprocess.Popen(['start', '', self.temp_transformed_file], shell=True)
                 self.chat_list.add_assistant_message(
                     "✅ Abriendo el archivo en el navegador. Desde allí puedes verlo o imprimirlo.",
-                    self.message_processor.get_current_time()
+                    current_time
                 )
                 self.chat_list.add_assistant_message(
                     "Recuerda que este archivo es temporal y se eliminará al cerrar la aplicación.",
-                    self.message_processor.get_current_time()
+                    current_time
                 )
             else:  # macOS o Linux
                 from app.core.utils import open_file_with_default_app
                 open_file_with_default_app(self.temp_transformed_file)
                 self.chat_list.add_assistant_message(
                     "✅ Abriendo el archivo en el navegador. Desde allí puedes verlo o imprimirlo.",
-                    self.message_processor.get_current_time()
+                    current_time
                 )
                 self.chat_list.add_assistant_message(
                     "Recuerda que este archivo es temporal y se eliminará al cerrar la aplicación.",
-                    self.message_processor.get_current_time()
+                    current_time
                 )
         except Exception as e:
+            from datetime import datetime
+            current_time = datetime.now().strftime("%H:%M:%S")
             self.chat_list.add_assistant_message(
                 f"❌ Error al abrir el archivo: {str(e)}",
-                self.message_processor.get_current_time()
+                current_time
             )
 
     def _save_data_to_database(self):
@@ -560,82 +782,33 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                 open_file_with_default_app(self.last_generated_file)
                 self.chat_list.add_assistant_message(
                     "Abriendo el archivo para ti. ¡Espero que te sea útil!",
-                    self.message_processor.get_current_time()
+                    self._get_current_time()
                 )
             except Exception as e:
                 self.chat_list.add_assistant_message(
                     f"No pude abrir el archivo: {str(e)}",
-                    self.message_processor.get_current_time()
+                    self._get_current_time()
                 )
         else:
             # No abrir el archivo
             self.chat_list.add_assistant_message(
                 "De acuerdo, no abriré el archivo. ¿Hay algo más en lo que pueda ayudarte?",
-                self.message_processor.get_current_time()
+                self._get_current_time()
             )
 
         # Restablecer el estado
         self.waiting_for_file_open_response = False
 
-    def _process_normal_message(self, message_text):
-        """Procesa un mensaje normal del usuario"""
-        # Mostrar la barra de progreso
-        self.progress_bar.setVisible(True)
+    def _get_current_time(self):
+        """Obtiene la hora actual en formato HH:MM:SS"""
+        from datetime import datetime
+        return datetime.now().strftime("%H:%M:%S")
 
-        # Crear el prompt
-        current_pdf = self.pdf_panel.get_current_pdf()
-        prompt = self.message_processor.create_prompt(message_text, current_pdf)
+    # ❌ MÉTODO OBSOLETO - Eliminado: _process_normal_message
+    # Ahora se usa _process_message_with_chat_engine
 
-        # Enviar el prompt a Gemini
-        self.gemini_client.send_prompt(prompt)
-
-    def handle_gemini_response(self, response):
-        """Maneja la respuesta de Gemini.
-
-        Este método procesa la respuesta recibida del modelo de IA Gemini.
-        Extrae los comandos en formato JSON de la respuesta y los ejecuta según su tipo.
-
-        Args:
-            response: Objeto de respuesta de Gemini que contiene el texto generado.
-
-        Returns:
-            None
-        """
-        # Ocultar la barra de progreso cuando se recibe la respuesta
-        self.progress_bar.setVisible(False)
-
-        # Extraer el comando JSON de la respuesta de texto
-        # El formato esperado es un objeto JSON con campos 'accion' y 'parametros'
-        command_data = self.message_processor.extract_json_from_response(response.text)
-
-        # Si no se pudo extraer un comando válido, informar al usuario
-        if not command_data:
-            self.chat_list.add_assistant_message(
-                "No pude entender tu solicitud. ¿Podrías reformularla?",
-                self.message_processor.get_current_time()
-            )
-            return
-
-        # Obtener la acción y parámetros del comando
-        accion = command_data.get("accion", "desconocida")
-        parametros = command_data.get("parametros", {})
-
-        # FLUJO DE DECISIÓN:
-        # 1. Si es una solicitud de ayuda, mostrar la ayuda
-        if accion == "mostrar_ayuda":
-            self.mostrar_ayuda()
-            return
-
-        # 2. Si es una transformación de constancia, manejarla de forma especial
-        # Las transformaciones requieren un flujo diferente porque implican
-        # la creación de archivos temporales y opciones de guardado
-        if accion == "transformar_constancia":
-            self._handle_transform_constancia(parametros)
-            return
-
-        # 3. Para cualquier otro tipo de comando (búsqueda, generación, etc.)
-        # procesarlo con el flujo estándar
-        self._process_standard_command(command_data)
+    # ❌ MÉTODO OBSOLETO - Eliminado: handle_gemini_response
+    # Ahora se usa _handle_chat_engine_response
 
     def _handle_transform_constancia(self, parametros):
         """Maneja la transformación de una constancia.
@@ -655,7 +828,6 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             None
         """
         # PASO 1: Verificar que haya un PDF cargado en el panel
-        # Sin un PDF, no podemos realizar ninguna transformación
         current_pdf = self.pdf_panel.get_current_pdf()
         if not current_pdf:
             self.chat_list.add_assistant_message(
@@ -665,15 +837,12 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             return
 
         # PASO 2: Preparar el entorno para la transformación
-        # Crear un directorio temporal y configurar los parámetros
         temp_dir, tipo_destino, incluir_foto = self._setup_transformation_params(parametros, current_pdf)
 
         # PASO 3: Informar al usuario sobre la transformación que se va a realizar
-        # Esto proporciona retroalimentación inmediata mientras se procesa
         self._show_transformation_info(tipo_destino, incluir_foto)
 
         # PASO 4: Ejecutar la transformación real del PDF
-        # Llamar al servicio que realiza la conversión del formato
         success, message, data = self._execute_transformation(current_pdf, temp_dir)
 
         # PASO 5: Manejar el resultado según sea exitoso o no
@@ -696,6 +865,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 
         # Determinar si se debe incluir foto (por defecto True para constancias de estudio)
         incluir_foto = parametros.get("incluir_foto")
+
         if incluir_foto is None:  # Si no se especificó, usar el valor predeterminado según el tipo
             incluir_foto = (tipo_destino.lower() == "estudio")
 
@@ -725,14 +895,18 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         constancia_service = ServiceProvider.get_instance().constancia_service
 
         # Generar vista previa (preview_mode=True)
-        return constancia_service.generar_constancia_desde_pdf(
-            current_pdf,
-            self.transformation_data["tipo_destino"],
-            self.transformation_data["incluir_foto"],
-            guardar_alumno=False,
-            preview_mode=True,
-            output_dir=temp_dir
-        )
+        try:
+            result = constancia_service.generar_constancia_desde_pdf(
+                current_pdf,
+                self.transformation_data["tipo_destino"],
+                self.transformation_data["incluir_foto"],
+                guardar_alumno=False,
+                preview_mode=True,
+                output_dir=temp_dir
+            )
+            return result
+        except Exception as e:
+            return False, f"Error en transformación: {str(e)}", {}
 
     def _handle_successful_transformation(self, data):
         """Maneja una transformación exitosa"""
@@ -749,11 +923,76 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             self.message_processor.get_current_time()
         )
 
+        # Establecer contexto de transformación con datos originales y transformados
+        original_data = data.get("datos_originales", {})
+        transformed_data = {
+            "tipo_constancia": self.transformation_data.get("tipo_destino", ""),
+            "incluir_foto": self.transformation_data.get("incluir_foto", False),
+            "guardar_alumno": self.transformation_data.get("guardar_alumno", False),
+            "nombre": original_data.get("nombre", ""),
+            "curp": original_data.get("curp", "")
+        }
+
+        self.pdf_panel.set_transformation_context(original_data, transformed_data)
+
         # Cargar el PDF en el visor
-        self.pdf_panel.show_pdf(self.temp_transformed_file)
+        success = self.pdf_panel.show_pdf(self.temp_transformed_file)
+        self.logger.debug(f"Vista previa de transformación cargada: {success}")
 
         # Mostrar opciones y esperar confirmación
         self._show_transformation_options()
+
+    def _handle_constancia_preview(self, data):
+        """Maneja la vista previa de una constancia generada"""
+        self.logger.debug("_handle_constancia_preview ejecutándose")
+        self.logger.debug(f"Datos: {data}")
+
+        # Guardar la ruta del archivo temporal
+        self.temp_constancia_file = data["ruta_archivo"]
+        self.logger.debug(f"Archivo temporal: {self.temp_constancia_file}")
+
+        # Mostrar información del alumno
+        if "alumno" in data:
+            alumno = data["alumno"]
+            self.chat_list.add_assistant_message(
+                f"He generado una vista previa de la constancia para **{alumno.get('nombre', 'N/A')}**.",
+                self._get_current_time()
+            )
+
+        # Establecer contexto de constancia generada
+        self.pdf_panel.set_constancia_context(data.get("alumno", {}))
+
+        # Cargar el PDF usando el método estándar
+        success = self.pdf_panel.show_pdf(self.temp_constancia_file)
+
+        self.logger.debug(f"Vista previa cargada: {success}")
+
+        # Mostrar opciones de confirmación
+        self._show_constancia_preview_options()
+
+    def _show_constancia_preview_options(self):
+        """Muestra las opciones disponibles después de generar vista previa de constancia"""
+        options_message = """<div style="background-color: #2C3E50; border: 2px solid #27AE60; border-radius: 8px; padding: 15px; margin: 10px 0; color: #FFFFFF;">
+<h3 style="color: #27AE60; margin-top: 0;">📄 Vista Previa de Constancia Generada</h3>
+<p style="color: #FFFFFF; margin-bottom: 15px;">
+    Puedes revisar la constancia en el panel de la derecha. ¿Qué deseas hacer?
+</p>
+<div style="background-color: #34495E; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+    <p style="color: #7FB3D5; margin: 0;"><b>Opciones disponibles:</b></p>
+    <p style="color: #FFFFFF; margin: 5px 0;">• <b>"Confirmar"</b> - Guardar la constancia definitivamente</p>
+    <p style="color: #FFFFFF; margin: 5px 0;">• <b>"Abrir en navegador"</b> - Ver/imprimir sin guardar</p>
+    <p style="color: #FFFFFF; margin: 5px 0;">• <b>"Cancelar"</b> - Descartar la constancia</p>
+</div>
+<p style="color: #27AE60; margin: 0;"><b>¿Qué deseas hacer?</b></p>
+</div>"""
+
+        self.chat_list.add_assistant_message(
+            options_message,
+            self._get_current_time()
+        )
+
+        # Marcar que estamos esperando confirmación de constancia
+        self.waiting_for_constancia_confirmation = True
 
     def _show_transformation_options(self):
         """Muestra las opciones disponibles después de transformar una constancia"""
@@ -766,9 +1005,9 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 <p><b style="color: #88CCFF;">4. Nada</b>: Solo ver la vista previa (se eliminará al cerrar la aplicación)</p>
 </div>
 <p style="margin-top: 10px;">Responde con el número (1-4) o el nombre de la opción.</p>
-<p style="margin-top: 5px; font-size: 12px; color: #7FB3D5;">Nota: Para ver los datos que se registrarán, usa el botón "Ver Datos" en el panel del PDF original.</p>
+<p style="margin-top: 5px; font-size: 12px; color: #7FB3D5;">Nota: Para ver los datos extraídos del PDF original, usa el botón "📋 Ver Datos" en el panel.</p>
 </div>"""
-        self.chat_list.add_assistant_message(options_message, self.message_processor.get_current_time())
+        self.chat_list.add_assistant_message(options_message, self._get_current_time())
 
         # Establecer el estado de espera de confirmación
         self.waiting_for_save_confirmation = True
@@ -778,45 +1017,201 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         error_msg = message if message else "Error al transformar la constancia."
         self.chat_list.add_assistant_message(
             f"Error: {error_msg}",
-            self.message_processor.get_current_time()
+            self._get_current_time()
+        )
+
+    def _handle_constancia_confirmation_response(self, message_text):
+        """Maneja la respuesta del usuario sobre qué hacer con la constancia generada"""
+        normalized_text = message_text.lower().strip()
+
+        if normalized_text in ["confirmar", "sí", "si", "yes", "guardar", "confirmo", "ok"]:
+            self._save_constancia_definitively()
+        elif normalized_text in ["abrir", "abrir en navegador", "ver", "imprimir"]:
+            self._open_constancia_file()
+        elif normalized_text in ["cancelar", "no", "descartar", "cancel"]:
+            self._cancel_constancia()
+        else:
+            self.chat_list.add_assistant_message(
+                "No entendí tu respuesta. Por favor responde 'confirmar', 'abrir en navegador' o 'cancelar'.",
+                self._get_current_time()
+            )
+            return  # No restablecer el estado para permitir otro intento
+
+        # Restablecer el estado de confirmación
+        self.waiting_for_constancia_confirmation = False
+
+    def _save_constancia_definitively(self):
+        """Guarda la constancia definitivamente"""
+        import os
+        import shutil
+        from datetime import datetime
+
+        try:
+            # Crear un nombre de archivo con fecha y hora
+            now = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"constancia_{now}.pdf"
+            output_dir = os.path.join(os.getcwd(), "constancias")
+
+            # Asegurarse de que el directorio exista
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Ruta de destino
+            dest_path = os.path.join(output_dir, filename)
+
+            # Copiar el archivo temporal al destino permanente
+            shutil.copy2(self.temp_constancia_file, dest_path)
+
+            self.chat_list.add_assistant_message(
+                f"✅ Constancia guardada correctamente en: {dest_path}",
+                self._get_current_time()
+            )
+
+            # Preguntar si desea abrir el archivo
+            self.chat_list.add_assistant_message(
+                "¿Deseas abrir el archivo? Responde 'sí' o 'no'.",
+                self._get_current_time()
+            )
+            self.last_generated_file = dest_path
+            self.waiting_for_file_open_response = True
+
+        except Exception as e:
+            self.chat_list.add_assistant_message(
+                f"❌ Error al guardar la constancia: {str(e)}",
+                self._get_current_time()
+            )
+
+    def _open_constancia_file(self):
+        """Abre la constancia temporal sin guardarla"""
+        try:
+            import subprocess
+            import platform
+
+            if platform.system() == "Windows":
+                subprocess.Popen(['start', '', self.temp_constancia_file], shell=True)
+            else:
+                from app.core.utils import open_file_with_default_app
+                open_file_with_default_app(self.temp_constancia_file)
+
+            self.chat_list.add_assistant_message(
+                "✅ Abriendo la constancia en el navegador. Desde allí puedes verla o imprimirla.",
+                self._get_current_time()
+            )
+            self.chat_list.add_assistant_message(
+                "Recuerda que este archivo es temporal y se eliminará al cerrar la aplicación.",
+                self._get_current_time()
+            )
+        except Exception as e:
+            self.chat_list.add_assistant_message(
+                f"❌ Error al abrir la constancia: {str(e)}",
+                self._get_current_time()
+            )
+
+    def _cancel_constancia(self):
+        """Cancela la constancia generada"""
+        self.chat_list.add_assistant_message(
+            "✅ Constancia cancelada. El archivo temporal se eliminará automáticamente.",
+            self._get_current_time()
         )
 
     def _process_standard_command(self, command_data):
         """Procesa comandos estándar (no transformaciones)"""
         current_pdf = self.pdf_panel.get_current_pdf()
         accion = command_data.get("accion", "")
-        success, message, data = self.message_processor.process_command(command_data, current_pdf)
+
+        # Obtener la consulta original del usuario para el bypass SQL
+        original_query = getattr(self, '_last_user_message', None)
+
+        # NUEVO: Obtener contexto conversacional del Context Manager
+        conversation_context = {
+            "conversation_history": self.context_manager.history,
+            "conversation_state": self.context_manager.state,
+            "recent_messages": self.context_manager.history[-10:] if self.context_manager.history else []
+        }
+
+        success, message, data = self.message_processor.process_command(
+            command_data,
+            current_pdf,
+            original_query,
+            conversation_context
+        )
 
         if success:
-            self._handle_successful_command(accion, message, data)
+            # Verificar si es una transformación que necesita manejo especial
+            if data.get("accion") == "transformar_constancia":
+                # Los parámetros están directamente en data, no en data["parametros"]
+                self._handle_transform_constancia(data)
+            else:
+                self._handle_successful_command(accion, message, data)
         else:
             self._handle_failed_command(message)
 
     def _handle_successful_command(self, accion, message, data):
         """Maneja un comando exitoso"""
         # Usar frases variadas para respuestas más naturales
+        success_phrase = None
         if "generada" in message or "generado" in message:
             # Para constancias generadas, usar una frase de éxito
+            success_phrase = self.message_processor.get_random_success_phrase()
             self.chat_list.add_assistant_message(
-                self.message_processor.get_random_success_phrase(),
-                self.message_processor.get_current_time()
+                success_phrase,
+                self._get_current_time()
             )
 
         # Mostrar el mensaje original
-        self.chat_list.add_assistant_message(message, self.message_processor.get_current_time())
+        self.chat_list.add_assistant_message(message, self._get_current_time())
+
+        # NUEVO: Agregar al historial conversacional usando Context Manager
+        full_response = f"{success_phrase}\n{message}" if success_phrase else message
+        self.context_manager.add_message("assistant", full_response, {
+            "action": accion,
+            "success": True,
+            "data_keys": list(data.keys()) if data else []
+        })
+
+        # NUEVO: Limpiar estado de espera si la acción fue exitosa
+        if accion in ["generar_constancia", "indefinida"]:
+            self.context_manager.update_state({
+                "waiting_for": None,
+                "last_action": "constancia_generada",
+                "last_error": None
+            })
 
         # Mostrar datos adicionales según el tipo de comando
         self._display_additional_data(data)
 
         # Manejar archivos generados
-        if "ruta_archivo" in data and accion != "transformar_constancia":
-            self._handle_generated_file(data["ruta_archivo"])
+        if "ruta_archivo" in data:
+            if accion == "transformar_constancia":
+                # Las transformaciones ya se manejan en su flujo específico
+                pass
+            elif accion in ["constancia_generada", "generar_constancia"]:
+                # Manejar vista previa de constancia generada
+                self._handle_constancia_preview(data)
+            else:
+                # Otros archivos generados
+                self._handle_generated_file(data["ruta_archivo"])
 
     def _display_additional_data(self, data):
         """Muestra datos adicionales según el tipo de comando"""
         if "alumno" in data:
             # Mostrar detalles de un solo alumno
-            self.mostrar_detalle_alumno(data["alumno"])
+            alumno = data["alumno"]
+
+            # Si no tiene datos escolares completos, obtenerlos de la BD
+            if not alumno.get('grado') or alumno.get('grado') == 'No disponible':
+                try:
+                    alumno_id = alumno.get('id')
+                    if alumno_id:
+                        # Obtener datos completos desde el servicio
+                        from app.core.service_provider import ServiceProvider
+                        service_provider = ServiceProvider.get_instance()
+                        alumno_completo = service_provider.alumno_service.get_alumno_by_id(alumno_id)
+                        if alumno_completo:
+                            alumno = alumno_completo
+                except Exception as e:
+                    self.logger.error(f"Error al obtener datos completos del alumno: {e}")
+
+            self.mostrar_detalle_alumno(alumno)
         elif "alumnos" in data:
             alumnos = data["alumnos"]
             if alumnos:
@@ -828,7 +1223,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         import os
         self.chat_list.add_assistant_message(
             f"Archivo generado: {os.path.basename(ruta_archivo)}",
-            self.message_processor.get_current_time()
+            self._get_current_time()
         )
 
         # Cargar el PDF en el visor
@@ -837,7 +1232,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         # Preguntar si desea abrir el archivo
         self.chat_list.add_assistant_message(
             "¿Deseas abrir el archivo? Responde 'sí' o 'no'.",
-            self.message_processor.get_current_time()
+            self._get_current_time()
         )
 
         # Guardar el archivo actual para posible apertura
@@ -848,10 +1243,20 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 
     def _handle_failed_command(self, message):
         """Maneja un comando fallido"""
+        error_message = f"Error: {message}"
         self.chat_list.add_assistant_message(
-            f"Error: {message}",
-            self.message_processor.get_current_time()
+            error_message,
+            self._get_current_time()
         )
+
+        # NUEVO: Agregar al historial conversacional usando Context Manager
+        self.context_manager.add_message("assistant", error_message, {
+            "success": False,
+            "error": True
+        })
+
+        # NUEVO: Manejo de errores centralizado en Context Manager
+        self.context_manager.handle_error_with_context(message)
 
     def handle_gemini_error(self, error_message):
         """Maneja errores en la comunicación con Gemini"""
@@ -859,8 +1264,8 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         self.progress_bar.setVisible(False)
 
         # Mostrar mensaje de error
-        self.chat_list.add_assistant_message(f"Lo siento, ocurrió un error: {error_message}", self.message_processor.get_current_time())
-        self.chat_list.add_assistant_message("Por favor, intenta de nuevo más tarde.", self.message_processor.get_current_time())
+        self.chat_list.add_assistant_message(f"Lo siento, ocurrió un error: {error_message}", self._get_current_time())
+        self.chat_list.add_assistant_message("Por favor, intenta de nuevo más tarde.", self._get_current_time())
 
     def on_pdf_loaded(self):
         """Se llama cuando se carga un PDF en el panel"""
@@ -936,42 +1341,176 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 <li><b>Detalles completos</b>: "Muestra los detalles del alumno Juan Pérez"</li>
 </ul>
 </div>"""
-        self.chat_list.add_assistant_message(ayuda_html, self.message_processor.get_current_time())
+        self.chat_list.add_assistant_message(ayuda_html, self._get_current_time())
 
     def mostrar_alumnos_tabla(self, alumnos):
-        """Muestra los alumnos en formato tabular"""
-        # Implementación simplificada - se puede expandir según necesidades
-        html = "<table border='1' style='width:100%; border-collapse: collapse; color: white; border-color: #34495E;'>"
-        html += "<tr style='background-color: #1E3A5F; color: white;'><th>ID</th><th>Nombre</th><th>CURP</th><th>Grado</th><th>Grupo</th></tr>"
+        """Muestra los alumnos en formato tabular optimizado para grandes volúmenes"""
+        if not alumnos:
+            self.chat_list.add_assistant_message("No se encontraron alumnos.", self._get_current_time())
+            return
 
-        for i, alumno in enumerate(alumnos):
-            # Alternar colores de fondo para las filas
-            bg_color = "#2C3E50" if i % 2 == 0 else "#34495E"
-            html += f"<tr style='background-color: {bg_color};'>"
-            html += f"<td>{alumno.get('id', '')}</td>"
-            html += f"<td>{alumno.get('nombre', '').upper()}</td>"
-            html += f"<td>{alumno.get('curp', '')}</td>"
-            html += f"<td>{alumno.get('grado', '')}</td>"
-            html += f"<td>{alumno.get('grupo', '')}</td>"
-            html += f"</tr>"
+        total_alumnos = len(alumnos)
 
-        html += "</table>"
+        # Para muchos alumnos, usar formato compacto y paginación
+        if total_alumnos > 50:
+            self._mostrar_tabla_grande(alumnos)
+        elif total_alumnos > 10:
+            self._mostrar_tabla_mediana(alumnos)
+        else:
+            self._mostrar_tabla_pequena(alumnos)
 
-        self.chat_list.add_assistant_message(html, self.message_processor.get_current_time())
+    def _mostrar_tabla_grande(self, alumnos):
+        """Muestra tabla optimizada para 50+ alumnos con paginación en texto plano"""
+        total = len(alumnos)
+        limite_por_pagina = 50
+
+        # Crear texto plano
+        texto = f"📊 RESULTADOS DE BÚSQUEDA\n"
+        texto += "=" * 50 + "\n"
+        texto += f"Total encontrados: {total} alumnos\n"
+        texto += f"Mostrando: Primeros {min(limite_por_pagina, total)} resultados\n\n"
+
+        # Mostrar solo los primeros resultados
+        for i, alumno in enumerate(alumnos[:limite_por_pagina], 1):
+            nombre = alumno.get('nombre', '').upper()
+            grado = alumno.get('grado', '')
+            grupo = alumno.get('grupo', '')
+            turno = alumno.get('turno', '')[:3] if alumno.get('turno') else ''  # MAT o VES
+            curp = alumno.get('curp', '')
+
+            texto += f"{i:2d}. {nombre}\n"
+            texto += f"    🎓 {grado}° {grupo} - {turno}  |  📋 {curp}\n\n"
+
+        # Mensaje de ayuda para ver más resultados
+        if total > limite_por_pagina:
+            texto += "-" * 50 + "\n"
+            texto += f"💡 Se muestran solo los primeros {limite_por_pagina} resultados.\n"
+            texto += "Para ver un alumno específico: 'Detalles de [nombre completo]'\n"
+            texto += "Para filtrar más: 'Alumnos de [grado] grado grupo [grupo]'\n"
+
+        self.chat_list.add_assistant_message(texto, self._get_current_time())
+
+    def _mostrar_tabla_mediana(self, alumnos):
+        """Muestra tabla estándar para 10-50 alumnos en texto plano"""
+        texto = f"🔍 ALUMNOS ENCONTRADOS: {len(alumnos)}\n"
+        texto += "=" * 40 + "\n\n"
+
+        for i, alumno in enumerate(alumnos, 1):
+            nombre = alumno.get('nombre', '').upper()
+            curp = alumno.get('curp', '')
+            grado = alumno.get('grado', '')
+            grupo = alumno.get('grupo', '')
+            turno = alumno.get('turno', '')
+
+            texto += f"{i:2d}. {nombre}\n"
+            texto += f"    📋 {curp}\n"
+            texto += f"    🎓 {grado}° {grupo} - {turno}\n\n"
+
+        texto += "-" * 40 + "\n"
+        texto += "💡 Para ver detalles completos: 'Detalles de [nombre]'\n"
+
+        self.chat_list.add_assistant_message(texto, self._get_current_time())
+
+    def _mostrar_tabla_pequena(self, alumnos):
+        """Muestra tabla detallada para pocos alumnos (≤10) en texto plano"""
+        plural = 's' if len(alumnos) > 1 else ''
+        texto = f"👥 {len(alumnos)} ALUMNO{plural.upper()} ENCONTRADO{plural.upper()}\n"
+        texto += "=" * 35 + "\n\n"
+
+        for i, alumno in enumerate(alumnos, 1):
+            nombre = alumno.get('nombre', '').upper()
+            curp = alumno.get('curp', '')
+            grado = alumno.get('grado', '')
+            grupo = alumno.get('grupo', '')
+            turno = alumno.get('turno', '')
+            matricula = alumno.get('matricula', '')
+
+            texto += f"{i}. {nombre}\n"
+            texto += f"   📋 CURP: {curp}\n"
+            texto += f"   🎓 Grado: {grado}° {grupo} - {turno}\n"
+            texto += f"   🆔 Matrícula: {matricula}\n\n"
+
+        self.chat_list.add_assistant_message(texto, self._get_current_time())
 
     def mostrar_detalle_alumno(self, alumno):
-        """Muestra los detalles de un solo alumno"""
-        # Implementación simplificada - se puede expandir según necesidades
-        html = "<div style='border: 1px solid #3498DB; padding: 15px; border-radius: 8px; background-color: #2C3E50; color: white;'>"
-        html += f"<h3 style='color: #7FB3D5; margin-top: 0;'>{alumno.get('nombre', '').upper()}</h3>"
-        html += f"<p><b style='color: #88CCFF;'>CURP:</b> {alumno.get('curp', '')}</p>"
-        html += f"<p><b style='color: #88CCFF;'>Matrícula:</b> {alumno.get('matricula', '')}</p>"
-        html += f"<p><b style='color: #88CCFF;'>Grado:</b> {alumno.get('grado', '')}</p>"
-        html += f"<p><b style='color: #88CCFF;'>Grupo:</b> {alumno.get('grupo', '')}</p>"
-        html += f"<p><b style='color: #88CCFF;'>Turno:</b> {alumno.get('turno', '')}</p>"
-        html += "</div>"
+        """Muestra los detalles completos de un solo alumno con calificaciones si las tiene"""
+        try:
+            # Verificar si el alumno existe
+            if not alumno:
+                self.chat_list.add_assistant_message("No se encontraron detalles del alumno.", self._get_current_time())
+                return
 
-        self.chat_list.add_assistant_message(html, self.message_processor.get_current_time())
+            # Crear texto plano simple y legible
+            texto = f"📋 DETALLES DEL ALUMNO\n"
+            texto += "=" * 50 + "\n\n"
+
+            # Datos personales
+            texto += "👤 DATOS PERSONALES\n"
+            texto += f"• Nombre: {alumno.get('nombre', 'No disponible').upper()}\n"
+            texto += f"• CURP: {alumno.get('curp', 'No disponible')}\n"
+            texto += f"• Matrícula: {alumno.get('matricula', 'No disponible')}\n"
+            texto += f"• Fecha de Nacimiento: {alumno.get('fecha_nacimiento', 'No disponible')}\n\n"
+
+            # Datos escolares
+            texto += "🏫 DATOS ESCOLARES\n"
+            texto += f"• Grado: {alumno.get('grado', 'No disponible')}\n"
+            texto += f"• Grupo: {alumno.get('grupo', 'No disponible')}\n"
+            texto += f"• Turno: {alumno.get('turno', 'No disponible')}\n"
+            texto += f"• Ciclo Escolar: {alumno.get('ciclo_escolar', 'No disponible')}\n"
+            texto += f"• Escuela: {alumno.get('escuela', 'No disponible')}\n\n"
+
+            # Calificaciones
+            calificaciones = alumno.get('calificaciones', [])
+            if calificaciones and len(calificaciones) > 0:
+                texto += "📊 CALIFICACIONES\n"
+                texto += "-" * 30 + "\n"
+
+                # Verificar si tienen periodos
+                tiene_periodos = any(cal.get('i') is not None or cal.get('ii') is not None for cal in calificaciones)
+
+                for i, cal in enumerate(calificaciones, 1):
+                    materia = cal.get('nombre', cal.get('materia', 'No especificada'))
+                    texto += f"\n{i}. {materia}\n"
+
+                    if tiene_periodos:
+                        # Formatear calificaciones por periodo
+                        def format_grade(grade):
+                            if isinstance(grade, (int, float)) and grade > 0:
+                                return f"{grade:.1f}" if grade % 1 != 0 else str(int(grade))
+                            return '-'
+
+                        p1 = format_grade(cal.get('i', 0))
+                        p2 = format_grade(cal.get('ii', 0))
+                        p3 = format_grade(cal.get('iii', 0))
+                        prom = format_grade(cal.get('promedio', 0))
+
+                        texto += f"   Periodo I: {p1}  |  Periodo II: {p2}  |  Periodo III: {p3}\n"
+                        texto += f"   ➤ PROMEDIO: {prom}\n"
+                    else:
+                        # Calificación simple
+                        calificacion = cal.get('promedio', cal.get('calificacion', 'N/A'))
+                        if isinstance(calificacion, (int, float)):
+                            calificacion = f"{calificacion:.1f}" if calificacion % 1 != 0 else str(int(calificacion))
+                        texto += f"   ➤ CALIFICACIÓN: {calificacion}\n"
+            else:
+                texto += "📊 CALIFICACIONES\n"
+                texto += "ℹ️ Este alumno no tiene calificaciones registradas.\n"
+
+            # Mostrar el texto plano en el chat
+            self.chat_list.add_assistant_message(texto, self.message_processor.get_current_time())
+
+        except Exception as e:
+            # Si hay algún error, mostrar los datos del alumno en formato simple
+            alumno_text = f"Detalles del alumno:\n"
+            alumno_text += f"Nombre: {alumno.get('nombre', 'No disponible').upper()}\n"
+            alumno_text += f"CURP: {alumno.get('curp', 'No disponible')}\n"
+            alumno_text += f"Grado: {alumno.get('grado', 'No disponible')}\n"
+            alumno_text += f"Grupo: {alumno.get('grupo', 'No disponible')}\n"
+            alumno_text += f"Turno: {alumno.get('turno', 'No disponible')}\n"
+            from datetime import datetime
+            current_time = datetime.now().strftime("%H:%M:%S")
+            self.chat_list.add_assistant_message(alumno_text, current_time)
+            self.logger.error(f"Error al mostrar detalles del alumno: {str(e)}")
 
     def closeEvent(self, event):
         """Se llama cuando se cierra la ventana"""
@@ -1022,4 +1561,4 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                     temp_dir = os.path.dirname(self.temp_transformed_file)
                     atexit.register(delete_on_exit, self.temp_transformed_file, temp_dir)
             except Exception as e:
-                print(f"Error al limpiar archivos temporales: {str(e)}")
+                self.logger.error(f"Error al limpiar archivos temporales: {str(e)}")

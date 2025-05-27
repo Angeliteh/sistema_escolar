@@ -31,19 +31,30 @@ class ChatList(QListWidget):
             }
             QScrollBar:vertical {
                 border: none;
-                background: #16213E;  /* Azul oscuro para el fondo de la barra */
-                width: 6px;
+                background: #16213E;
+                width: 10px;
                 margin: 0px;
+                border-radius: 5px;
             }
             QScrollBar::handle:vertical {
-                background: #0F3460;  /* Azul más oscuro para el manejador */
-                min-height: 20px;
+                background-color: #2980B9;
+                min-height: 30px;
+                border-radius: 5px;
+                margin: 2px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #1E3A5F;  /* Azul un poco más claro al pasar el mouse */
+                background-color: #3498DB;
+            }
+            QScrollBar::handle:vertical:pressed {
+                background-color: #1B4F72;
             }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                 height: 0px;
+                border: none;
+                background: none;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
             }
         """)
 
@@ -59,13 +70,15 @@ class ChatList(QListWidget):
         # Usar el ancho de la lista menos un margen, y la altura sugerida por la burbuja
         size_hint = bubble.sizeHint()
 
-        # Usar el ancho sugerido por la burbuja, pero asegurarse de que no sea demasiado ancho
-        # para mantener la legibilidad y que no sea demasiado estrecho para mostrar todo el contenido
-        width = min(self.width() - 40, max(size_hint.width(), int(self.width() * 0.7)))
+        # Usar el ancho sugerido por la burbuja, respetando su tamaño adaptativo
+        # Permitir que las burbujas usen su ancho natural, pero con límites sensatos
+        available_width = self.width() - 40  # Margen para scrollbar y bordes
 
-        # Añadir un pequeño espacio extra en altura para asegurar que todo el contenido sea visible
-        # pero sin dejar demasiado espacio vacío
-        item.setSizeHint(QSize(width, size_hint.height() + 10))  # Aumentar el espacio extra
+        # Respetar el ancho sugerido por la burbuja, pero limitarlo al espacio disponible
+        width = min(size_hint.width(), available_width)
+
+        # SIN espacio extra en altura
+        item.setSizeHint(QSize(width, size_hint.height()))  # SIN espacio extra
 
         # Añadir item a la lista
         self.addItem(item)
@@ -102,13 +115,13 @@ class ChatList(QListWidget):
                 # Obtener el tamaño sugerido por el widget
                 size_hint = widget.sizeHint()
 
-                # Calcular un ancho apropiado que aproveche el espacio horizontal
-                # pero que no sea demasiado ancho para mantener la legibilidad
-                width = min(self.width() - 40, max(size_hint.width(), int(self.width() * 0.7)))
+                # Respetar el ancho adaptativo de la burbuja
+                available_width = self.width() - 40  # Margen para scrollbar y bordes
+                width = min(size_hint.width(), available_width)
 
                 # Ajustar el tamaño del item
-                # Añadir un pequeño espacio extra en altura, pero sin exceso
-                item.setSizeHint(QSize(width, size_hint.height() + 10))  # Aumentar el espacio extra
+                # SIN espacio extra en altura
+                item.setSizeHint(QSize(width, size_hint.height()))  # SIN espacio extra
 
                 # Forzar la actualización del widget para asegurar que se muestre correctamente
                 widget.updateGeometry()

@@ -129,12 +129,12 @@ class AlumnoService:
             if datos.get("grado") and datos.get("grupo"):
                 datos_escolares = DatosEscolares(
                     alumno_id=alumno.id,
-                    ciclo_escolar=datos.get("ciclo_escolar", Config.CURRENT_SCHOOL_YEAR),
+                    ciclo_escolar=datos.get("ciclo_escolar", Config.get_current_year()),
                     grado=int(datos.get("grado", 1)),
                     grupo=datos.get("grupo", "A"),
                     turno=datos.get("turno", "MATUTINO"),
-                    escuela=datos.get("escuela", Config.SCHOOL_NAME),
-                    cct=datos.get("cct", Config.SCHOOL_CCT),
+                    escuela=datos.get("escuela", Config.get_school_name()),
+                    cct=datos.get("cct", Config.get_school_cct()),
                     calificaciones=datos.get("calificaciones", [])
                 )
 
@@ -232,12 +232,12 @@ class AlumnoService:
                     # Crear nuevos datos escolares
                     datos_escolares = DatosEscolares(
                         alumno_id=alumno.id,
-                        ciclo_escolar=datos.get("ciclo_escolar", Config.CURRENT_SCHOOL_YEAR),
+                        ciclo_escolar=datos.get("ciclo_escolar", Config.get_current_year()),
                         grado=int(datos.get("grado", 1)),
                         grupo=datos.get("grupo", "A"),
                         turno=datos.get("turno", "MATUTINO"),
-                        escuela=datos.get("escuela", Config.SCHOOL_NAME),
-                        cct=datos.get("cct", Config.SCHOOL_CCT),
+                        escuela=datos.get("escuela", Config.get_school_name()),
+                        cct=datos.get("cct", Config.get_school_cct()),
                         calificaciones=datos.get("calificaciones", [])
                     )
 
@@ -312,6 +312,19 @@ class AlumnoService:
             result.append(alumno_dict)
 
         return result
+
+    def buscar_por_nombre(self, nombre: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Busca alumnos por nombre (alias para buscar_alumnos)
+
+        Args:
+            nombre: Nombre a buscar
+            limit: Límite de resultados
+
+        Returns:
+            Lista de diccionarios con los datos de los alumnos
+        """
+        return self.buscar_alumnos(nombre, limit)
 
     def listar_alumnos(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         """
@@ -456,12 +469,12 @@ class AlumnoService:
                     # Crear nuevos datos escolares
                     datos_esc = DatosEscolares(
                         alumno_id=alumno_id,
-                        ciclo_escolar=datos_escolares.get('ciclo_escolar', Config.CURRENT_SCHOOL_YEAR),
+                        ciclo_escolar=datos_escolares.get('ciclo_escolar', Config.get_current_year()),
                         grado=int(datos_escolares.get('grado', 1)),
                         grupo=datos_escolares.get('grupo', 'A'),
                         turno=datos_escolares.get('turno', 'MATUTINO'),
-                        escuela=datos_escolares.get('escuela', Config.SCHOOL_NAME),
-                        cct=datos_escolares.get('cct', Config.SCHOOL_CCT)
+                        escuela=datos_escolares.get('escuela', Config.get_school_name()),
+                        cct=datos_escolares.get('cct', Config.get_school_cct())
                     )
 
                     self.datos_escolares_repository.save(datos_esc)

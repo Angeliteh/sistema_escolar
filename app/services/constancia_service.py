@@ -123,12 +123,12 @@ class ConstanciaService:
                     if datos_escolares_list:
                         # Actualizar datos escolares existentes
                         datos_escolares = datos_escolares_list[0]
-                        datos_escolares.ciclo_escolar = datos.get("ciclo", Config.CURRENT_SCHOOL_YEAR)
+                        datos_escolares.ciclo_escolar = datos.get("ciclo", Config.get_current_year())
                         datos_escolares.grado = int(datos.get("grado", 1))
                         datos_escolares.grupo = datos.get("grupo", "A")
                         datos_escolares.turno = datos.get("turno", "MATUTINO")
-                        datos_escolares.escuela = datos.get("escuela", Config.SCHOOL_NAME)
-                        datos_escolares.cct = datos.get("cct", Config.SCHOOL_CCT)
+                        datos_escolares.escuela = datos.get("escuela", Config.get_school_name())
+                        datos_escolares.cct = datos.get("cct", Config.get_school_cct())
                         datos_escolares.calificaciones = calificaciones
 
                         self.datos_escolares_repository.save(datos_escolares)
@@ -136,12 +136,12 @@ class ConstanciaService:
                         # Crear nuevos datos escolares
                         datos_escolares = DatosEscolares(
                             alumno_id=alumno.id,
-                            ciclo_escolar=datos.get("ciclo", Config.CURRENT_SCHOOL_YEAR),
+                            ciclo_escolar=datos.get("ciclo", Config.get_current_year()),
                             grado=int(datos.get("grado", 1)),
                             grupo=datos.get("grupo", "A"),
                             turno=datos.get("turno", "MATUTINO"),
-                            escuela=datos.get("escuela", Config.SCHOOL_NAME),
-                            cct=datos.get("cct", Config.SCHOOL_CCT),
+                            escuela=datos.get("escuela", Config.get_school_name()),
+                            cct=datos.get("cct", Config.get_school_cct()),
                             calificaciones=calificaciones
                         )
 
@@ -252,8 +252,8 @@ class ConstanciaService:
                     "grupo": datos_escolares.grupo,
                     "turno": datos_escolares.turno,
                     "ciclo": datos_escolares.ciclo_escolar,
-                    "escuela": datos_escolares.escuela or Config.SCHOOL_NAME,
-                    "cct": datos_escolares.cct or Config.SCHOOL_CCT,
+                    "escuela": datos_escolares.escuela or Config.get_school_name(),
+                    "cct": datos_escolares.cct or Config.get_school_cct(),
                     "calificaciones": datos_escolares.calificaciones,
                     "tiene_calificaciones": bool(datos_escolares.calificaciones and len(datos_escolares.calificaciones) > 0)
                 })
@@ -263,9 +263,9 @@ class ConstanciaService:
                     "grado": "",
                     "grupo": "",
                     "turno": "MATUTINO",
-                    "ciclo": Config.CURRENT_SCHOOL_YEAR,
-                    "escuela": Config.SCHOOL_NAME,
-                    "cct": Config.SCHOOL_CCT,
+                    "ciclo": Config.get_current_year(),
+                    "escuela": Config.get_school_name(),
+                    "cct": Config.get_school_cct(),
                     "calificaciones": [],
                     "tiene_calificaciones": False
                 })
@@ -484,12 +484,12 @@ class ConstanciaService:
                 if datos_escolares_list:
                     # Actualizar datos escolares existentes
                     datos_escolares = datos_escolares_list[0]
-                    datos_escolares.ciclo_escolar = datos.get("ciclo", Config.CURRENT_SCHOOL_YEAR)
+                    datos_escolares.ciclo_escolar = datos.get("ciclo", Config.get_current_year())
                     datos_escolares.grado = int(datos.get("grado", 1))
                     datos_escolares.grupo = datos.get("grupo", "A")
                     datos_escolares.turno = datos.get("turno", "MATUTINO")
-                    datos_escolares.escuela = datos.get("escuela", Config.SCHOOL_NAME)
-                    datos_escolares.cct = datos.get("cct", Config.SCHOOL_CCT)
+                    datos_escolares.escuela = datos.get("escuela", Config.get_school_name())
+                    datos_escolares.cct = datos.get("cct", Config.get_school_cct())
                     datos_escolares.calificaciones = calificaciones
 
                     self.datos_escolares_repository.save(datos_escolares)
@@ -498,12 +498,12 @@ class ConstanciaService:
                     # Crear nuevos datos escolares
                     datos_escolares = DatosEscolares(
                         alumno_id=alumno.id,
-                        ciclo_escolar=datos.get("ciclo", Config.CURRENT_SCHOOL_YEAR),
+                        ciclo_escolar=datos.get("ciclo", Config.get_current_year()),
                         grado=int(datos.get("grado", 1)),
                         grupo=datos.get("grupo", "A"),
                         turno=datos.get("turno", "MATUTINO"),
-                        escuela=datos.get("escuela", Config.SCHOOL_NAME),
-                        cct=datos.get("cct", Config.SCHOOL_CCT),
+                        escuela=datos.get("escuela", Config.get_school_name()),
+                        cct=datos.get("cct", Config.get_school_cct()),
                         calificaciones=calificaciones
                     )
 

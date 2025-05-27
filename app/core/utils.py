@@ -8,6 +8,10 @@ import unicodedata
 import re
 from datetime import datetime, timedelta
 from app.core.config import Config
+from app.core.logging import get_logger
+
+# Logger para este módulo
+logger = get_logger(__name__)
 
 def ensure_directories_exist():
     """Asegura que todos los directorios necesarios existan"""
@@ -24,7 +28,7 @@ def copy_file_safely(source, destination):
         shutil.copy2(source, destination)
         return True
     except Exception as e:
-        print(f"Error al copiar archivo {source} a {destination}: {e}")
+        logger.error(f"Error al copiar archivo {source} a {destination}: {e}")
         return False
 
 def generate_timestamp():
@@ -42,7 +46,7 @@ def open_file_with_default_app(file_path):
             subprocess.call(('xdg-open', file_path))
         return True
     except Exception as e:
-        print(f"Error al abrir archivo {file_path}: {e}")
+        logger.error(f"Error al abrir archivo {file_path}: {e}")
         return False
 
 def create_temp_file(content, suffix=".html"):
@@ -52,7 +56,7 @@ def create_temp_file(content, suffix=".html"):
             temp_file.write(content)
             return temp_file.name
     except Exception as e:
-        print(f"Error al crear archivo temporal: {e}")
+        logger.error(f"Error al crear archivo temporal: {e}")
         return None
 
 def format_curp(curp):
@@ -184,10 +188,10 @@ def backup_database():
         # Copiar la base de datos
         shutil.copy2(Config.DB_PATH, backup_file)
 
-        print(f"Respaldo creado: {backup_file}")
+        logger.info(f"Respaldo creado: {backup_file}")
         return backup_file
     except Exception as e:
-        print(f"Error al crear respaldo de la base de datos: {e}")
+        logger.error(f"Error al crear respaldo de la base de datos: {e}")
         return None
 
 def clean_temp_files(directory=None, max_age_days=7, file_patterns=None):
@@ -231,11 +235,11 @@ def clean_temp_files(directory=None, max_age_days=7, file_patterns=None):
                         try:
                             os.unlink(file_path)
                             deleted_count += 1
-                            print(f"Archivo temporal eliminado: {file_path}")
+                            logger.debug(f"Archivo temporal eliminado: {file_path}")
                         except Exception as e:
-                            print(f"Error al eliminar archivo temporal {file_path}: {e}")
+                            logger.warning(f"Error al eliminar archivo temporal {file_path}: {e}")
 
         return deleted_count
     except Exception as e:
-        print(f"Error al limpiar archivos temporales: {e}")
+        logger.error(f"Error al limpiar archivos temporales: {e}")
         return 0

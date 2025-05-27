@@ -77,7 +77,7 @@ class MenuPrincipal(QMainWindow):
         title_label.setStyleSheet("color: #FFFFFF; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);")
 
         # Subtítulo con estilo moderno
-        subtitle_label = QLabel(f"Escuela Primaria {Config.SCHOOL_NAME}")
+        subtitle_label = QLabel(f"Escuela Primaria {Config.get_school_name()}")
         subtitle_label.setAlignment(Qt.AlignCenter)
         subtitle_font = QFont("Segoe UI", 16)
         subtitle_label.setFont(subtitle_font)
@@ -174,7 +174,7 @@ class MenuPrincipal(QMainWindow):
         footer_layout = QVBoxLayout(footer_container)
 
         # Pie de página con estilo moderno
-        footer_label = QLabel(f"Versión {Config.VERSION} - Desarrollado para {Config.SCHOOL_NAME}")
+        footer_label = QLabel(f"Versión {Config.VERSION} - Desarrollado para {Config.get_school_name()}")
         footer_label.setAlignment(Qt.AlignCenter)
         footer_font = QFont("Segoe UI", 10)
         footer_label.setFont(footer_font)

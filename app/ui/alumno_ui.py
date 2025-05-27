@@ -189,7 +189,7 @@ class RegistroAlumnoDialog(QDialog):
         form_escolar.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # Permitir que los campos crezcan
         form_escolar.setRowWrapPolicy(QFormLayout.WrapLongRows)  # Envolver filas largas
 
-        self.txt_ciclo = QLineEdit(Config.CURRENT_SCHOOL_YEAR)
+        self.txt_ciclo = QLineEdit(Config.get_current_year())
         self.txt_ciclo.setStyleSheet(input_style)
         self.txt_ciclo.setPlaceholderText("Ejemplo: 2023-2024")
 

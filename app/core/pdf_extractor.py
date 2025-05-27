@@ -4,9 +4,9 @@ import os
 import io
 import PyPDF2
 from PIL import Image
-from datetime import datetime
 from app.core.config import Config
 from app.core.utils import ensure_directories_exist, copy_file_safely
+from app.core.logging import get_logger
 
 def is_number(s):
     """Verifica si una cadena es un número"""
@@ -24,6 +24,7 @@ class PDFExtractor:
     def __init__(self, pdf_path):
         """Inicializa el extractor con la ruta al PDF"""
         self.pdf_path = pdf_path
+        self.logger = get_logger(__name__)
         self.text = self._extract_text()
         self.tipo_constancia = self._determinar_tipo_constancia()
         self.has_photo = False  # Indica si se encontró una foto en el PDF
@@ -72,10 +73,10 @@ class PDFExtractor:
         """Extrae los datos básicos comunes a todos los tipos de constancias"""
         datos = {
             "tipo_constancia": self.tipo_constancia,
-            "escuela": Config.SCHOOL_NAME,  # Valor por defecto desde configuración
-            "cct": Config.SCHOOL_CCT,  # Valor por defecto desde configuración
+            "escuela": Config.get_school_name(),  # Valor por defecto desde configuración
+            "cct": Config.get_school_cct(),  # Valor por defecto desde configuración
             "ciclo": "2024-2025",  # Valor por defecto
-            "director": "JOSE ANGEL ALVARADO SOSA",  # Valor por defecto
+            "director": Config.get_director_name(),  # Valor por defecto
             "fecha_actual": Config.get_current_date_formatted(),
         }
 
@@ -295,20 +296,20 @@ class PDFExtractor:
         # Método 1: Verificar si el método extraer_calificaciones devuelve calificaciones
         calificaciones = self.extraer_calificaciones()
         if calificaciones and len(calificaciones) > 0:
-            print(f"Detectadas {len(calificaciones)} calificaciones mediante extracción directa")
+            self.logger.debug(f"Detectadas {len(calificaciones)} calificaciones mediante extracción directa")
             return True
 
         # Método 2: Buscar sección de calificaciones con patrones más específicos
         # Patrón 1: Encabezado de tabla de calificaciones con MATERIAS
         match = re.search(r"MATERIAS\s+I\s+II\s+III\s+Promedio", self.text, re.DOTALL)
         if match:
-            print("Detectadas calificaciones (patrón MATERIAS)")
+            self.logger.debug("Detectadas calificaciones (patrón MATERIAS)")
             return True
 
         # Patrón 2: Encabezado de tabla de calificaciones con ASIGNATURA
         match = re.search(r"ASIGNATURA\s+P1\s+P2\s+P3\s+Promedio", self.text, re.DOTALL)
         if match:
-            print("Detectadas calificaciones (patrón ASIGNATURA)")
+            self.logger.debug("Detectadas calificaciones (patrón ASIGNATURA)")
             return True
 
         # Patrón 3: Buscar palabras clave específicas de materias seguidas de números
@@ -322,14 +323,14 @@ class PDFExtractor:
 
         for patron in materias_clave:
             if re.search(patron, self.text, re.DOTALL):
-                print(f"Detectadas calificaciones (patrón materia: {patron})")
+                self.logger.debug(f"Detectadas calificaciones (patrón materia: {patron})")
                 return True
 
         # Patrón 4: Buscar cualquier sección que pueda contener calificaciones
         # Buscar secciones con al menos 3 líneas que contengan 4 números entre 0 y 10
         calificaciones_pattern = r"((?:\w+\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?[\r\n]+){3,})"
         if re.search(calificaciones_pattern, self.text, re.DOTALL):
-            print("Detectadas calificaciones (patrón de múltiples líneas con números)")
+            self.logger.debug("Detectadas calificaciones (patrón de múltiples líneas con números)")
             return True
 
         # Patrón 5: Verificar si hay una sección que contiene múltiples números que podrían ser calificaciones
@@ -339,10 +340,10 @@ class PDFExtractor:
             # Verificar que no sea parte de una fecha o información no relacionada
             # Esto es un patrón más débil, así que verificamos que no esté en secciones conocidas
             if not re.search(r"INICIO DEL CICLO|FIN DEL CICLO|FECHA DE NACIMIENTO", self.text, re.DOTALL):
-                print("Detectadas posibles calificaciones (patrón numérico)")
+                self.logger.debug("Detectadas posibles calificaciones (patrón numérico)")
                 return True
 
-        print("No se detectaron calificaciones en el PDF")
+        self.logger.debug("No se detectaron calificaciones en el PDF")
         return False
 
     def extraer_calificaciones(self):
@@ -607,7 +608,6 @@ class PDFExtractor:
             return
 
         # Si la función centralizada falla, intentar métodos alternativos
-        import time
 
         # Método 1: Usar PIL para abrir y guardar la imagen
         try:
@@ -753,16 +753,16 @@ class PDFExtractor:
             try:
                 # Intentar convertir el grado a entero
                 datos['grado'] = int(datos['grado'])
-                print(f"Grado convertido a entero: {datos['grado']}")
+                self.logger.debug(f"Grado convertido a entero: {datos['grado']}")
             except (ValueError, TypeError):
                 # Si no se puede convertir, usar el valor por defecto
-                print(f"ADVERTENCIA: No se pudo convertir el grado '{datos['grado']}' a entero. Usando valor por defecto.")
+                self.logger.warning(f"No se pudo convertir el grado '{datos['grado']}' a entero. Usando valor por defecto.")
                 datos['grado'] = Config.DEFAULT_GRADE
 
         # Asegurarse de que el grupo sea una cadena
         if 'grupo' in datos and datos['grupo'] is not None:
             datos['grupo'] = str(datos['grupo'])
-            print(f"Grupo convertido a cadena: '{datos['grupo']}'")
+            self.logger.debug(f"Grupo convertido a cadena: '{datos['grupo']}'")
 
         # Verificar si la constancia original tiene calificaciones
         tiene_calificaciones = self.tiene_calificaciones()

@@ -1,314 +1,315 @@
-# Sistema de Constancias Escolares
+# 🎓 Sistema de Constancias Escolares
 
-Este sistema permite transformar diferentes tipos de constancias escolares (estudios, calificaciones, traslado) a partir de PDFs existentes, extrayendo los datos relevantes y generando nuevos documentos con formatos estandarizados.
+Sistema integral para la gestión y generación de constancias escolares con inteligencia artificial integrada y transformación automática de PDFs.
 
-## Estructura del Sistema
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
+[![PyQt5](https://img.shields.io/badge/PyQt5-GUI-green.svg)](https://pypi.org/project/PyQt5/)
+[![Gemini AI](https://img.shields.io/badge/Gemini-AI%20Powered-orange.svg)](https://ai.google.dev/)
+[![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)]()
 
-El sistema está organizado en una arquitectura en capas:
+---
+
+## ✨ **Características Principales**
+
+### 🤖 **Inteligencia Artificial Avanzada**
+- **Chat conversacional** con Google Gemini 2.0 Flash
+- **Detección automática** de intenciones y comandos
+- **Contexto conversacional** mantenido durante toda la sesión
+- **Búsqueda inteligente** por nombre parcial, CURP o criterios específicos
+
+### 📄 **Transformación de PDFs**
+- **Drag & Drop** intuitivo para cargar PDFs
+- **Extracción automática** de datos de constancias existentes
+- **Transformación a cualquier formato**: estudios, calificaciones, traslado
+- **Vista previa dual** (original y transformado)
+- **Guardado directo** en base de datos desde la interfaz
+
+### 🗄️ **Gestión Completa de Datos**
+- **Base de datos SQLite** con estructura optimizada
+- **Gestión de alumnos** con datos personales y escolares
+- **Sistema de calificaciones** por periodos y materias
+- **Fotos de alumnos** integradas automáticamente
+
+### 📊 **Múltiples Formatos de Constancias**
+- **Constancias de Estudios**: Datos básicos del alumno
+- **Constancias de Calificaciones**: Incluye notas académicas
+- **Constancias de Traslado**: Para cambio de escuela
+- **Con/sin foto**: Opción automática según disponibilidad
+
+### 🎨 **Interfaz Moderna**
+- **Panel contraíble** para transformación de PDFs
+- **Chat con burbujas** diferenciadas por usuario/asistente
+- **Vista previa integrada** de PDFs y constancias
+- **Botones contextuales** que cambian según la situación
+
+## 🚀 **Instalación y Configuración**
+
+### **Prerrequisitos**
+- **Python 3.8+**
+- **wkhtmltopdf** (para generación de PDFs de alta calidad)
+- **API Key de Google Gemini**
+
+### **Instalación Paso a Paso**
+
+1. **Clonar el repositorio**:
+   ```bash
+   git clone <repository-url>
+   cd constancias_system
+   ```
+
+2. **Crear entorno virtual**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   venv\Scripts\activate     # Windows
+   ```
+
+3. **Instalar dependencias**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Instalar wkhtmltopdf**:
+   - **Windows**: Descargar desde [wkhtmltopdf.org](https://wkhtmltopdf.org/downloads.html)
+   - **Linux**: `sudo apt-get install wkhtmltopdf`
+   - **Mac**: `brew install wkhtmltopdf`
+
+5. **Configurar variables de entorno**:
+   ```bash
+   # Crear archivo .env en la raíz del proyecto
+   GEMINI_API_KEY=tu_api_key_de_google_gemini
+   ```
+
+6. **Ejecutar el sistema**:
+   ```bash
+   python ai_chat.py
+   ```
+
+## 📖 **Guía de Uso**
+
+### 🤖 **Comandos de IA Disponibles**
+
+#### **Gestión de Alumnos**
+```bash
+# Buscar alumnos
+"Busca al alumno Juan Pérez"
+"Muestra alumnos de sexto grado grupo A"
+"Busca CURP ABCD123456HDFRRL01"
+
+# Registrar alumnos
+"Registra un nuevo alumno con nombre Juan Pérez, CURP..."
+
+# Ver detalles
+"Muestra los detalles completos de María García"
+```
+
+#### **Generación de Constancias**
+```bash
+# Constancias básicas
+"Genera constancia de estudios para Juan Pérez"
+"Crea constancia de calificaciones para María García"
+"Genera constancia de traslado con foto para Pedro López"
+
+# Con opciones específicas
+"Constancia de calificaciones con foto para Juan"
+"Constancia de estudios sin foto para María"
+```
+
+#### **Transformación de PDFs**
+```bash
+# Después de cargar un PDF en el panel:
+"transforma este PDF a constancia de estudios"
+"convierte a constancia de calificaciones con foto"
+"transforma a constancia de traslado"
+```
+
+### 📄 **Flujo de Transformación de PDFs**
+
+1. **Cargar PDF**:
+   - Haz clic en "🔄 Transformación de PDF" en la barra superior
+   - Arrastra y suelta un PDF en el área designada
+
+2. **Extraer Datos**:
+   - El sistema extrae automáticamente los datos del PDF
+   - Haz clic en "📋 Ver Datos Extraídos" para revisar
+
+3. **Transformar**:
+   - Escribe el comando de transformación en el chat
+   - Ejemplo: "transforma este PDF a constancia de calificaciones con foto"
+
+4. **Vista Previa**:
+   - Se genera una vista previa del PDF transformado
+   - Puedes alternar entre original y transformado
+
+5. **Guardar** (opcional):
+   - En "📋 Ver Datos", marca "💾 Guardar estos datos en la BD"
+   - Haz clic en "💾 Guardar en BD" para registrar al alumno
+
+### 🔍 **Búsqueda Avanzada**
+
+El sistema soporta búsquedas flexibles:
+- **Por nombre parcial**: "Juan", "Pérez", "Juan Pé"
+- **Por CURP completa o parcial**: "ABCD123456"
+- **Por criterios escolares**: "sexto grado", "grupo A", "turno matutino"
+- **Combinaciones**: "alumnos de quinto grado grupo B"
+
+## 🏗️ **Arquitectura del Sistema**
+
+### **Patrón de Arquitectura**
+- **Presentación**: PyQt5 con componentes modulares
+- **Aplicación**: Servicios con lógica de negocio
+- **Dominio**: Entidades y reglas de negocio
+- **Infraestructura**: Repositorios y acceso a datos
+
+### **Componentes Principales**
+
+#### **Frontend (UI)**
+- `ChatWindow`: Interfaz principal con chat de IA
+- `PDFPanel`: Panel de transformación de PDFs
+- `PDFViewer`: Visor de PDFs integrado
+
+#### **Backend (Services)**
+- `ConstanciaService`: Generación y transformación de constancias
+- `AlumnoService`: Gestión de alumnos
+- `CalificacionService`: Gestión de calificaciones
+
+#### **Core (Lógica de Negocio)**
+- `PDFExtractor`: Extracción de datos de PDFs
+- `PDFGenerator`: Generación de PDFs con plantillas
+- `GeminiClient`: Cliente para IA de Google Gemini
+
+#### **Database (Persistencia)**
+- `AlumnoRepository`: Acceso a datos de alumnos
+- `CalificacionRepository`: Acceso a datos de calificaciones
+- `DatosEscolaresRepository`: Acceso a datos escolares
+
+## 📁 **Estructura Detallada del Proyecto**
 
 ```
 constancias_system/
-├── app/                      # Código principal de la aplicación
-│   ├── core/                 # Utilidades y configuración
-│   │   ├── config.py         # Configuración centralizada
+├── app/
+│   ├── core/                 # Lógica de negocio central
 │   │   ├── pdf_extractor.py  # Extracción de datos de PDFs
 │   │   ├── pdf_generator.py  # Generación de PDFs
-│   │   └── utils.py          # Funciones auxiliares
-│   │
-│   ├── data/                 # Capa de acceso a datos
-│   │   ├── models/           # Modelos de datos
-│   │   │   ├── alumno.py     # Modelo de Alumno
-│   │   │   ├── constancia.py # Modelo de Constancia
-│   │   │   └── datos_escolares.py # Modelo de Datos Escolares
-│   │   │
-│   │   └── repositories/     # Repositorios específicos
-│   │       ├── alumno_repository.py
-│   │       ├── constancia_repository.py
-│   │       └── datos_escolares_repository.py
-│   │
+│   │   ├── gemini_client.py  # Cliente de IA Gemini
+│   │   └── service_provider.py # Inyección de dependencias
 │   ├── services/             # Servicios de aplicación
-│   │   ├── alumno_service.py # Servicio para gestión de alumnos
-│   │   └── constancia_service.py # Servicio para gestión de constancias
-│   │
-│   └── ui/                   # Interfaces de usuario
-│       ├── alumno_ui.py      # UI para gestión de alumnos
-│       ├── buscar_ui.py      # UI para búsqueda de alumnos
-│       ├── menu_principal.py # Menú principal
-│       ├── pdf_viewer.py     # Visor de PDF integrado
-│       └── transformar_ui.py # UI para transformar constancias
-│
-├── resources/                # Recursos del sistema
-│   ├── data/                 # Datos
-│   │   └── alumnos.db        # Base de datos SQLite
-│   │
-│   ├── images/               # Imágenes
-│   │   ├── logos/            # Logos para constancias
-│   │   └── photos/           # Fotos de alumnos
-│   │
-│   ├── templates/            # Plantillas para constancias
-│   └── output/               # Constancias generadas
-│
-├── main_qt.py                # Punto de entrada principal
-├── transformar.py            # Acceso directo a transformación
-├── buscar.py                 # Acceso directo a búsqueda
-└── alumno_manager.py         # Acceso directo a gestión de alumnos
+│   │   ├── constancia_service.py # Lógica de constancias
+│   │   ├── alumno_service.py     # Lógica de alumnos
+│   │   └── calificacion_service.py # Lógica de calificaciones
+│   ├── ui/                   # Interfaz de usuario
+│   │   ├── ai_chat/          # Componentes del chat
+│   │   │   ├── chat_window.py    # Ventana principal
+│   │   │   ├── pdf_panel.py      # Panel de PDFs
+│   │   │   └── pdf_viewer.py     # Visor de PDFs
+│   │   └── components/       # Componentes reutilizables
+│   ├── database/             # Acceso a datos
+│   │   ├── repositories/     # Repositorios
+│   │   ├── models/          # Modelos de datos
+│   │   └── connection.py    # Conexión a BD
+│   └── ai/                  # Módulos de IA
+│       ├── interpreters/    # Intérpretes de comandos
+│       └── context/         # Gestión de contexto
+├── docs/                    # Documentación completa
+│   ├── desarrollo/          # Documentación técnica
+│   ├── usuario/            # Guías de usuario
+│   └── api/                # Documentación de API
+├── resources/              # Recursos del sistema
+│   ├── templates/          # Plantillas HTML
+│   ├── logos/             # Logotipos
+│   ├── photos/            # Fotos de alumnos
+│   └── examples/          # PDFs de ejemplo
+├── tests/                 # Pruebas automatizadas
+│   ├── unit/             # Pruebas unitarias
+│   ├── integration/      # Pruebas de integración
+│   └── fixtures/         # Datos de prueba
+├── logs/                 # Archivos de log
+├── .env                  # Variables de entorno
+├── requirements.txt      # Dependencias Python
+└── ai_chat.py           # Punto de entrada principal
 ```
 
-## Características
+## 🔧 **Configuración Avanzada**
 
-- Extracción de datos de constancias en PDF existentes
-- Transformación entre diferentes tipos de constancias
-- Almacenamiento de datos de alumnos en base de datos
-- Interfaz gráfica intuitiva con botones grandes
-- Visor de PDF integrado para previsualizar constancias
-- Arquitectura en capas con repositorios y servicios
-- Interfaz de chat con IA para interactuar mediante lenguaje natural
-- Carga y transformación de PDFs desde la interfaz de chat
+### **Variables de Entorno (.env)**
+```bash
+# API de Google Gemini
+GEMINI_API_KEY=tu_api_key_aqui
 
-## Tipos de Constancias
+# Configuración de Base de Datos (opcional)
+DATABASE_PATH=./database/constancias.db
 
-El sistema puede generar tres tipos de constancias:
+# Configuración de Logging (opcional)
+LOG_LEVEL=INFO
+LOG_FILE=./logs/system.log
 
-1. **Constancia de Estudios** (`estudio`): Certifica que el alumno está inscrito en la escuela. No incluye calificaciones.
-2. **Constancia de Calificaciones** (`calificaciones`): Muestra las calificaciones del alumno.
-3. **Constancia de Traslado** (`traslado`): Certifica que el alumno puede ser trasladado a otra institución. Incluye calificaciones.
-
-## Requisitos
-
-- Python 3.7 o superior
-- PyQt5 para la interfaz gráfica
-- PyMuPDF (fitz) para el visor de PDF
-- Google Generative AI (google-generativeai) para la interfaz de IA
-- API Key de Google Gemini para la interpretación de comandos
-- Otras dependencias listadas en `requirements.txt`
-
-## Instalación
-
-1. Clonar o descargar este repositorio
-2. Instalar las dependencias:
-
-```
-pip install -r requirements.txt
+# Configuración de wkhtmltopdf (opcional)
+WKHTMLTOPDF_PATH=/usr/local/bin/wkhtmltopdf
 ```
 
-3. Instalar wkhtmltopdf (opcional, pero recomendado para generar PDFs):
-   - Descargar desde: https://wkhtmltopdf.org/downloads.html
-   - Instalar siguiendo las instrucciones para su sistema operativo
-   - Asegurarse de que el ejecutable esté en el PATH del sistema
+### **Personalización de Plantillas**
+Las plantillas HTML están en `resources/templates/`:
+- `constancia_estudio.html`: Plantilla para constancias de estudios
+- `constancia_calificaciones.html`: Plantilla para constancias con calificaciones
+- `constancia_traslado.html`: Plantilla para constancias de traslado
 
-4. Configurar la API Key de Google Gemini (necesario para la interfaz de IA):
-   - Crear un archivo `.env` en la raíz del proyecto
-   - Añadir la siguiente línea: `GEMINI_API_KEY=tu-api-key-aquí`
-   - Obtener una API Key en: https://ai.google.dev/
+## 🧪 **Testing**
 
-Si no se instala wkhtmltopdf, el sistema generará archivos HTML en lugar de PDFs, que pueden ser convertidos a PDF manualmente usando un navegador web.
+### **Ejecutar Pruebas**
+```bash
+# Todas las pruebas
+python -m pytest tests/
 
-## Directorios de Recursos
+# Pruebas específicas
+python -m pytest tests/unit/
+python -m pytest tests/integration/
 
-- `resources/templates/`: Contiene las plantillas HTML para generar las constancias
-- `resources/images/logos/`: Imágenes de logos para las constancias
-- `resources/images/photos/`: Fotos de los alumnos (opcional)
-- `resources/output/`: Directorio donde se guardan las constancias generadas
-- `resources/data/`: Contiene la base de datos y otros archivos de datos
-
-## Uso
-
-### Menú Principal
-
-Para iniciar el menú principal con todas las opciones:
-
-```
-python main_qt.py
+# Con cobertura
+python -m pytest --cov=app tests/
 ```
 
-Desde aquí podrás acceder a todas las funcionalidades del sistema a través de botones grandes e intuitivos.
+### **Pruebas Manuales**
+El sistema incluye PDFs de ejemplo en `resources/examples/` para probar la funcionalidad de transformación.
 
-### Interfaz de Chat con IA
+## 📊 **Monitoreo y Logs**
 
-Para utilizar la interfaz de chat con IA:
+El sistema genera logs detallados en `logs/`:
+- **system.log**: Log general del sistema
+- **gemini.log**: Logs específicos de la IA
+- **database.log**: Logs de operaciones de BD
 
-```
-python ai_chat.py
-```
+## 🤝 **Contribuir al Proyecto**
 
-Esta interfaz incluye:
-- Panel de chat para escribir comandos en lenguaje natural
-- Botón para cargar PDFs
-- Vista previa de constancias generadas
-- Procesamiento de lenguaje natural con Google Gemini
+### **Proceso de Contribución**
+1. **Fork** el repositorio
+2. **Crea una rama** para tu feature: `git checkout -b feature/nueva-funcionalidad`
+3. **Commit** tus cambios: `git commit -m 'Agregar nueva funcionalidad'`
+4. **Push** a la rama: `git push origin feature/nueva-funcionalidad`
+5. **Abre un Pull Request**
 
-Ejemplos de comandos:
-- "Busca al alumno Ana García"
-- "Genera una constancia de estudios para Carlos López"
-- "Transforma este PDF a formato de calificaciones"
+### **Estándares de Código**
+- Seguir PEP 8 para Python
+- Documentar funciones y clases
+- Incluir pruebas para nuevas funcionalidades
+- Mantener cobertura de pruebas > 80%
 
-### Transformar Constancias
+### **Reportar Bugs**
+Usa el sistema de Issues de GitHub incluyendo:
+- Descripción detallada del problema
+- Pasos para reproducir
+- Logs relevantes
+- Información del sistema
 
-Para transformar una constancia existente a formato estandarizado:
+## 📄 **Licencia**
 
-```
-python transformar.py
-```
+Este proyecto está bajo la **Licencia MIT** - ver el archivo [LICENSE](LICENSE) para detalles completos.
 
-Esta interfaz incluye:
-- Selección de archivo PDF
-- Vista previa de datos extraídos
-- Vista previa de la constancia a generar
-- Opciones de configuración
+## 🆘 **Soporte**
 
-### Buscar y Generar Constancias
+- **Documentación**: Ver carpeta `docs/`
+- **Issues**: GitHub Issues
+- **Wiki**: GitHub Wiki del proyecto
 
-Para buscar alumnos registrados y generar constancias:
+---
 
-```
-python buscar.py
-```
-
-Esta interfaz incluye:
-- Búsqueda por nombre o CURP
-- Lista de alumnos encontrados
-- Botón para generar constancias
-
-### Administrar Base de Datos
-
-Para gestionar alumnos (agregar, modificar, eliminar):
-
-```
-python alumno_manager.py
-```
-
-Esta interfaz incluye:
-- Búsqueda por nombre o CURP
-- Lista de alumnos registrados
-- Funciones para agregar, modificar y eliminar alumnos
-- Generación de constancias
-
-### Pruebas Interactivas de IA
-
-Para ejecutar pruebas interactivas del sistema de IA:
-
-```
-python ai_pruebas_interactivas.py
-```
-
-Esta interfaz permite:
-- Seleccionar escenarios específicos para probar
-- Ejecutar comandos personalizados
-- Ver resultados detallados de las pruebas
-
-## Arquitectura del Sistema
-
-El sistema sigue una arquitectura en capas que separa claramente las responsabilidades:
-
-### 1. Capa de Modelos
-
-Clases que representan las entidades del sistema:
-- `Alumno`: Datos personales del estudiante
-- `DatosEscolares`: Información académica (grado, grupo, calificaciones)
-- `Constancia`: Registro de constancias generadas
-
-### 2. Capa de Repositorios
-
-Clases que manejan el acceso a datos para cada entidad:
-- `AlumnoRepository`: Operaciones CRUD para alumnos
-- `DatosEscolaresRepository`: Operaciones CRUD para datos escolares
-- `ConstanciaRepository`: Operaciones CRUD para constancias
-
-### 3. Capa de Servicios
-
-Clases que implementan la lógica de negocio:
-- `AlumnoService`: Gestión de alumnos y sus datos
-- `ConstanciaService`: Generación y gestión de constancias
-
-### 4. Capa de Presentación
-
-Interfaces gráficas para interactuar con el usuario:
-- `MenuPrincipal`: Menú con botones grandes para acceder a las funcionalidades
-- `TransformarWindow`: Interfaz para transformar PDFs en constancias
-- `BuscarWindow`: Interfaz para buscar alumnos y generar constancias
-- `AlumnoManagerWindow`: Interfaz para gestionar alumnos
-- `AIChatWindow`: Interfaz de chat con IA para interactuar mediante lenguaje natural
-
-## Flujo de Funcionamiento
-
-### 1. Flujo de Transformación de Constancias
-
-1. El usuario selecciona un PDF existente
-2. El sistema extrae los datos del PDF
-3. El usuario selecciona el tipo de constancia y opciones
-4. Se muestra una vista previa en el visor de PDF integrado
-5. El usuario confirma la transformación
-6. El sistema genera la nueva constancia
-7. Se guarda la constancia y los datos del alumno en la base de datos
-
-### 2. Flujo de Búsqueda y Generación
-
-1. El usuario busca un alumno por nombre o CURP
-2. El sistema muestra los resultados en una tabla
-3. El usuario selecciona un alumno y elige "Generar Constancia"
-4. El usuario selecciona el tipo de constancia
-5. El sistema genera la constancia
-6. Se muestra la constancia generada al usuario
-
-### 3. Flujo de Administración de Alumnos
-
-1. El usuario puede ver la lista de alumnos
-2. El usuario puede buscar alumnos específicos
-3. El usuario puede agregar nuevos alumnos
-4. El usuario puede editar datos de alumnos existentes
-5. El usuario puede eliminar alumnos
-6. El usuario puede generar constancias para alumnos seleccionados
-
-### 4. Flujo de Interacción con IA
-
-1. El usuario escribe un comando en lenguaje natural
-2. El sistema interpreta el comando utilizando Google Gemini
-3. El sistema ejecuta la acción correspondiente
-4. Se muestra el resultado en el área de chat
-5. Si se generó una constancia, se muestra en el visor de PDF
-6. El usuario puede cargar PDFs para transformación mediante un botón
-7. El usuario puede solicitar transformaciones del PDF cargado mediante comandos en lenguaje natural
-
-## Base de Datos
-
-El sistema utiliza SQLite para almacenar los datos de los alumnos. El archivo de base de datos se encuentra en `resources/data/alumnos.db`.
-
-La base de datos contiene las siguientes tablas:
-- `alumnos`: Datos básicos de los alumnos (CURP, nombre, matrícula, etc.)
-- `datos_escolares`: Información escolar (grado, grupo, turno, calificaciones, etc.)
-- `constancias`: Registro de las constancias generadas
-
-## Personalización
-
-### Configuración
-
-En el archivo `app/core/config.py`, puedes modificar los valores por defecto para ciertos campos:
-
-```python
-class Config:
-    # Configuración de la escuela
-    SCHOOL_NAME = "PROF. MAXIMO GAMIZ FERNANDEZ"
-    SCHOOL_CCT = "10DPR0392H"
-    SCHOOL_DIRECTOR = "JOSE ANGEL ALVARADO SOSA"
-    CURRENT_SCHOOL_YEAR = "2024-2025"
-
-    # Valores por defecto para alumnos
-    DEFAULT_GRADE = 1
-    DEFAULT_GROUP = "A"
-    DEFAULT_SHIFT = "MATUTINO"
-
-    # Versión del sistema
-    VERSION = "1.0.0"
-```
-
-### Plantillas HTML
-
-Las plantillas se encuentran en el directorio `resources/templates/`. Puedes modificarlas para personalizar el diseño de las constancias.
-
-### Logos
-
-Puedes reemplazar el archivo `resources/images/logos/logo_educacion.png` con el logo de tu institución.
-
-## Licencia
-
-Este proyecto es software libre y puede ser utilizado, modificado y distribuido libremente.
+**¡Sistema de Constancias Escolares - Transformando la gestión educativa con IA! 🎓✨**

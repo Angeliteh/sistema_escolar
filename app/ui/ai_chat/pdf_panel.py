@@ -4,7 +4,8 @@ Panel para visualización de PDFs con soporte para drag and drop
 import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QFileDialog, QFrame, QMessageBox, QApplication
+    QFileDialog, QFrame, QMessageBox, QApplication, QDialog,
+    QScrollArea, QTextEdit, QCheckBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent
@@ -26,6 +27,11 @@ class PDFPanel(QWidget):
         self.transformed_pdf = None  # Referencia al PDF transformado (si existe)
         self.pdf_data = None  # Datos extraídos del PDF original
         self.tiene_calificaciones = False
+
+        # NUEVO: Variables para contexto del botón "Ver Datos"
+        self.data_context = "extracted"  # "extracted" o "constancia_generada"
+        self.alumno_data = None  # Datos del alumno para constancias generadas
+
         self.setAcceptDrops(True)  # Habilitar soporte para drag and drop
 
         # Obtener el servicio de constancias
@@ -62,6 +68,10 @@ class PDFPanel(QWidget):
 
         # Guardar referencias al PDF
         self._set_pdf_references(file_path)
+
+        # Establecer contexto de PDF cargado (si no está ya establecido)
+        if not hasattr(self, 'data_context') or self.data_context != "constancia_generada":
+            self.set_pdf_external_context()
 
         # Actualizar la interfaz de usuario
         self._update_ui_for_loaded_pdf(file_path)
@@ -120,8 +130,20 @@ class PDFPanel(QWidget):
         self.pdf_viewer.view_transformed_btn.setVisible(False)
 
         # Mostrar el área de vista previa y ocultar el mensaje
+        print(f"🔧 DEBUG: _update_component_visibility - Contexto: {self.data_context}")
         self.preview_container.setVisible(True)
         self.no_pdf_message.setVisible(False)
+
+        # Si es contexto de constancia, actualizar etiquetas específicas
+        if self.data_context == "constancia_generada":
+            print(f"✅ DEBUG: Preservando contexto de constancia generada")
+            # Mantener el texto del botón y etiquetas específicas para constancia
+            filename = os.path.basename(self.current_pdf) if self.current_pdf else "constancia"
+            self.preview_label.setText(f"🔄 Vista Previa de Constancia: {filename}")
+            self.current_pdf_label.setText("✓ Vista previa de constancia generada")
+            self.current_pdf_label.setStyleSheet("font-size: 12px; color: #27AE60; margin-top: 5px; font-weight: bold;")
+            self.drop_label.setText("✓ Vista previa de constancia generada")
+            self.drop_label.setStyleSheet("color: #27AE60; font-weight: bold;")
 
     def _update_drop_area_style(self):
         """Actualiza el estilo del área de drop para indicar éxito"""
@@ -310,10 +332,10 @@ class PDFPanel(QWidget):
         cancel_button.clicked.connect(self.clear_pdf)
 
         # Crear un botón para extraer y mostrar los datos del PDF
-        extract_button = QPushButton("📋 Ver Datos")
-        extract_button.setToolTip("Extraer y mostrar los datos del PDF")
-        extract_button.setCursor(Qt.PointingHandCursor)
-        extract_button.setStyleSheet("""
+        self.ver_datos_btn = QPushButton("📋 Ver Datos Extraídos")
+        self.ver_datos_btn.setToolTip("Extraer y mostrar los datos del PDF")
+        self.ver_datos_btn.setCursor(Qt.PointingHandCursor)
+        self.ver_datos_btn.setStyleSheet("""
             QPushButton {
                 background-color: #3498DB;
                 color: white;
@@ -333,7 +355,7 @@ class PDFPanel(QWidget):
                 background-color: #1F618D;
             }
         """)
-        extract_button.clicked.connect(self.extract_and_show_data)
+        self.ver_datos_btn.clicked.connect(self._show_data_dialog)
 
         # Configurar los botones para ver PDF original y transformado
         self.pdf_viewer.view_original_btn.clicked.connect(self.show_original_pdf)
@@ -348,11 +370,11 @@ class PDFPanel(QWidget):
         button_layout.setSpacing(10)  # Aumentar el espacio entre botones
 
         # Establecer un ancho mínimo para los botones para evitar que se compriman
-        extract_button.setMinimumWidth(120)
+        self.ver_datos_btn.setMinimumWidth(120)
         cancel_button.setMinimumWidth(120)
 
         # Añadir los botones al layout de botones
-        button_layout.addWidget(extract_button)
+        button_layout.addWidget(self.ver_datos_btn)
         button_layout.addWidget(cancel_button)
 
         # Crear un layout vertical para el encabezado y los botones
@@ -462,6 +484,12 @@ class PDFPanel(QWidget):
         self.pdf_data = None
         self.tiene_calificaciones = False
 
+        # NUEVO: Restablecer contexto del botón
+        self.data_context = "extracted"
+        self.alumno_data = None
+        self.ver_datos_btn.setText("📋 Ver Datos Extraídos")
+        self.ver_datos_btn.setToolTip("Extraer y mostrar los datos del PDF")
+
         # Ocultar los botones de navegación entre PDFs
         self.pdf_viewer.view_original_btn.setVisible(False)
         self.pdf_viewer.view_transformed_btn.setVisible(False)
@@ -490,6 +518,23 @@ class PDFPanel(QWidget):
 
         # Emitir señal de que se ha quitado el PDF (opcional)
         # Podríamos añadir una señal pdf_removed si fuera necesario
+
+    def _show_data_dialog(self):
+        """Muestra datos según el contexto actual"""
+        if self.data_context == "constancia_generada":
+            self._show_alumno_data_dialog()
+        elif self.data_context == "pdf_externo":
+            self.extract_and_show_data()
+        elif self.data_context == "transformacion_pendiente":
+            self._show_transformation_pending_dialog()
+        elif self.data_context == "transformacion_completada":
+            self._show_extracted_data_with_save_option()
+        elif self.data_context == "pdf_transformado":
+            # Contexto legacy - mostrar datos extraídos del PDF original
+            self.extract_and_show_data()
+        else:
+            # Fallback para contextos no reconocidos
+            self.extract_and_show_data()
 
     def extract_and_show_data(self):
         """Extrae y muestra los datos del PDF cargado"""
@@ -669,28 +714,16 @@ class PDFPanel(QWidget):
             </div>
             """
 
-        # Añadir opciones para guardar en la base de datos
         mensaje += """
-            <div style="background-color: #F4F6F7; border-left: 4px solid #7F8C8D; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
-                <h3 style="color: #566573; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
-                    Opciones Disponibles
-                </h3>
-                <ul style="margin: 5px 0; padding-left: 20px;">
-                    <li style="margin-bottom: 5px;">
-                        Para guardar estos datos en la base de datos, escribe en el chat:
-                        <span style="font-style: italic; color: #2980B9;">"Guardar datos del PDF en la base de datos"</span>
-                    </li>
-                    <li style="margin-bottom: 5px;">
-                        Para transformar el PDF, escribe en el chat:
-                        <span style="font-style: italic; color: #2980B9;">"Transformar este PDF a constancia de estudios"</span>
-                    </li>
-                </ul>
-            </div>
         </div>
         """
 
-        # Mostrar el mensaje en un diálogo informativo
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextBrowser, QPushButton
+        # Mostrar el mensaje en un diálogo informativo con opción de guardar
+        self._show_legacy_data_dialog_with_save_option(mensaje)
+
+    def _show_legacy_data_dialog_with_save_option(self, mensaje):
+        """Muestra el diálogo de datos con opción de guardar en BD (método legacy)"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextBrowser, QPushButton, QCheckBox
 
         # Crear un diálogo personalizado
         dialog = QDialog(self)
@@ -712,7 +745,7 @@ class PDFPanel(QWidget):
                 border-radius: 4px;
                 padding: 8px 16px;
                 font-weight: bold;
-                min-width: 100px;
+                min-width: 120px;
             }
             QPushButton:hover {
                 background-color: #2980B9;
@@ -720,9 +753,37 @@ class PDFPanel(QWidget):
             QPushButton:pressed {
                 background-color: #1F618D;
             }
+            QPushButton#save_button {
+                background-color: #27AE60;
+            }
+            QPushButton#save_button:hover {
+                background-color: #229954;
+            }
+            QPushButton#save_button:pressed {
+                background-color: #1E8449;
+            }
+            QCheckBox {
+                font-size: 14px;
+                color: #2C3E50;
+                padding: 5px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #BDC3C7;
+                background-color: white;
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #27AE60;
+                background-color: #27AE60;
+                border-radius: 3px;
+            }
         """)
 
-        # Crear layout
+        # Crear layout principal
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(15, 15, 15, 15)
 
@@ -738,16 +799,1065 @@ class PDFPanel(QWidget):
             }
         """)
 
+        # Checkbox para guardar en BD
+        save_checkbox = QCheckBox("💾 Guardar estos datos en la base de datos")
+        save_checkbox.setToolTip("Marca esta opción para registrar al alumno en la base de datos")
+
+        # Layout para botones
+        button_layout = QHBoxLayout()
+
+        # Botón de guardar en BD
+        save_button = QPushButton("💾 Guardar en BD")
+        save_button.setObjectName("save_button")
+        save_button.setEnabled(False)  # Inicialmente deshabilitado
+        save_button.setToolTip("Guardar los datos extraídos en la base de datos")
+
         # Botón de cerrar
         close_button = QPushButton("Cerrar")
+
+        # Conectar checkbox con botón
+        save_checkbox.toggled.connect(save_button.setEnabled)
+
+        # Conectar botones
         close_button.clicked.connect(dialog.accept)
+        save_button.clicked.connect(lambda: self._save_pdf_data_to_database(dialog, save_checkbox))
 
         # Añadir widgets al layout
         layout.addWidget(text_browser)
-        layout.addWidget(close_button, 0, Qt.AlignCenter)
+        layout.addWidget(save_checkbox)
+
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(close_button)
+        layout.addLayout(button_layout)
 
         # Mostrar el diálogo
         dialog.exec_()
+
+    def _save_pdf_data_to_database(self, dialog, checkbox):
+        """Guarda los datos del PDF en la base de datos"""
+        if not checkbox.isChecked():
+            return
+
+        if not self.pdf_data:
+            QMessageBox.warning(dialog, "Error", "No hay datos para guardar.")
+            return
+
+        try:
+            # Usar el servicio de constancias para guardar los datos
+            success, message, _ = self.constancia_service.guardar_alumno_desde_pdf(
+                self.original_pdf,
+                incluir_foto=True
+            )
+
+            if success:
+                QMessageBox.information(dialog, "Éxito",
+                    "✅ Los datos han sido guardados correctamente en la base de datos.")
+                dialog.accept()  # Cerrar el diálogo
+            else:
+                QMessageBox.warning(dialog, "Error", f"❌ Error al guardar: {message}")
+
+        except Exception as e:
+            QMessageBox.critical(dialog, "Error", f"❌ Error inesperado: {str(e)}")
+
+    def _show_transformation_pending_dialog(self):
+        """Muestra diálogo para transformación pendiente con comparación de datos"""
+        if not self.pdf_data:
+            QMessageBox.warning(self, "Error", "No hay datos del PDF para comparar.")
+            return
+
+        # Crear diálogo de comparación
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🔄 Comparar Datos - Transformación Pendiente")
+        dialog.setModal(True)
+        dialog.resize(800, 600)
+
+        layout = QVBoxLayout(dialog)
+
+        # Título
+        title_label = QLabel("🔄 Comparación de Datos para Transformación")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #2C3E50; margin-bottom: 10px;")
+        layout.addWidget(title_label)
+
+        # Crear widget de comparación
+        comparison_widget = self._create_comparison_widget()
+        layout.addWidget(comparison_widget)
+
+        # Botones de acción
+        button_layout = QHBoxLayout()
+
+        transform_btn = QPushButton("🔄 Transformar PDF")
+        transform_btn.setStyleSheet("QPushButton { background-color: #3498DB; color: white; font-weight: bold; padding: 8px 16px; border-radius: 5px; }")
+        transform_btn.clicked.connect(lambda: self._initiate_transformation(dialog))
+
+        cancel_btn = QPushButton("❌ Cancelar")
+        cancel_btn.setStyleSheet("QPushButton { background-color: #95A5A6; color: white; font-weight: bold; padding: 8px 16px; border-radius: 5px; }")
+        cancel_btn.clicked.connect(dialog.reject)
+
+        button_layout.addWidget(transform_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+
+        dialog.exec_()
+
+    def _show_transformation_comparison_dialog(self):
+        """Muestra diálogo con comparación entre PDF original y transformado"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📊 Comparación - Transformación Completada")
+        dialog.setModal(True)
+        dialog.resize(900, 700)
+
+        layout = QVBoxLayout(dialog)
+
+        # Título
+        title_label = QLabel("📊 Comparación: PDF Original vs Transformado")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #27AE60; margin-bottom: 10px;")
+        layout.addWidget(title_label)
+
+        # Widget de comparación detallada
+        comparison_widget = self._create_detailed_comparison_widget()
+        layout.addWidget(comparison_widget)
+
+        # Botón de cerrar
+        close_btn = QPushButton("✅ Cerrar")
+        close_btn.setStyleSheet("QPushButton { background-color: #27AE60; color: white; font-weight: bold; padding: 8px 16px; border-radius: 5px; }")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec_()
+
+    def _show_alumno_data_dialog(self):
+        """Muestra datos completos del alumno desde la base de datos"""
+        if not self.alumno_data:
+            QMessageBox.information(self, "Sin datos", "No hay datos del alumno disponibles.")
+            return
+
+        # Crear diálogo con datos completos del alumno
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Datos Completos del Alumno")
+        dialog.setMinimumSize(600, 500)
+
+        # Establecer estilo para el diálogo
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: white;
+                border: 1px solid #CCCCCC;
+                border-radius: 5px;
+            }
+            QPushButton {
+                background-color: #27AE60;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-weight: bold;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #229954;
+            }
+            QPushButton:pressed {
+                background-color: #1E8449;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        # Crear contenido con datos completos del alumno
+        content = self._format_alumno_data_for_display(self.alumno_data)
+
+        text_edit = QTextEdit()
+        text_edit.setHtml(content)
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #BDC3C7;
+                border-radius: 4px;
+                background-color: white;
+                font-size: 14px;
+                padding: 10px;
+            }
+        """)
+
+        layout.addWidget(text_edit)
+
+        # Botón cerrar
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn, 0, Qt.AlignCenter)
+
+        dialog.exec_()
+
+    def _show_transformation_comparison_dialog(self):
+        """Muestra comparación entre datos originales y transformados"""
+        if not self.original_data or not self.transformed_data:
+            QMessageBox.information(self, "Sin datos", "No hay datos de transformación disponibles.")
+            return
+
+        # Crear diálogo con comparación
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Comparación: Original vs Transformado")
+        dialog.setMinimumSize(700, 600)
+
+        # Establecer estilo para el diálogo
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: white;
+                border: 1px solid #CCCCCC;
+                border-radius: 5px;
+            }
+            QPushButton {
+                background-color: #E67E22;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-weight: bold;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #D35400;
+            }
+            QPushButton:pressed {
+                background-color: #BA4A00;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        # Crear contenido con comparación
+        content = self._format_transformation_comparison(self.original_data, self.transformed_data)
+
+        text_edit = QTextEdit()
+        text_edit.setHtml(content)
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #BDC3C7;
+                border-radius: 4px;
+                background-color: white;
+                font-size: 14px;
+                padding: 10px;
+            }
+        """)
+
+        layout.addWidget(text_edit)
+
+        # Botón cerrar
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn, 0, Qt.AlignCenter)
+
+        dialog.exec_()
+
+    def _show_extracted_data_with_save_dialog(self):
+        """Muestra datos extraídos del PDF con opción de guardar en BD"""
+        if not self.pdf_data:
+            QMessageBox.information(self, "Sin datos", "No hay datos extraídos disponibles.")
+            return
+
+        # Crear diálogo
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📋 Datos Extraídos del PDF")
+        dialog.setModal(True)
+        dialog.resize(600, 700)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        # Título
+        title_label = QLabel("📋 Datos Extraídos del PDF Original")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50; margin-bottom: 10px;")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        # Crear área de scroll para los datos
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #BDC3C7;
+                border-radius: 8px;
+                background-color: white;
+            }
+        """)
+
+        # Widget contenedor para los datos
+        data_widget = QWidget()
+        data_layout = QVBoxLayout(data_widget)
+        data_layout.setContentsMargins(15, 15, 15, 15)
+        data_layout.setSpacing(10)
+
+        # Mostrar datos extraídos
+        data_html = self._format_extracted_data_for_dialog()
+        data_text = QTextEdit()
+        data_text.setHtml(data_html)
+        data_text.setReadOnly(True)
+        data_text.setMinimumHeight(400)
+        data_text.setStyleSheet("""
+            QTextEdit {
+                border: none;
+                background-color: transparent;
+                font-size: 14px;
+            }
+        """)
+
+        data_layout.addWidget(data_text)
+        scroll_area.setWidget(data_widget)
+        layout.addWidget(scroll_area)
+
+        # Sección de opciones de guardado
+        save_section = QFrame()
+        save_section.setFrameStyle(QFrame.StyledPanel)
+        save_section.setStyleSheet("""
+            QFrame {
+                background-color: #F8F9FA;
+                border: 1px solid #E9ECEF;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+
+        save_layout = QVBoxLayout(save_section)
+        save_layout.setSpacing(10)
+
+        # Título de la sección
+        save_title = QLabel("💾 Opciones de Guardado")
+        save_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #495057; margin-bottom: 5px;")
+        save_layout.addWidget(save_title)
+
+        # Checkbox para guardar en BD
+        self.save_checkbox = QCheckBox("Guardar este alumno en la base de datos")
+        self.save_checkbox.setStyleSheet("font-size: 14px; color: #495057;")
+        save_layout.addWidget(self.save_checkbox)
+
+        # Información adicional
+        info_label = QLabel("ℹ️ Si el alumno ya existe en la BD, se actualizarán sus datos.")
+        info_label.setStyleSheet("font-size: 12px; color: #6C757D; font-style: italic;")
+        save_layout.addWidget(info_label)
+
+        layout.addWidget(save_section)
+
+        # Botones
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+
+        # Botón Guardar
+        save_btn = QPushButton("💾 Guardar")
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28A745;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:pressed {
+                background-color: #1E7E34;
+            }
+        """)
+        save_btn.clicked.connect(lambda: self._handle_save_action(dialog))
+
+        # Botón Cerrar
+        close_btn = QPushButton("❌ Cerrar")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6C757D;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #5A6268;
+            }
+            QPushButton:pressed {
+                background-color: #545B62;
+            }
+        """)
+        close_btn.clicked.connect(dialog.reject)
+
+        button_layout.addStretch()
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(close_btn)
+
+        layout.addLayout(button_layout)
+
+        dialog.exec_()
+
+    def _format_extracted_data_for_dialog(self):
+        """Formatea los datos extraídos para mostrar en el diálogo"""
+        if not self.pdf_data:
+            return "<p>No hay datos disponibles</p>"
+
+        html = f"""
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+            <div style="background-color: #EBF5FB; border-left: 4px solid #3498DB; padding: 15px; margin-bottom: 15px; border-radius: 6px;">
+                <h3 style="color: #2874A6; margin-top: 0; margin-bottom: 12px; font-size: 16px;">
+                    👤 Datos Personales
+                </h3>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Nombre:</span>
+                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('nombre', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">CURP:</span>
+                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('curp', 'No disponible')}</span>
+                </p>
+        """
+
+        if self.pdf_data.get('matricula'):
+            html += f"""
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Matrícula:</span>
+                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('matricula')}</span>
+                </p>
+            """
+
+        if self.pdf_data.get('nacimiento'):
+            html += f"""
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Fecha de nacimiento:</span>
+                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('nacimiento')}</span>
+                </p>
+            """
+
+        html += """
+            </div>
+
+            <div style="background-color: #E8F8F5; border-left: 4px solid #1ABC9C; padding: 15px; margin-bottom: 15px; border-radius: 6px;">
+                <h3 style="color: #16A085; margin-top: 0; margin-bottom: 12px; font-size: 16px;">
+                    🎓 Datos Escolares
+                </h3>
+        """
+
+        html += f"""
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Grado:</span>
+                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('grado', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Grupo:</span>
+                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('grupo', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Turno:</span>
+                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('turno', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Ciclo escolar:</span>
+                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('ciclo_escolar', 'No disponible')}</span>
+                </p>
+            </div>
+        """
+
+        # Agregar calificaciones si existen
+        if self.pdf_data.get('calificaciones'):
+            html += """
+            <div style="background-color: #FEF9E7; border-left: 4px solid #F39C12; padding: 15px; margin-bottom: 15px; border-radius: 6px;">
+                <h3 style="color: #D68910; margin-top: 0; margin-bottom: 12px; font-size: 16px;">
+                    📊 Calificaciones
+                </h3>
+            """
+
+            calificaciones = self.pdf_data.get('calificaciones', {})
+
+            # Manejar tanto diccionarios como listas
+            if isinstance(calificaciones, dict):
+                # Formato diccionario: {"Matemáticas": "9", "Español": "8"}
+                for materia, calificacion in calificaciones.items():
+                    html += f"""
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">{materia}:</span>
+                        <span style="color: #34495E; margin-left: 10px;">{calificacion}</span>
+                    </p>
+                    """
+            elif isinstance(calificaciones, list):
+                # Formato lista: [{"materia": "Matemáticas", "calificacion": "9"}, ...]
+                for item in calificaciones:
+                    if isinstance(item, dict):
+                        materia = item.get('materia', 'Materia')
+                        calificacion = item.get('calificacion', 'N/A')
+                        html += f"""
+                        <p style="margin: 8px 0;">
+                            <span style="font-weight: bold; color: #2C3E50;">{materia}:</span>
+                            <span style="color: #34495E; margin-left: 10px;">{calificacion}</span>
+                        </p>
+                        """
+                    else:
+                        # Si es una lista de strings o números
+                        html += f"""
+                        <p style="margin: 8px 0;">
+                            <span style="color: #34495E;">{item}</span>
+                        </p>
+                        """
+            else:
+                # Formato desconocido, mostrar como texto
+                html += f"""
+                <p style="margin: 8px 0;">
+                    <span style="color: #34495E;">{calificaciones}</span>
+                </p>
+                """
+
+            html += "</div>"
+
+        html += "</div>"
+        return html
+
+    def _handle_save_action(self, dialog):
+        """Maneja la acción de guardar datos en BD"""
+        try:
+            if self.save_checkbox.isChecked():
+                # Guardar alumno en BD
+                success = self._save_student_to_database()
+                if success:
+                    QMessageBox.information(dialog, "Éxito", "✅ Alumno guardado exitosamente en la base de datos.")
+                else:
+                    QMessageBox.warning(dialog, "Error", "❌ Error al guardar el alumno en la base de datos.")
+            else:
+                QMessageBox.information(dialog, "Sin cambios", "ℹ️ No se realizaron cambios en la base de datos.")
+
+            dialog.accept()
+
+        except Exception as e:
+            QMessageBox.critical(dialog, "Error", f"❌ Error inesperado: {str(e)}")
+
+    def _save_student_to_database(self):
+        """Guarda el alumno extraído del PDF en la base de datos"""
+        try:
+            if not self.pdf_data:
+                return False
+
+            # Usar el servicio de constancias para guardar
+            success, message = self.constancia_service.guardar_alumno_desde_pdf(self.pdf_data)
+
+            if success:
+                print(f"✅ Alumno guardado: {message}")
+                return True
+            else:
+                print(f"❌ Error guardando alumno: {message}")
+                return False
+
+        except Exception as e:
+            print(f"❌ Error en _save_student_to_database: {e}")
+            return False
+
+    def _show_extracted_data_with_save_option(self):
+        """Muestra datos extraídos usando el método que funciona + opción de guardar"""
+        if not self.original_pdf:
+            QMessageBox.information(self, "Sin datos", "No hay PDF cargado.")
+            return
+
+        try:
+            # 🎯 USAR EL MISMO MÉTODO QUE FUNCIONA BIEN
+            # Extraer datos del PDF original (igual que extract_and_show_data)
+            extractor = PDFExtractor(self.original_pdf)
+            self.tiene_calificaciones = extractor.tiene_calificaciones()
+
+            try:
+                # Extraer todos los datos (mismo código que funciona)
+                self.pdf_data = extractor.extraer_todos_datos(
+                    incluir_foto=True,
+                    tipo_constancia_solicitado=None  # No eliminar calificaciones
+                )
+            except ValueError as ve:
+                QMessageBox.warning(self, "Advertencia", str(ve))
+                return
+
+            # 🆕 MOSTRAR DIÁLOGO CON OPCIÓN DE GUARDAR
+            self._show_data_dialog_with_save_option()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al extraer datos del PDF: {str(e)}")
+
+    def _show_data_dialog_with_save_option(self):
+        """Muestra el diálogo de datos con opción de guardar (reutiliza mostrar_info_contenido_pdf)"""
+        if not self.pdf_data:
+            return
+
+        # Crear diálogo personalizado
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📋 Datos Extraídos del PDF")
+        dialog.setModal(True)
+        dialog.resize(700, 800)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        # Título
+        title_label = QLabel("📋 Datos Extraídos del PDF Original")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50; margin-bottom: 10px;")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        # 🎯 USAR EL MISMO FORMATO QUE FUNCIONA (mostrar_info_contenido_pdf)
+        mensaje = self._get_formatted_pdf_info()
+
+        # Área de scroll para mostrar los datos
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #BDC3C7;
+                border-radius: 8px;
+                background-color: white;
+            }
+        """)
+
+        # Widget para mostrar el contenido
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(15, 15, 15, 15)
+
+        # Mostrar datos usando QLabel (igual que mostrar_info_contenido_pdf)
+        data_label = QLabel(mensaje)
+        data_label.setWordWrap(True)
+        data_label.setStyleSheet("font-size: 14px; line-height: 1.5;")
+        content_layout.addWidget(data_label)
+
+        scroll_area.setWidget(content_widget)
+        layout.addWidget(scroll_area)
+
+        # 🆕 SECCIÓN DE GUARDADO
+        save_section = QFrame()
+        save_section.setFrameStyle(QFrame.StyledPanel)
+        save_section.setStyleSheet("""
+            QFrame {
+                background-color: #F8F9FA;
+                border: 1px solid #E9ECEF;
+                border-radius: 8px;
+                padding: 15px;
+            }
+        """)
+
+        save_layout = QVBoxLayout(save_section)
+        save_layout.setSpacing(10)
+
+        # Título de guardado
+        save_title = QLabel("💾 Opciones de Guardado")
+        save_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #495057; margin-bottom: 5px;")
+        save_layout.addWidget(save_title)
+
+        # Checkbox para guardar
+        self.save_checkbox = QCheckBox("Guardar este alumno en la base de datos")
+        self.save_checkbox.setStyleSheet("font-size: 14px; color: #495057;")
+        save_layout.addWidget(self.save_checkbox)
+
+        # Info adicional
+        info_label = QLabel("ℹ️ Si el alumno ya existe en la BD, se actualizarán sus datos.")
+        info_label.setStyleSheet("font-size: 12px; color: #6C757D; font-style: italic;")
+        save_layout.addWidget(info_label)
+
+        layout.addWidget(save_section)
+
+        # Botones
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+
+        # Botón Guardar
+        save_btn = QPushButton("💾 Guardar")
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28A745;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+                min-width: 100px;
+            }
+            QPushButton:hover { background-color: #218838; }
+            QPushButton:pressed { background-color: #1E7E34; }
+        """)
+        save_btn.clicked.connect(lambda: self._handle_save_action(dialog))
+
+        # Botón Cerrar
+        close_btn = QPushButton("❌ Cerrar")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6C757D;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+                min-width: 100px;
+            }
+            QPushButton:hover { background-color: #5A6268; }
+            QPushButton:pressed { background-color: #545B62; }
+        """)
+        close_btn.clicked.connect(dialog.reject)
+
+        button_layout.addStretch()
+        button_layout.addWidget(save_btn)
+        button_layout.addWidget(close_btn)
+
+        layout.addLayout(button_layout)
+
+        dialog.exec_()
+
+    def _get_formatted_pdf_info(self):
+        """Obtiene el mensaje formateado usando el mismo código que funciona en mostrar_info_contenido_pdf"""
+        if not self.pdf_data:
+            return "<p>No hay datos disponibles</p>"
+
+        # 🎯 USAR EL MISMO CÓDIGO QUE FUNCIONA (copiado de mostrar_info_contenido_pdf)
+        mensaje = """
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.5;">
+            <h2 style="color: #3498DB; margin-top: 0; margin-bottom: 15px; text-align: center; font-size: 20px;">
+                Información Extraída del PDF
+            </h2>
+
+            <div style="background-color: #EBF5FB; border-left: 4px solid #3498DB; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+                <h3 style="color: #2874A6; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
+                    Datos Personales
+                </h3>
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Nombre:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">CURP:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+        """.format(
+            self.pdf_data.get('nombre', 'No disponible'),
+            self.pdf_data.get('curp', 'No disponible')
+        )
+
+        if self.pdf_data.get('matricula'):
+            mensaje += """
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Matrícula:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+            """.format(self.pdf_data.get('matricula'))
+
+        if self.pdf_data.get('nacimiento'):
+            mensaje += """
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Fecha de nacimiento:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+            """.format(self.pdf_data.get('nacimiento'))
+
+        mensaje += """
+            </div>
+
+            <div style="background-color: #E8F8F5; border-left: 4px solid #1ABC9C; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+                <h3 style="color: #16A085; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
+                    Datos Escolares
+                </h3>
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Grado:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Grupo:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Turno:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Ciclo escolar:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+            </div>
+        """.format(
+            self.pdf_data.get('grado', 'No disponible'),
+            self.pdf_data.get('grupo', 'No disponible'),
+            self.pdf_data.get('turno', 'No disponible'),
+            self.pdf_data.get('ciclo_escolar', 'No disponible')
+        )
+
+        # 🎯 AGREGAR CALIFICACIONES USANDO EL MISMO CÓDIGO QUE FUNCIONA
+        if self.tiene_calificaciones and self.pdf_data.get('calificaciones'):
+            mensaje += """
+            <div style="background-color: #FEF9E7; border-left: 4px solid #F39C12; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+                <h3 style="color: #D68910; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
+                    Calificaciones
+                </h3>
+            """
+
+            calificaciones = self.pdf_data.get('calificaciones', {})
+            for materia, calificacion in calificaciones.items():
+                mensaje += """
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">{}:</span>
+                    <span style="color: #34495E;">{}</span>
+                </p>
+                """.format(materia, calificacion)
+
+            mensaje += "</div>"
+
+        mensaje += "</div>"
+        return mensaje
+
+    def _format_transformation_comparison(self, original_data, transformed_data):
+        """Formatea la comparación entre datos originales y transformados"""
+        html = f"""
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+            <h2 style="color: #E67E22; margin-top: 0; margin-bottom: 20px; text-align: center; font-size: 22px;">
+                🔄 Comparación: Original vs Transformado
+            </h2>
+
+            <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                <div style="flex: 1; background-color: #FDF2E9; border-left: 4px solid #E67E22; padding: 15px; border-radius: 4px;">
+                    <h3 style="color: #D35400; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
+                        📄 Datos Originales (PDF)
+                    </h3>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Nombre:</span>
+                        <span style="color: #34495E;">{original_data.get('nombre', 'No disponible')}</span>
+                    </p>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">CURP:</span>
+                        <span style="color: #34495E;">{original_data.get('curp', 'No disponible')}</span>
+                    </p>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Tipo Original:</span>
+                        <span style="color: #34495E;">{original_data.get('tipo_constancia', 'No disponible')}</span>
+                    </p>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Tenía Foto:</span>
+                        <span style="color: #34495E;">{'Sí' if original_data.get('has_photo', False) else 'No'}</span>
+                    </p>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Calificaciones:</span>
+                        <span style="color: #34495E;">{'Sí' if original_data.get('calificaciones') else 'No'}</span>
+                    </p>
+                </div>
+
+                <div style="flex: 1; background-color: #E8F8F5; border-left: 4px solid #27AE60; padding: 15px; border-radius: 4px;">
+                    <h3 style="color: #1E8449; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
+                        ✨ Datos Transformados
+                    </h3>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Nombre:</span>
+                        <span style="color: #34495E;">{transformed_data.get('nombre', 'No disponible')}</span>
+                    </p>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">CURP:</span>
+                        <span style="color: #34495E;">{transformed_data.get('curp', 'No disponible')}</span>
+                    </p>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Tipo Nuevo:</span>
+                        <span style="color: #34495E; font-weight: bold;">{transformed_data.get('tipo_constancia', 'No disponible')}</span>
+                    </p>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Incluye Foto:</span>
+                        <span style="color: #34495E; font-weight: bold;">{'Sí' if transformed_data.get('incluir_foto', False) else 'No'}</span>
+                    </p>
+                    <p style="margin: 8px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Guardado en BD:</span>
+                        <span style="color: #34495E; font-weight: bold;">{'Sí' if transformed_data.get('guardar_alumno', False) else 'No'}</span>
+                    </p>
+                </div>
+            </div>
+
+            <div style="background-color: #FEF9E7; border-left: 4px solid #F39C12; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                <h3 style="color: #D68910; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
+                    ℹ️ Información de Transformación
+                </h3>
+                <p style="margin: 8px 0; color: #7D6608;">
+                    <strong>Proceso:</strong> PDF original → Extracción de datos → Nueva constancia
+                </p>
+                <p style="margin: 8px 0; color: #7D6608;">
+                    <strong>Estado:</strong> Vista previa temporal (confirma para guardar)
+                </p>
+                <p style="margin: 8px 0; color: #7D6608;">
+                    <strong>Opciones:</strong> Guardar definitivamente, abrir en navegador, o cancelar
+                </p>
+            </div>
+        </div>
+        """
+        return html
+
+    def _format_alumno_data_for_display(self, alumno_data):
+        """Formatea los datos del alumno para mostrar en el diálogo"""
+        html = f"""
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+            <h2 style="color: #27AE60; margin-top: 0; margin-bottom: 20px; text-align: center; font-size: 22px;">
+                📋 Información Completa del Alumno
+            </h2>
+
+            <div style="background-color: #E8F8F5; border-left: 4px solid #27AE60; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                <h3 style="color: #1E8449; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
+                    👤 Datos Personales
+                </h3>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Nombre:</span>
+                    <span style="color: #34495E;">{alumno_data.get('nombre', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">CURP:</span>
+                    <span style="color: #34495E;">{alumno_data.get('curp', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Matrícula:</span>
+                    <span style="color: #34495E;">{alumno_data.get('matricula', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Fecha de Nacimiento:</span>
+                    <span style="color: #34495E;">{alumno_data.get('fecha_nacimiento', 'No disponible')}</span>
+                </p>
+            </div>
+
+            <div style="background-color: #EBF5FB; border-left: 4px solid #3498DB; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                <h3 style="color: #2874A6; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
+                    🏫 Datos Escolares
+                </h3>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Grado:</span>
+                    <span style="color: #34495E;">{alumno_data.get('grado', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Grupo:</span>
+                    <span style="color: #34495E;">{alumno_data.get('grupo', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Turno:</span>
+                    <span style="color: #34495E;">{alumno_data.get('turno', 'No disponible')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Ciclo Escolar:</span>
+                    <span style="color: #34495E;">{alumno_data.get('ciclo_escolar', '2024-2025')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Escuela:</span>
+                    <span style="color: #34495E;">PROF. MAXIMO GAMIZ FERNANDEZ</span>
+                </p>
+            </div>"""
+
+        # Agregar calificaciones si están disponibles
+        if 'calificaciones' in alumno_data and alumno_data['calificaciones']:
+            html += f"""
+            <div style="background-color: #FDF2E9; border-left: 4px solid #E67E22; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                <h3 style="color: #D35400; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
+                    📊 Calificaciones
+                </h3>"""
+
+            for i, materia in enumerate(alumno_data['calificaciones'], 1):
+                html += f"""
+                <div style="background-color: #FFFFFF; border: 1px solid #E8E8E8; border-radius: 4px; padding: 10px; margin-bottom: 10px;">
+                    <h4 style="color: #2C3E50; margin: 0 0 8px 0; font-size: 16px;">{i}. {materia.get('nombre', 'N/A')}</h4>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="font-size: 14px; color: #34495E;">
+                            <span style="margin-right: 15px;">Periodo I: <strong>{materia.get('i', 'N/A')}</strong></span>
+                            <span style="margin-right: 15px;">Periodo II: <strong>{materia.get('ii', 'N/A')}</strong></span>
+                            <span style="margin-right: 15px;">Periodo III: <strong>{materia.get('iii', 'N/A')}</strong></span>
+                        </div>
+                        <div style="background-color: #E8F8F5; color: #27AE60; padding: 4px 8px; border-radius: 4px; font-weight: bold;">
+                            ➤ PROMEDIO: {materia.get('promedio', 'N/A')}
+                        </div>
+                    </div>
+                </div>"""
+
+            html += "</div>"
+
+        html += f"""
+            <div style="background-color: #FEF9E7; border-left: 4px solid #F39C12; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                <h3 style="color: #D68910; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
+                    ℹ️ Información Adicional
+                </h3>
+                <p style="margin: 8px 0; color: #7D6608;">
+                    <strong>Fuente de datos:</strong> Base de datos del sistema escolar
+                </p>
+                <p style="margin: 8px 0; color: #7D6608;">
+                    <strong>Contexto:</strong> Datos utilizados para generar la constancia
+                </p>
+                <p style="margin: 8px 0; color: #7D6608;">
+                    <strong>Última actualización:</strong> Información actual del sistema
+                </p>
+            </div>
+        </div>
+        """
+        return html
+
+    def set_constancia_context(self, alumno_data):
+        """Establece el contexto para vista previa de constancia generada"""
+        # Establecer contexto
+        self.data_context = "constancia_generada"
+        self.alumno_data = alumno_data
+
+        # Actualizar botón
+        self.ver_datos_btn.setText("📋 Ver Datos del Alumno")
+        self.ver_datos_btn.setToolTip("Ver información completa del alumno desde la base de datos")
+
+    def set_pdf_context(self):
+        """Establece el contexto para PDF cargado normal (método legacy)"""
+        self.set_pdf_external_context()
+
+    def set_pdf_external_context(self):
+        """Establece el contexto para PDF externo cargado"""
+        self.data_context = "pdf_externo"
+        self.alumno_data = None
+        self.transformation_data = None
+        self._update_button_for_context()
+
+    def set_transformation_pending_context(self, alumno_bd_data=None):
+        """Establece el contexto cuando hay transformación pendiente"""
+        self.data_context = "transformacion_pendiente"
+        self.alumno_data = alumno_bd_data
+        self._update_button_for_context()
+
+    def set_transformation_completed_context(self, original_data, transformed_data, alumno_data=None):
+        """Establece el contexto cuando la transformación está completada"""
+        self.data_context = "transformacion_completada"
+        self.original_data = original_data
+        self.transformed_data = transformed_data
+        self.alumno_data = alumno_data
+        self._update_button_for_context()
+
+    def _update_button_for_context(self):
+        """Actualiza el botón según el contexto actual"""
+        if self.data_context == "pdf_externo":
+            self.ver_datos_btn.setText("📄 Ver Datos del PDF")
+            self.ver_datos_btn.setToolTip("Mostrar datos extraídos del PDF cargado")
+        elif self.data_context == "constancia_generada":
+            self.ver_datos_btn.setText("👤 Ver Datos del Alumno")
+            self.ver_datos_btn.setToolTip("Mostrar datos completos del alumno desde la base de datos")
+        elif self.data_context == "transformacion_pendiente":
+            self.ver_datos_btn.setText("🔄 Comparar Datos")
+            self.ver_datos_btn.setToolTip("Comparar datos del PDF con datos de la base de datos")
+        elif self.data_context == "transformacion_completada":
+            self.ver_datos_btn.setText("📋 Ver Datos + Guardar")
+            self.ver_datos_btn.setToolTip("Ver datos extraídos del PDF y opcionalmente guardar en BD")
+        else:
+            # Fallback para contextos legacy
+            self.ver_datos_btn.setText("📋 Ver Datos Extraídos")
+            self.ver_datos_btn.setToolTip("Extraer y mostrar los datos del PDF")
+
+    def set_transformation_context(self, original_data, transformed_data):
+        """Establece el contexto para PDF transformado"""
+        # Establecer contexto
+        self.data_context = "pdf_transformado"
+        self.original_data = original_data
+        self.transformed_data = transformed_data
+
+        # Actualizar botón
+        self.ver_datos_btn.setText("📋 Ver Datos")
+        self.ver_datos_btn.setToolTip("Ver datos extraídos del PDF original")
 
     def get_current_pdf(self):
         """Devuelve la ruta del PDF actual mostrado en el visor"""

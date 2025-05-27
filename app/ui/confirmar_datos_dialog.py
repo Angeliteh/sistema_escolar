@@ -291,9 +291,9 @@ class ConfirmarDatosDialog(QDialog):
         self.grado_edit.campo_editable.setText(str(self.datos.get('grado', '')))
         self.grupo_edit.campo_editable.setText(self.datos.get('grupo', ''))
         self.turno_edit.campo_editable.setText(self.datos.get('turno', 'MATUTINO'))
-        self.ciclo_edit.campo_editable.setText(self.datos.get('ciclo', Config.CURRENT_SCHOOL_YEAR))
-        self.escuela_edit.campo_editable.setText(self.datos.get('escuela', Config.SCHOOL_NAME))
-        self.cct_edit.campo_editable.setText(self.datos.get('cct', Config.SCHOOL_CCT))
+        self.ciclo_edit.campo_editable.setText(self.datos.get('ciclo', Config.get_current_year()))
+        self.escuela_edit.campo_editable.setText(self.datos.get('escuela', Config.get_school_name()))
+        self.cct_edit.campo_editable.setText(self.datos.get('cct', Config.get_school_cct()))
 
         # Cargar calificaciones si están disponibles
         self.cargar_calificaciones()

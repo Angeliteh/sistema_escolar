@@ -6,6 +6,7 @@ import tempfile
 import platform
 from app.core.config import Config
 from app.core.utils import ensure_directories_exist, copy_file_safely
+from app.core.logging import get_logger
 
 class PDFGenerator:
     """
@@ -17,6 +18,9 @@ class PDFGenerator:
         """Inicializa el generador con el directorio de plantillas"""
         self.template_dir = template_dir or Config.TEMPLATES_DIR
         self.output_dir = Config.OUTPUT_DIR
+
+        # Inicializar logger
+        self.logger = get_logger(__name__)
 
         # Crear directorio de salida si no existe
         ensure_directories_exist()
@@ -62,13 +66,14 @@ class PDFGenerator:
 
                 if result.returncode == 0:
                     print(f"wkhtmltopdf encontrado en: {path}")
+                    self.logger.info(f"wkhtmltopdf encontrado en: {path}")
                     return path
             except (subprocess.SubprocessError, FileNotFoundError) as e:
-                print(f"No se encontró wkhtmltopdf en: {path} - Error: {str(e)}")
+                self.logger.debug(f"No se encontró wkhtmltopdf en: {path} - Error: {str(e)}")
                 continue
 
         # Si no se encuentra, devolver None
-        print("ADVERTENCIA: No se encontró wkhtmltopdf en ninguna ubicación. Solo se generarán archivos HTML.")
+        self.logger.warning("No se encontró wkhtmltopdf en ninguna ubicación. Solo se generarán archivos HTML.")
         return None
 
     def generar_constancia(self, tipo_constancia, datos, output_path=None, output_dir=None, filename_prefix=""):
@@ -85,6 +90,7 @@ class PDFGenerator:
         Returns:
             Ruta al archivo PDF generado
         """
+
         # Seleccionar la plantilla adecuada
         template_file = f"constancia_{tipo_constancia}.html"
 
@@ -188,22 +194,22 @@ class PDFGenerator:
             try:
                 with open(html_output_filename, "w", encoding="utf-8") as f:
                     f.write(html_for_browser)
-                print(f"Archivo HTML guardado en: {html_output_filename}")
+                self.logger.info(f"Archivo HTML guardado en: {html_output_filename}")
             except Exception as e:
-                print(f"Error al guardar el archivo HTML: {str(e)}")
+                self.logger.error(f"Error al guardar el archivo HTML: {str(e)}")
                 return None
 
             # Generar PDF usando wkhtmltopdf si está disponible
             if self.wkhtmltopdf_path:
-                print(f"Generando PDF con wkhtmltopdf: {self.wkhtmltopdf_path}")
+                self.logger.info(f"Generando PDF con wkhtmltopdf: {self.wkhtmltopdf_path}")
                 # Crear archivo HTML temporal
                 try:
                     with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as temp_html:
                         temp_html.write(html_out)
                         temp_html_path = temp_html.name
-                    print(f"Archivo HTML temporal creado en: {temp_html_path}")
+                    self.logger.debug(f"Archivo HTML temporal creado en: {temp_html_path}")
                 except Exception as e:
-                    print(f"Error al crear archivo HTML temporal: {str(e)}")
+                    self.logger.error(f"Error al crear archivo HTML temporal: {str(e)}")
                     return html_output_filename
 
                 try:
@@ -224,7 +230,7 @@ class PDFGenerator:
                         f.write(html_content)
 
                     # Ejecutar wkhtmltopdf para convertir HTML a PDF
-                    print(f"Ejecutando wkhtmltopdf para generar PDF: {output_filename}")
+                    self.logger.info(f"Ejecutando wkhtmltopdf para generar PDF: {output_filename}")
                     result = subprocess.run([
                         self.wkhtmltopdf_path,
                         "--enable-local-file-access",  # Permitir acceso a archivos locales (imágenes)
@@ -237,7 +243,7 @@ class PDFGenerator:
                         output_filename
                     ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 
-                    print(f"wkhtmltopdf ejecutado exitosamente. Salida: {result.stdout.decode('utf-8', errors='ignore')}")
+                    self.logger.debug(f"wkhtmltopdf ejecutado exitosamente. Salida: {result.stdout.decode('utf-8', errors='ignore')}")
 
                     # Eliminar archivos HTML temporales
                     os.unlink(temp_html_path)
@@ -247,16 +253,16 @@ class PDFGenerator:
                         try:
                             os.unlink(html_output_filename)
                         except Exception as e:
-                            print(f"No se pudo eliminar el archivo HTML temporal: {e}")
+                            self.logger.warning(f"No se pudo eliminar el archivo HTML temporal: {e}")
 
-                    print(f"PDF generado exitosamente: {output_filename}")
+                    self.logger.info(f"PDF generado exitosamente: {output_filename}")
                     return output_filename
 
                 except subprocess.SubprocessError as e:
-                    print(f"Error al ejecutar wkhtmltopdf: {str(e)}")
+                    self.logger.error(f"Error al ejecutar wkhtmltopdf: {str(e)}")
                     # Intentar capturar la salida de error
                     if hasattr(e, 'stderr') and e.stderr:
-                        print(f"Error de wkhtmltopdf: {e.stderr.decode('utf-8', errors='ignore')}")
+                        self.logger.error(f"Error de wkhtmltopdf: {e.stderr.decode('utf-8', errors='ignore')}")
                     # Eliminar archivo HTML temporal en caso de error
                     try:
                         os.unlink(temp_html_path)
@@ -264,7 +270,7 @@ class PDFGenerator:
                         pass
                     return html_output_filename
                 except Exception as e:
-                    print(f"Error inesperado al generar PDF: {str(e)}")
+                    self.logger.error(f"Error inesperado al generar PDF: {str(e)}")
                     # Eliminar archivo HTML temporal en caso de error
                     try:
                         os.unlink(temp_html_path)
@@ -272,13 +278,13 @@ class PDFGenerator:
                         pass
                     return html_output_filename
             else:
-                print("wkhtmltopdf no está disponible. Generando solo archivo HTML.")
+                self.logger.info("wkhtmltopdf no está disponible. Generando solo archivo HTML.")
                 return html_output_filename
 
         except Exception as e:
-            print(f"Error general en generar_constancia: {str(e)}")
+            self.logger.error(f"Error general en generar_constancia: {str(e)}")
             import traceback
-            traceback.print_exc()
+            self.logger.error(traceback.format_exc())
             return None
 
     def crear_todas_plantillas(self):
