@@ -14,6 +14,7 @@ from app.ui.buscar_ui import BuscarWindow
 from app.ui.transformar_ui import TransformarWindow
 from app.ui.database_admin_ui import DatabaseAdminWindow
 from app.core.config import Config
+from app.ui.styles import theme_manager
 
 class MenuPrincipal(QMainWindow):
     """Ventana del menú principal"""
@@ -23,15 +24,8 @@ class MenuPrincipal(QMainWindow):
         self.setWindowTitle(f"Sistema de Constancias Escolares v{Config.VERSION}")
         self.setMinimumSize(1200, 800)  # Ventana más grande
 
-        # Establecer estilo modo oscuro para toda la aplicación
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #1A1A2E;
-            }
-            QLabel {
-                color: #FFFFFF;
-            }
-        """)
+        # 🎯 USAR THEMEMANAGER CENTRALIZADO
+        self.setStyleSheet(theme_manager.get_main_window_style())
 
         self.setup_ui()
 
@@ -49,13 +43,17 @@ class MenuPrincipal(QMainWindow):
         # Contenedor para el encabezado con efecto de sombra
         header_container = QWidget()
         header_container.setObjectName("headerContainer")
-        header_container.setStyleSheet("""
-            #headerContainer {
-                background-color: #16213E;
+        # 🎯 USAR THEMEMANAGER CENTRALIZADO
+        bg_color = theme_manager.get_color('background', 'secondary')
+        border_color = theme_manager.get_color('border', 'primary')
+
+        header_container.setStyleSheet(f"""
+            #headerContainer {{
+                background-color: {bg_color};
                 border-radius: 15px;
                 padding: 20px;
-                border: 1px solid #2C4F7C;
-            }
+                border: 1px solid {border_color};
+            }}
         """)
 
         # Aplicar sombra al contenedor
@@ -74,7 +72,9 @@ class MenuPrincipal(QMainWindow):
         title_font = QFont("Segoe UI", 28)
         title_font.setBold(True)
         title_label.setFont(title_font)
-        title_label.setStyleSheet("color: #FFFFFF; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);")
+        # 🎯 USAR THEMEMANAGER CENTRALIZADO
+        text_color = theme_manager.get_color('text', 'primary')
+        title_label.setStyleSheet(f"color: {text_color}; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);")
 
         # Subtítulo con estilo moderno
         subtitle_label = QLabel(f"Escuela Primaria {Config.get_school_name()}")

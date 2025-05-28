@@ -313,18 +313,8 @@ class AlumnoService:
 
         return result
 
-    def buscar_por_nombre(self, nombre: str, limit: int = 100) -> List[Dict[str, Any]]:
-        """
-        Busca alumnos por nombre (alias para buscar_alumnos)
-
-        Args:
-            nombre: Nombre a buscar
-            limit: Límite de resultados
-
-        Returns:
-            Lista de diccionarios con los datos de los alumnos
-        """
-        return self.buscar_alumnos(nombre, limit)
+    # MÉTODO ELIMINADO: buscar_por_nombre() era alias de buscar_alumnos()
+    # Usar buscar_alumnos() directamente para evitar duplicación
 
     def listar_alumnos(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         """
@@ -360,39 +350,8 @@ class AlumnoService:
 
         return result
 
-    def get_alumno_by_id(self, alumno_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Obtiene un alumno por su ID con todos sus datos
-
-        Args:
-            alumno_id: ID del alumno
-
-        Returns:
-            Diccionario con todos los datos del alumno
-        """
-        # Obtener datos básicos del alumno
-        alumno = self.alumno_repository.get_by_id(alumno_id)
-        if not alumno:
-            return None
-
-        # Obtener datos escolares más recientes
-        datos_escolares = self.datos_escolares_repository.get_by_alumno(alumno_id, latest_only=True)
-
-        # Crear diccionario con todos los datos
-        result = alumno.to_dict()
-
-        # Añadir datos escolares si existen
-        if datos_escolares:
-            datos_dict = datos_escolares[0].to_dict()
-            # Eliminar campos redundantes
-            if 'id' in datos_dict:
-                del datos_dict['id']
-            if 'alumno_id' in datos_dict:
-                del datos_dict['alumno_id']
-
-            result.update(datos_dict)
-
-        return result
+    # MÉTODO ELIMINADO: get_alumno_by_id() era duplicado de get_alumno()
+    # Usar get_alumno() en su lugar para evitar inconsistencias
 
     def get_constancias_by_alumno_id(self, alumno_id: int) -> List[Dict[str, Any]]:
         """
@@ -407,17 +366,8 @@ class AlumnoService:
         constancias = self.constancia_repository.get_by_alumno(alumno_id)
         return [c.to_dict() for c in constancias]
 
-    def get_constancias(self, alumno_id: int) -> List[Dict[str, Any]]:
-        """
-        Obtiene todas las constancias generadas para un alumno (alias para get_constancias_by_alumno_id)
-
-        Args:
-            alumno_id: ID del alumno
-
-        Returns:
-            Lista de constancias generadas
-        """
-        return self.get_constancias_by_alumno_id(alumno_id)
+    # MÉTODO ELIMINADO: get_constancias() era alias de get_constancias_by_alumno_id()
+    # Usar get_constancias_by_alumno_id() directamente para evitar duplicación
 
     def actualizar_alumno(self, alumno_id: int, datos_personales: Dict[str, Any], datos_escolares: Dict[str, Any] = None) -> bool:
         """

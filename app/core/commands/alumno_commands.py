@@ -246,7 +246,7 @@ class DetallesAlumnoCommand(Command):
         """
         try:
             # Obtener datos completos del alumno
-            alumno = self.service_provider.alumno_service.get_alumno_by_id(self.alumno_id)
+            alumno = self.service_provider.alumno_service.get_alumno(self.alumno_id)
             if not alumno:
                 return False, f"No se encontró el alumno con ID {self.alumno_id}", {}
 

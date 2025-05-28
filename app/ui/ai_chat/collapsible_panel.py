@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QFrame, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QPropertyAnimation, QSize, pyqtSignal
+from app.ui.styles import theme_manager
 
 
 class CollapsiblePanel(QWidget):
@@ -108,23 +109,28 @@ class CollapsiblePanel(QWidget):
         self.apply_styles()
 
     def apply_styles(self):
-        """Aplica estilos al panel"""
-        # Estilo para el encabezado
-        self.header.setStyleSheet("""
-            QFrame {
-                background-color: #1E3A5F;
-                border: 1px solid #2C4F7C;
+        """Aplica estilos al panel usando ThemeManager centralizado"""
+        # 🎯 USAR THEMEMANAGER CENTRALIZADO
+        bg_color = theme_manager.get_color('chat', 'user_bg')
+        border_color = theme_manager.get_color('chat', 'user_border')
+        hover_color = theme_manager.get_color('background', 'hover')
+        text_color = theme_manager.get_color('text', 'primary')
+
+        self.header.setStyleSheet(f"""
+            QFrame {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
                 border-radius: 8px;
                 padding: 8px;
-            }
-            QFrame:hover {
-                background-color: #2C4F7C;
-            }
-            QLabel {
-                color: white;
+            }}
+            QFrame:hover {{
+                background-color: {hover_color};
+            }}
+            QLabel {{
+                color: {text_color};
                 font-weight: bold;
                 font-size: 14px;
-            }
+            }}
         """)
 
         # Añadir un tooltip al encabezado

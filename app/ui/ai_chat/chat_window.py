@@ -17,6 +17,7 @@ from PyQt5.QtCore import Qt, QSize
 
 from app.ui.ai_chat.chat_list import ChatList
 from app.ui.ai_chat.pdf_panel import PDFPanel
+from app.ui.ai_chat.response_formatter import ResponseFormatter
 from app.core.utils import open_file_with_default_app
 from app.core.chat_engine import ChatEngine, ChatResponse
 from app.core.logging import get_logger
@@ -75,6 +76,9 @@ class ChatWindow(QMainWindow):
 
         # 🆕 LOGGING CENTRALIZADO
         self.logger = get_logger(__name__)
+
+        # 🎯 FORMATEADOR DE RESPUESTAS PARA MEJOR PRESENTACIÓN
+        self.response_formatter = ResponseFormatter()
 
         self.logger.info("ChatWindow inicializado con ChatEngine centralizado")
 
@@ -468,9 +472,12 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         from datetime import datetime
         current_time = datetime.now().strftime("%H:%M:%S")
 
-        # Mostrar texto principal
+        # Mostrar texto principal con formato mejorado
         if response.text:
-            self.chat_list.add_assistant_message(response.text, current_time)
+            # 🎯 APLICAR FORMATEO INTELIGENTE SEGÚN EL TIPO DE RESPUESTA
+            response_type = self._determine_response_type(response)
+            formatted_text = self.response_formatter.format_response(response.text, response_type)
+            self.chat_list.add_assistant_message(formatted_text, current_time)
 
         # 🆕 MANEJAR CONSTANCIAS GENERADAS
         if response.action == "constancia_preview" and response.data:
@@ -500,11 +507,92 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             if alumnos:
                 self.mostrar_alumnos_tabla(alumnos)
         else:
-            # Mostrar datos genéricos
-            self.chat_list.add_assistant_message(
-                f"📊 Datos adicionales: {data}",
-                current_time
-            )
+            # 🎯 DATOS GENÉRICOS - FORMATEAR MEJOR EN LUGAR DE MOSTRAR JSON CRUDO
+            self._format_and_display_generic_data(data, current_time)
+
+    def _format_and_display_generic_data(self, data: dict, current_time: str):
+        """Formatea y muestra datos genéricos de manera visual atractiva"""
+        try:
+            # 🎯 FORMATEO INTELIGENTE SEGÚN EL TIPO DE DATOS
+
+            # Si contiene información de ayuda/capacidades
+            if 'capabilities' in data and 'auto_reflexion' in data:
+                # NO MOSTRAR NADA ADICIONAL - La respuesta principal ya es completa
+                return
+
+            # Si contiene información de constancia
+            elif 'constancia_info' in data:
+                self._display_constancia_info(data['constancia_info'], current_time)
+
+            # Si contiene estadísticas
+            elif 'estadisticas' in data:
+                self._display_statistics(data['estadisticas'], current_time)
+
+            # Si contiene información de error específica
+            elif 'error_details' in data:
+                self._display_error_details(data['error_details'], current_time)
+
+            # Para otros tipos de datos, mostrar de forma limpia
+            else:
+                self._display_clean_data_summary(data, current_time)
+
+        except Exception as e:
+            self.logger.error(f"Error formateando datos genéricos: {e}")
+            # En caso de error, no mostrar nada en lugar de JSON crudo
+
+    def _display_clean_data_summary(self, data: dict, current_time: str):
+        """Muestra resumen limpio de datos sin JSON crudo"""
+        try:
+            # Extraer información relevante sin mostrar JSON
+            summary_items = []
+
+            if 'message' in data:
+                # Ya se mostró el mensaje principal, no duplicar
+                return
+
+            if 'total_records' in data:
+                summary_items.append(f"📊 Total de registros: {data['total_records']}")
+
+            if 'query_type' in data:
+                summary_items.append(f"🔍 Tipo de consulta: {data['query_type']}")
+
+            if summary_items:
+                summary_text = "\n".join(summary_items)
+                self.chat_list.add_assistant_message(summary_text, current_time)
+
+        except Exception as e:
+            self.logger.error(f"Error en resumen de datos: {e}")
+
+    def _determine_response_type(self, response: ChatResponse) -> str:
+        """Determina el tipo de respuesta para aplicar el formato correcto"""
+        try:
+            # Determinar tipo basado en la acción
+            if response.action in ["ayuda_funcionalidades", "ayuda_ejemplo", "ayuda_solucion"]:
+                return "help"
+            elif response.action == "show_data":
+                return "data"
+            elif "error" in response.action.lower():
+                return "error"
+            elif response.action in ["constancia_preview", "pdf_transformation"]:
+                return "success"
+            else:
+                # Determinar por contenido del texto
+                text_lower = response.text.lower() if response.text else ""
+
+                if any(word in text_lower for word in ["error", "❌", "falló", "problema"]):
+                    return "error"
+                elif any(word in text_lower for word in ["✅", "éxito", "generado", "completado"]):
+                    return "success"
+                elif any(word in text_lower for word in ["ayuda", "puedo", "capacidades", "funciones"]):
+                    return "help"
+                elif any(word in text_lower for word in ["encontré", "resultados", "alumnos", "datos"]):
+                    return "data"
+                else:
+                    return "general"
+
+        except Exception as e:
+            self.logger.error(f"Error determinando tipo de respuesta: {e}")
+            return "general"
 
     def _handle_constancia_preview_from_engine(self, data: dict, files: list):
         """Maneja vista previa de constancia generada desde ChatEngine"""
@@ -1205,7 +1293,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                         # Obtener datos completos desde el servicio
                         from app.core.service_provider import ServiceProvider
                         service_provider = ServiceProvider.get_instance()
-                        alumno_completo = service_provider.alumno_service.get_alumno_by_id(alumno_id)
+                        alumno_completo = service_provider.alumno_service.get_alumno(alumno_id)
                         if alumno_completo:
                             alumno = alumno_completo
                 except Exception as e:

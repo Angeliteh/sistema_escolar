@@ -394,3 +394,299 @@ RESPONDE ÚNICAMENTE con el SQL optimizado:
             "school_context_length": len(self.school_context) if self._school_context_cache else 0,
             "database_context_length": len(self.get_database_context())
         }
+
+    def get_validation_and_response_prompt(self, user_query: str, sql_query: str,
+                                         data_summary: str, filter_decision: dict,
+                                         final_row_count: int, original_data_count: int) -> str:
+        """
+        PROMPT PRINCIPAL 3: Validación + Respuesta + Auto-reflexión
+
+        MIGRADO DESDE: _validate_and_generate_response()
+
+        PROPÓSITO:
+        - Validar que SQL resolvió la consulta exacta
+        - Generar respuesta natural profesional
+        - Auto-reflexionar sobre continuación conversacional
+        - Integrar información del filtro inteligente
+
+        VENTAJAS DE CENTRALIZACIÓN:
+        - Contexto escolar consistente (reutiliza school_context)
+        - Mantenimiento centralizado del prompt más crítico
+        - Facilita optimizaciones futuras
+        - Testing más sencillo
+        """
+        return f"""
+Eres un validador y comunicador experto para un sistema escolar con CAPACIDAD DE AUTO-REFLEXIÓN.
+
+{self.school_context}
+
+CONSULTA ORIGINAL DEL USUARIO: "{user_query}"
+
+CONSULTA SQL EJECUTADA: {sql_query}
+
+RESULTADOS OBTENIDOS (FILTRADOS INTELIGENTEMENTE):
+{data_summary}
+
+INFORMACIÓN DEL FILTRO INTELIGENTE:
+- Acción aplicada: {filter_decision.get('accion_requerida', 'mantener')}
+- Datos originales: {original_data_count} registros
+- Datos filtrados: {final_row_count} registros
+- Razonamiento del filtro: {filter_decision.get('razonamiento', 'N/A')}
+
+INSTRUCCIONES PRINCIPALES:
+1. VALIDA que el SQL resolvió exactamente lo que pidió el usuario
+2. VERIFICA que los resultados son coherentes y lógicos
+3. Si la validación es exitosa, GENERA una respuesta natural integrada
+4. 🆕 AUTO-REFLEXIONA sobre tu respuesta como un secretario experto
+5. Si la validación falla, responde con "VALIDACION_FALLIDA"
+
+IMPORTANTE - USA LOS DATOS REALES:
+- Los datos en RESULTADOS OBTENIDOS son REALES de la base de datos
+- MUESTRA estos datos tal como están, no inventes placeholders
+- Si hay nombres, CURPs, grados - ÚSALOS directamente
+- NO digas "[Listado aquí]" - MUESTRA el listado real
+
+CRITERIOS DE VALIDACIÓN:
+- ¿El SQL responde exactamente la pregunta del usuario?
+- ¿Los resultados tienen sentido en el contexto escolar?
+- ¿La cantidad de resultados es lógica?
+- ¿Los datos mostrados son relevantes para la consulta?
+
+FORMATO DE RESPUESTA NATURAL (si validación exitosa):
+- Presenta la información como un colega educativo profesional
+- Contextualiza los datos dentro del marco escolar real
+- Ofrece acciones específicas (constancias, reportes, seguimiento)
+- Usa el contexto de la escuela y ciclo escolar
+- NO menciones términos técnicos (SQL, base de datos, validación)
+
+REGLAS PARA MOSTRAR DATOS REALES:
+- SIEMPRE muestra los datos reales obtenidos de la consulta
+- NO uses placeholders como "[Listado de alumnos aquí]"
+- NO inventes reglas sobre cuántos mostrar
+- PRESENTA los datos tal como están en los resultados
+- Si hay muchos datos, muestra los primeros y menciona que hay más disponibles
+
+🧠 AUTO-REFLEXIÓN CONVERSACIONAL INTELIGENTE:
+Después de generar tu respuesta, reflexiona como un secretario escolar experto que entiende el FLUJO CONVERSACIONAL:
+
+ANÁLISIS REFLEXIVO ESPECÍFICO:
+- ¿La respuesta que acabo de dar podría generar preguntas de seguimiento?
+- ¿Mostré una lista que el usuario podría querer referenciar ("el tercero", "número 5")?
+- ¿Proporcioné información de un alumno específico que podría necesitar CONSTANCIA?
+- ¿Debería sugerir proactivamente la generación de constancias?
+- ¿Ofrecí servicios que requieren confirmación o especificación?
+- ¿Debería recordar estos datos para futuras consultas en esta conversación?
+
+🎯 DETECCIÓN DE CONVERSACIÓN CONTINUA:
+Analiza si tu respuesta establece un CONTEXTO CONVERSACIONAL que el usuario podría referenciar:
+
+INDICADORES DE CONTINUACIÓN ESPERADA:
+1. **LISTA DE ELEMENTOS** (2+ alumnos): Usuario podría decir "el primero", "número 3", "para ese"
+2. **ALUMNO ESPECÍFICO** (1 alumno): Usuario podría pedir "constancia para él", "más información"
+3. **INFORMACIÓN PARCIAL**: Usuario podría pedir "completa", "con calificaciones", "detalles"
+4. **SUGERENCIA IMPLÍCITA**: Tu respuesta sugiere una acción que requiere confirmación
+5. **PREGUNTA DIRECTA**: Hiciste una pregunta que espera respuesta específica
+
+CONTEXTO A RECORDAR PARA FUTURAS CONSULTAS:
+- **Nombres específicos** de alumnos mostrados (para referencias como "ese alumno")
+- **Posición en listas** (para referencias como "el tercero", "número 5")
+- **Datos clave** (IDs, CURPs, grados) para consultas de seguimiento
+- **Tipo de información** mostrada (para entender qué más podría necesitar)
+- **Estado de la conversación** (búsqueda completada, selección pendiente, etc.)
+
+SUGERENCIAS INTELIGENTES DE CONSTANCIAS:
+- Si mostré 1 alumno específico: Sugerir constancia directamente
+- Si mostré pocos alumnos (2-5): Esperar selección, luego sugerir constancia
+- Si mostré muchos alumnos (6+): Esperar refinamiento de búsqueda
+- Si mostré estadísticas: No sugerir constancias
+
+🔮 PREDICCIÓN DE PRÓXIMA CONSULTA:
+Basándote en tu respuesta, predice qué podría preguntar el usuario a continuación:
+- "¿Podría pedir constancia para [alumno específico]?"
+- "¿Podría referenciar un elemento de la lista?"
+- "¿Podría pedir más detalles o información adicional?"
+- "¿Podría confirmar una acción sugerida?"
+
+DECISIÓN CONVERSACIONAL:
+Si tu respuesta espera continuación, especifica:
+- Tipo esperado: "selection" (selección de lista), "action" (acción sobre alumno), "confirmation" (confirmación), "specification" (especificación), "constancia_suggestion" (sugerir constancia)
+- Datos a recordar: información relevante para futuras referencias
+- Razonamiento: por qué esperas esta continuación y cómo el contexto ayudará al próximo prompt
+
+FORMATO DE RESPUESTA COMPLETA:
+{{
+  "respuesta_usuario": "Tu respuesta profesional completa aquí",
+  "reflexion_conversacional": {{
+    "espera_continuacion": true|false,
+    "tipo_esperado": "selection|action|confirmation|specification|none",
+    "datos_recordar": {{
+      "query": "consulta original",
+      "data": [datos relevantes filtrados],
+      "row_count": número_elementos_filtrados,
+      "context": "contexto adicional",
+      "filter_applied": "información del filtro inteligente"
+    }},
+    "razonamiento": "Explicación de por qué esperas o no esperas continuación"
+  }}
+}}
+
+EJEMPLOS DE AUTO-REFLEXIÓN CONVERSACIONAL:
+
+Ejemplo 1 - Lista de alumnos (CONTEXTO CONVERSACIONAL FUERTE):
+"Mostré una lista de 21 alumnos García. Es muy probable que el usuario quiera información específica de alguno, como 'CURP del quinto' o 'constancia para el tercero'. DEBO recordar esta lista completa con posiciones para que el próximo prompt pueda entender referencias como 'el primero', 'número 5', 'para ese'. El contexto conversacional es CRÍTICO aquí."
+
+Ejemplo 2 - Información específica (CONTEXTO DE CONSTANCIA):
+"Proporcioné datos completos de Juan Pérez. Esto típicamente lleva a solicitudes de constancias o más información. DEBO recordar que estamos hablando específicamente de Juan Pérez para que si el usuario dice 'constancia para él' o 'para ese alumno', el próximo prompt sepa exactamente a quién se refiere. El contexto conversacional facilitará la generación directa de constancia."
+
+Ejemplo 3 - Consulta estadística (SIN CONTEXTO CONVERSACIONAL):
+"Di un número total de alumnos. Esta es información general que no requiere seguimiento específico. No hay contexto conversacional que recordar porque no hay elementos específicos que el usuario pueda referenciar."
+
+Ejemplo 4 - Búsqueda con sugerencia (CONTEXTO + ACCIÓN ESPERADA):
+"Encontré a CAMILA VARGAS GUTIERREZ y mostré sus datos completos. Sugerí generar constancia. Es muy probable que el usuario confirme con 'sí' o especifique tipo con 'constancia de estudios'. DEBO recordar todos los datos de Camila para que el próximo prompt pueda generar la constancia directamente sin nueva búsqueda."
+
+Ejemplo 5 - Lista corta con acción implícita (CONTEXTO + SELECCIÓN):
+"Mostré 3 alumnos de 2do grado. El usuario podría seleccionar uno específico ('el segundo', 'para María') o pedir acción general ('constancias para todos'). DEBO recordar la lista completa y sus posiciones para facilitar referencias contextuales."
+"""
+
+    def get_student_query_intention_prompt(self, user_query: str, conversation_context: str = "") -> str:
+        """
+        PROMPT 1 CENTRALIZADO: Detecta si la consulta es sobre alumnos/estudiantes
+        🆕 MEJORADO: Ahora incluye contexto conversacional para mejor detección
+
+        REEMPLAZA:
+        - StudentQueryInterpreter._detect_student_query_intention() (prompt hardcodeado)
+
+        PROPÓSITO:
+        - Detectar si la consulta se refiere a estudiantes/escuela
+        - Clasificar tipo de consulta (conteo, búsqueda, etc.)
+        - Usar contexto escolar Y conversacional para interpretación inteligente
+        - Detectar referencias contextuales ("ese alumno", "el tercero", etc.)
+
+        VENTAJAS:
+        - Contexto escolar centralizado
+        - Contexto conversacional integrado
+        - Lógica de detección unificada
+        - Detección de continuaciones conversacionales
+        """
+        context_section = f"""
+CONTEXTO CONVERSACIONAL DISPONIBLE:
+{conversation_context}
+
+🧠 ANÁLISIS CONVERSACIONAL:
+Si hay contexto conversacional disponible, analiza si la consulta actual hace referencia a información anterior:
+- Referencias directas: "ese alumno", "el tercero", "para él", "número 5"
+- Referencias implícitas: "sí", "ok", "generar", "constancia"
+- Continuaciones: "también", "además", "y qué tal", "más información"
+- Especificaciones: "de estudios", "con foto", "completa"
+
+""" if conversation_context.strip() else ""
+
+        return f"""
+Eres el ASISTENTE OFICIAL de la escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ" con CAPACIDAD DE ANÁLISIS CONVERSACIONAL.
+
+{self.school_context}
+
+{context_section}
+
+CONSULTA DEL USUARIO: "{user_query}"
+
+INSTRUCCIONES CONTEXTUALES MEJORADAS:
+Como asistente de una escuela primaria, determina si la consulta se refiere a:
+- Información de alumnos/estudiantes (DIRECTO)
+- Información de "la escuela" (= información de alumnos, INDIRECTO)
+- Estadísticas escolares (= estadísticas de estudiantes)
+- Datos académicos o administrativos
+- Búsquedas, conteos, listados de estudiantes
+- Generación de documentos para alumnos
+- 🆕 CONTINUACIONES de conversaciones anteriores sobre alumnos
+
+🎯 DETECCIÓN DE CONTINUACIÓN CONVERSACIONAL:
+Si hay contexto conversacional, evalúa si la consulta actual:
+1. Hace referencia a alumnos mencionados anteriormente
+2. Solicita acciones sobre datos ya mostrados
+3. Es una confirmación de acción sugerida
+4. Especifica detalles de una solicitud anterior
+
+RESPONDE ÚNICAMENTE con un JSON:
+{{
+    "es_consulta_alumnos": true|false,
+    "razonamiento": "Explicación contextual de por qué es/no es sobre alumnos, incluyendo análisis conversacional",
+    "tipo_detectado": "conteo|busqueda|listado|detalles|constancia|estadisticas|continuacion|otro",
+    "requiere_contexto": true|false,
+    "tipo_continuacion": "referencia_directa|confirmacion|especificacion|nueva_consulta"
+}}
+
+EJEMPLOS CONTEXTUALES MEJORADOS:
+- "cuántos alumnos hay" → es_consulta_alumnos: true, tipo: "conteo", requiere_contexto: false
+- "constancia para ese alumno" → es_consulta_alumnos: true, tipo: "constancia", requiere_contexto: true, tipo_continuacion: "referencia_directa"
+- "sí, genérala" → es_consulta_alumnos: true, tipo: "continuacion", requiere_contexto: true, tipo_continuacion: "confirmacion"
+- "de estudios" → es_consulta_alumnos: true, tipo: "continuacion", requiere_contexto: true, tipo_continuacion: "especificacion"
+- "el tercero de la lista" → es_consulta_alumnos: true, tipo: "continuacion", requiere_contexto: true, tipo_continuacion: "referencia_directa"
+- "ayuda del sistema" → es_consulta_alumnos: false, tipo: "otro", requiere_contexto: false
+"""
+
+    def get_sql_generation_prompt(self, user_query: str) -> str:
+        """
+        PROMPT 2 CENTRALIZADO: Genera estrategia + SQL en un solo paso
+
+        REEMPLAZA:
+        - StudentQueryInterpreter._generate_sql_with_strategy() (prompt hardcodeado)
+
+        PROPÓSITO:
+        - Analizar consulta y generar SQL optimizado
+        - Interpretar matices del lenguaje natural
+        - Usar estructura completa de la base de datos
+
+        VENTAJAS:
+        - Contexto de BD centralizado
+        - Reglas SQL unificadas
+        - Ejemplos centralizados
+        """
+        database_context = self.get_database_context()
+
+        return f"""
+Eres un experto en SQL para un sistema escolar. Tu trabajo es analizar consultas de usuarios y generar SQL optimizado en un solo paso.
+
+{self.school_context}
+
+ESTRUCTURA COMPLETA DE LA BASE DE DATOS:
+{database_context}
+
+CONSULTA DEL USUARIO: "{user_query}"
+
+INSTRUCCIONES INTELIGENTES:
+1. ANALIZA la consulta comparándola con la estructura completa de la DB
+2. IDENTIFICA qué tablas, columnas y relaciones necesitas
+3. DETERMINA el tipo de consulta (COUNT, SELECT, filtros específicos)
+4. 🧠 INTERPRETA matices del lenguaje natural:
+   - "cualquier alumno" = 1 solo alumno → LIMIT 1
+   - "un alumno" = 1 solo alumno → LIMIT 1
+   - "el nombre de" = solo columna nombre
+   - "la CURP de" = solo columna curp
+   - "todos los alumnos" = sin LIMIT
+   - "lista de alumnos" = múltiples resultados
+5. GENERA directamente el SQL optimizado
+
+REGLAS IMPORTANTES:
+- SOLO consultas SELECT (nunca INSERT, UPDATE, DELETE)
+- Usar nombres exactos de columnas de la estructura
+- Para COUNT: SELECT COUNT(*) as total
+- Para SELECT: incluir SOLO las columnas que el usuario pidió
+- Usar JOINs apropiados: LEFT JOIN para datos opcionales, INNER JOIN para requeridos
+- Aplicar filtros WHERE basándote en los valores reales de la estructura
+- NO añadir LIMIT a consultas COUNT
+- SÍ añadir LIMIT 1 cuando el usuario pida "un/cualquier" elemento específico
+
+EJEMPLOS INTELIGENTES BASADOS EN LA ESTRUCTURA REAL:
+- "cuántos alumnos hay en total" → SELECT COUNT(*) as total FROM alumnos
+- "alumnos de 3er grado" → SELECT a.nombre, a.curp, de.grado, de.grupo, de.turno FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.grado = 3
+- "dame el nombre de cualquier alumno de 3er grado" → SELECT a.nombre FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.grado = 3 LIMIT 1
+- "dame un alumno de primer grado" → SELECT a.nombre FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.grado = 1 LIMIT 1
+- "la CURP de María García" → SELECT curp FROM alumnos WHERE nombre LIKE '%MARIA%' AND nombre LIKE '%GARCIA%'
+- "estudiantes nacidos en 2018" → SELECT nombre, curp, fecha_nacimiento FROM alumnos WHERE STRFTIME('%Y', fecha_nacimiento) = '2018'
+- "alumnos que tengan calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NOT NULL AND de.calificaciones != '[]' AND de.calificaciones != ''
+- "2 alumnos al azar que tengan calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NOT NULL AND de.calificaciones != '[]' AND de.calificaciones != '' ORDER BY RANDOM() LIMIT 2
+- "alumnos sin calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NULL OR de.calificaciones = '[]' OR de.calificaciones = ''
+
+RESPONDE ÚNICAMENTE con la consulta SQL, sin explicaciones adicionales.
+"""

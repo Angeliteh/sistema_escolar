@@ -311,7 +311,7 @@ class DetallesAlumnoDialog(QDialog):
 
         try:
             # Obtener datos del alumno
-            self.alumno_data = self.alumno_service.get_alumno_by_id(self.alumno_id)
+            self.alumno_data = self.alumno_service.get_alumno(self.alumno_id)
             if not self.alumno_data:
                 self.title_label.setText("Error: Alumno no encontrado")
                 return

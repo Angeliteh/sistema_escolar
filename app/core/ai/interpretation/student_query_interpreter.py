@@ -83,9 +83,7 @@ class StudentQueryInterpreter(BaseInterpreter):
             sub_intention = intention_info.get('sub_intention', '')
             detected_entities = intention_info.get('detected_entities', {})
 
-            self.logger.info(f"🎯 INFORMACIÓN DE INTENCIÓN RECIBIDA:")
-            self.logger.info(f"   - Sub-intención: {sub_intention}")
-            self.logger.info(f"   - Entidades detectadas: {detected_entities}")
+            # Información ya mostrada en logs arquitectónicos del Master
 
             # 🚀 FLUJO DIRECTO BASADO EN SUB-INTENCIÓN (PERO VERIFICANDO CONTEXTO PRIMERO)
             if sub_intention == "generar_constancia":
@@ -131,9 +129,9 @@ class StudentQueryInterpreter(BaseInterpreter):
             if hasattr(context, 'conversation_stack') and context.conversation_stack:
                 self.logger.info(f"📚 PILA CONVERSACIONAL DISPONIBLE: {len(context.conversation_stack)} niveles")
 
-                # 🔧 DEBUG: Mostrar contenido de la pila
+                # Mostrar contenido de la pila de forma estructurada
                 for i, level in enumerate(context.conversation_stack, 1):
-                    self.logger.info(f"   📋 Nivel {i}: '{level.get('query', 'N/A')}' - {level.get('row_count', 0)} elementos - Esperando: {level.get('awaiting', 'N/A')}")
+                    self.logger.info(f"   📋 Nivel {i}: '{level.get('query', 'N/A')[:30]}...' - {level.get('row_count', 0)} elementos")
 
                 # Detectar si es continuación usando LLM
                 continuation_info = self._detect_continuation_query(context.user_message, context.conversation_stack)
@@ -147,50 +145,59 @@ class StudentQueryInterpreter(BaseInterpreter):
             else:
                 self.logger.info("❌ NO HAY PILA CONVERSACIONAL disponible")
 
-            # PROMPT 1: Detectar intención (solo consultas de alumnos) CON CONTEXTO
-            is_student_query = self._detect_student_query_intention(context.user_message, context)
+            # 🔄 [STUDENT] INICIANDO FLUJO DE 4 PROMPTS
+            self.logger.info("🔄 [STUDENT] Iniciando flujo de 4 prompts")
+
+            # PROMPT 1: Detectar intención específica (USANDO PROMPT MANAGER CENTRALIZADO CON CONTEXTO)
+            self.logger.info("   ├── PROMPT 1: Análisis de intención específica...")
+
+            # 🆕 PREPARAR CONTEXTO CONVERSACIONAL PARA PROMPT 1
+            conversation_context = ""
+            if hasattr(context, 'conversation_stack') and context.conversation_stack:
+                conversation_context = self._format_conversation_stack_for_llm(context.conversation_stack)
+                self.logger.info(f"   ├── Contexto conversacional disponible: {len(context.conversation_stack)} niveles")
+
+            is_student_query = self._detect_student_query_intention_centralized(context.user_message, conversation_context)
             if not is_student_query:
-                return None  # No es consulta de alumnos, usar otro intérprete
+                self.logger.info("   └── ❌ No es consulta de alumnos")
+                return None
+            self.logger.info("   └── ✅ Consulta de alumnos confirmada")
 
+            # 🆕 DETECCIÓN LIMPIA: Solo usar entidades del Master (SIN fallbacks)
+            if (detected_entities and
+                detected_entities.get('tipo_constancia') and
+                detected_entities.get('tipo_constancia') != 'null'):
 
-
-            # 🧠 VERIFICACIÓN AVANZADA CON LLM (solo si no hay palabras clave)
-            self.logger.info("🧠 No hay palabras clave, verificando con LLM...")
-            simple_context = {
-                'pdf_panel': getattr(context, 'pdf_panel', None),
-                'user_message': context.user_message
-            }
-
-            constancia_info = self._extract_constancia_info(context.user_message, simple_context)
-            self.logger.info(f"🔍 Extracción LLM: {constancia_info}")
-
-            if constancia_info and constancia_info.get("es_solicitud_constancia", False):
-                self.logger.info("✅ DETECTADA CONSTANCIA CON LLM")
+                self.logger.info("✅ CONSTANCIA DETECTADA POR MASTER - Procesando directamente")
+                simple_context = {
+                    'pdf_panel': getattr(context, 'pdf_panel', None),
+                    'user_message': context.user_message
+                }
                 result = self._process_constancia_request(context.user_message, simple_context)
-                self.logger.info(f"🎯 Resultado constancia: {result.action if result else 'None'}")
+                self.logger.info(f"📊 [STUDENT] Resultado constancia: {result.action if result else 'None'}")
                 return result
-            else:
-                self.logger.info("❌ NO ES SOLICITUD DE CONSTANCIA, continuando con flujo normal")
-                # Continuar con el flujo normal de consulta de alumnos
 
-
-
-            # PROMPT 2: Generar estrategia + SQL en un solo paso
-            sql_query = self._generate_sql_with_strategy(context.user_message)
+            # PROMPT 2: Generar estrategia + SQL (USANDO PROMPT MANAGER CENTRALIZADO)
+            self.logger.info("   ├── PROMPT 2: Generación SQL inteligente...")
+            sql_query = self._generate_sql_with_strategy_centralized(context.user_message)
 
             if not sql_query:
+                self.logger.info("   └── ❌ No se pudo generar SQL")
                 return None
+            self.logger.info("   └── ✅ SQL generado exitosamente")
 
             # Ejecutar consulta SQL
             result = self.sql_executor.execute_query(sql_query)
 
             if result.success:
                 # PROMPT 3: Validar + Generar respuesta + Auto-reflexión
+                self.logger.info("   ├── PROMPT 3: Validación + respuesta + auto-reflexión...")
                 response_with_reflection = self._validate_and_generate_response(
                     context.user_message, sql_query, result.data, result.row_count
                 )
 
                 if not response_with_reflection:
+                    self.logger.info("   └── ❌ Validación falló")
                     return InterpretationResult(
                         action="consulta_sql_fallida",
                         parameters={
@@ -199,10 +206,14 @@ class StudentQueryInterpreter(BaseInterpreter):
                         },
                         confidence=0.2
                     )
+                self.logger.info("   └── ✅ Validación y respuesta completadas")
 
                 # Extraer respuesta y reflexión
                 human_response = response_with_reflection.get("respuesta_usuario", "Respuesta procesada")
                 reflexion = response_with_reflection.get("reflexion_conversacional", {})
+
+                # PROMPT 4: Filtrado inteligente (implícito en validate_and_generate_response)
+                self.logger.info("   └── PROMPT 4: Filtrado inteligente aplicado ✅")
 
                 # Preparar parámetros con información de auto-reflexión
                 parameters = {
@@ -211,16 +222,17 @@ class StudentQueryInterpreter(BaseInterpreter):
                     "row_count": result.row_count,
                     "message": human_response,
                     "human_response": human_response,
-                    # NUEVO: Información de auto-reflexión para el MessageProcessor
                     "auto_reflexion": reflexion
                 }
 
+                self.logger.info(f"📊 [STUDENT] Flujo completado: {result.row_count} resultados encontrados")
                 return InterpretationResult(
                     action="consulta_sql_exitosa",
                     parameters=parameters,
                     confidence=0.9
                 )
             else:
+                self.logger.info("   └── ❌ Ejecución SQL falló")
                 return InterpretationResult(
                     action="consulta_sql_fallida",
                     parameters={
@@ -355,7 +367,44 @@ NIVEL {i}:
             # Obtener el elemento seleccionado (índice base 1)
             elemento_seleccionado = datos[elemento_referenciado - 1]
 
-            # 🆕 USAR RESPUESTA UNIFICADA en lugar de _generate_selection_response
+            # 🎯 VERIFICAR SI ES SOLICITUD DE CONSTANCIA (IGUAL QUE EN ACTION)
+            constancia_keywords = ["constancia", "certificado", "genera", "generar", "crear", "documento"]
+            user_lower = user_query.lower()
+            is_constancia_request = any(keyword in user_lower for keyword in constancia_keywords)
+
+            if is_constancia_request:
+                self.logger.info("🎯 SELECCIÓN + CONSTANCIA - Procesando DIRECTAMENTE...")
+
+                # Extraer tipo de constancia del query
+                tipo_constancia = "estudio"  # Por defecto
+                if "calificaciones" in user_lower:
+                    tipo_constancia = "calificaciones"
+                elif "traslado" in user_lower:
+                    tipo_constancia = "traslado"
+                elif "estudios" in user_lower or "estudio" in user_lower:
+                    tipo_constancia = "estudio"
+
+                self.logger.info(f"   - Tipo detectado: {tipo_constancia}")
+                self.logger.info(f"   - Alumno seleccionado: {elemento_seleccionado.get('nombre', 'N/A')}")
+
+                # 🔧 OBTENER DATOS COMPLETOS DEL ALUMNO (incluyendo ID)
+                alumno_completo = self._get_complete_student_data(elemento_seleccionado)
+
+                if not alumno_completo:
+                    return InterpretationResult(
+                        action="constancia_error",
+                        parameters={
+                            "message": f"❌ No se pudieron obtener los datos completos de {elemento_seleccionado.get('nombre', 'N/A')}",
+                            "error": "incomplete_student_data"
+                        },
+                        confidence=0.3
+                    )
+
+                # 🚀 GENERAR CONSTANCIA DIRECTAMENTE (SIN SQL)
+                self.logger.info("🚀 GENERANDO CONSTANCIA DIRECTAMENTE DESDE SELECCIÓN")
+                return self._generate_constancia_for_student(alumno_completo, tipo_constancia, user_query)
+
+            # Si NO es constancia, usar respuesta unificada normal
             response_message = self._generate_unified_continuation_response(
                 user_query, "selection", ultimo_nivel, conversation_stack
             )
@@ -670,6 +719,16 @@ NIVEL {i}:
     def _detect_if_needs_sql_query(self, user_query: str, ultimo_nivel: Dict) -> bool:
         """Detecta si la consulta de continuación necesita ejecutar SQL en lugar de solo usar LLM"""
         try:
+            user_lower = user_query.lower()
+
+            # 🎯 PRIORIDAD 1: Si es solicitud de CONSTANCIA, NO necesita SQL
+            constancia_keywords = ["constancia", "certificado", "genera", "generar", "crear", "documento"]
+            is_constancia_request = any(keyword in user_lower for keyword in constancia_keywords)
+
+            if is_constancia_request:
+                self.logger.debug(f"Es solicitud de constancia, NO necesita SQL: '{user_query}'")
+                return False
+
             # Palabras clave que indican necesidad de consulta SQL
             sql_indicators = [
                 "nombre", "nombres", "curp", "matrícula", "matricula", "grado", "grupo", "turno",
@@ -677,8 +736,6 @@ NIVEL {i}:
                 "calificaciones", "promedio", "datos", "información", "informacion",
                 "dame", "muestra", "dime", "cuál", "cual", "quién", "quien"
             ]
-
-            user_lower = user_query.lower()
 
             # Si la consulta contiene indicadores de datos específicos
             if any(indicator in user_lower for indicator in sql_indicators):
@@ -773,9 +830,22 @@ NIVEL {i}:
                     confidence=0.3
                 )
 
-            # 🆕 VERIFICAR SI ES CONFIRMACIÓN DE CONSTANCIA
-            if ultimo_nivel.get("estado") == "vista_previa_generada":
+            # 🆕 VERIFICAR SI ES CONFIRMACIÓN DE CONSTANCIA REAL (no solicitud directa)
+            # CORREGIDO: Solo procesar como confirmación si realmente es una confirmación simple
+            is_real_constancia_confirmation = (
+                ultimo_nivel.get("estado") == "vista_previa_generada" and
+                self._is_simple_confirmation(user_query)  # Solo "sí", "ok", "confirmar", etc.
+            )
+
+            if is_real_constancia_confirmation:
+                self.logger.info(f"🎯 CONFIRMACIÓN SIMPLE DE CONSTANCIA DETECTADA")
+                self.logger.info(f"   - Estado: {ultimo_nivel.get('estado', 'N/A')}")
+                self.logger.info(f"   - Awaiting: {ultimo_nivel.get('awaiting', 'N/A')}")
+                self.logger.info(f"   - Tipo constancia: {ultimo_nivel.get('tipo_constancia', 'N/A')}")
+
                 confirmation_type = self._detect_confirmation_type(user_query, ultimo_nivel)
+                self.logger.info(f"   - Tipo confirmación: {confirmation_type}")
+
                 return self._process_constancia_confirmation(user_query, confirmation_type, ultimo_nivel)
 
             # 🧠 PROMPT INTELIGENTE: LLM decide qué hacer automáticamente
@@ -927,69 +997,15 @@ RESPONDE CON:
             self._sql_context = self.database_analyzer.generate_sql_context()
         return self._sql_context
 
-    def _detect_student_query_intention(self, user_query: str, context=None) -> bool:
+    def _detect_student_query_intention_centralized(self, user_query: str, conversation_context: str = "") -> bool:
         """
-        PROMPT 1 OPTIMIZADO: Detecta si la consulta es sobre alumnos/estudiantes
-        NOTA: context no se usa actualmente, se mantiene por compatibilidad
+        PROMPT 1 CENTRALIZADO: Detecta si la consulta es sobre alumnos/estudiantes
+        🆕 MEJORADO: Ahora incluye contexto conversacional
+        REEMPLAZA: _detect_student_query_intention() (método eliminado)
         """
         try:
-            # Crear prompt de detección de intención MEJORADO CON CONTEXTO ESCOLAR
-            intention_prompt = f"""
-Eres el ASISTENTE OFICIAL de la escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ".
-
-CONTEXTO COMPLETO DE TU TRABAJO:
-- Eres parte del sistema de gestión de UNA ESCUELA PRIMARIA
-- TODO el sistema ES la escuela - no hay nada más
-- TODA la base de datos SON los alumnos de esta escuela (211 estudiantes)
-- TODAS las estadísticas, datos, información de "la escuela" SON sobre los alumnos
-- Los usuarios son personal de la escuela que trabaja CON los estudiantes
-
-RAZONAMIENTO INTELIGENTE ESCOLAR:
-- "estadísticas de la escuela" = estadísticas de los 211 alumnos registrados
-- "información de la escuela" = información de los estudiantes y su rendimiento
-- "datos de la escuela" = datos académicos de los alumnos por grados/grupos
-- "resumen de la escuela" = resumen de la población estudiantil
-- "situación de la escuela" = situación académica de los estudiantes
-
-PORQUE ERES EL SISTEMA DE UNA ESCUELA PRIMARIA:
-- La escuela EXISTE por sus alumnos
-- Los datos escolares SON datos estudiantiles
-- Las estadísticas escolares SON estadísticas de alumnos
-- La información escolar ES información académica de estudiantes
-
-ESTRUCTURA DISPONIBLE:
-- 211 alumnos registrados en grados 1° a 6°
-- Datos académicos: grados, grupos, turnos, calificaciones
-- Información personal: nombres, CURPs, matrículas, fechas
-- Registros de constancias generadas
-
-CONSULTA DEL USUARIO: "{user_query}"
-
-INSTRUCCIONES CONTEXTUALES:
-Como asistente de una escuela primaria, determina si la consulta se refiere a:
-- Información de alumnos/estudiantes (DIRECTO)
-- Información de "la escuela" (= información de alumnos, INDIRECTO)
-- Estadísticas escolares (= estadísticas de estudiantes)
-- Datos académicos o administrativos
-- Búsquedas, conteos, listados de estudiantes
-- Generación de documentos para alumnos
-
-RESPONDE ÚNICAMENTE con un JSON:
-{{
-    "es_consulta_alumnos": true|false,
-    "razonamiento": "Explicación contextual de por qué es/no es sobre alumnos en el contexto escolar",
-    "tipo_detectado": "conteo|busqueda|listado|detalles|constancia|estadisticas|otro"
-}}
-
-EJEMPLOS CONTEXTUALES:
-- "cuántos alumnos hay" → es_consulta_alumnos: true, tipo: "conteo"
-- "estadísticas de la escuela" → es_consulta_alumnos: true, tipo: "estadisticas" (porque la escuela son sus alumnos)
-- "información de la escuela" → es_consulta_alumnos: true, tipo: "estadisticas" (porque se refiere a datos de estudiantes)
-- "datos de la escuela" → es_consulta_alumnos: true, tipo: "estadisticas" (porque son datos académicos)
-- "alumnos de 3er grado" → es_consulta_alumnos: true, tipo: "busqueda"
-- "constancia para Juan" → es_consulta_alumnos: true, tipo: "constancia"
-- "ayuda del sistema" → es_consulta_alumnos: false, tipo: "otro"
-"""
+            # 🎯 USAR PROMPT MANAGER CENTRALIZADO CON CONTEXTO CONVERSACIONAL
+            intention_prompt = self.prompt_manager.get_student_query_intention_prompt(user_query, conversation_context)
 
             # Enviar al LLM
             response = self.gemini_client.send_prompt_sync(intention_prompt)
@@ -1001,9 +1017,18 @@ EJEMPLOS CONTEXTUALES:
                 if intention_result:
                     is_student_query = intention_result.get('es_consulta_alumnos', False)
                     query_type = intention_result.get('tipo_detectado', 'otro')
+                    requires_context = intention_result.get('requiere_contexto', False)
+                    continuation_type = intention_result.get('tipo_continuacion', 'nueva_consulta')
 
-                    # Guardar el tipo de consulta para uso posterior
+                    # Guardar información adicional para uso posterior
                     self._current_query_type = query_type
+                    self._requires_context = requires_context
+                    self._continuation_type = continuation_type
+
+                    self.logger.info(f"🧠 ANÁLISIS CONVERSACIONAL:")
+                    self.logger.info(f"   - Tipo detectado: {query_type}")
+                    self.logger.info(f"   - Requiere contexto: {requires_context}")
+                    self.logger.info(f"   - Tipo continuación: {continuation_type}")
 
                     return is_student_query
                 else:
@@ -1012,6 +1037,7 @@ EJEMPLOS CONTEXTUALES:
                 return False
 
         except Exception as e:
+            self.logger.error(f"Error detectando intención centralizada: {e}")
             return False
 
     def _parse_intention_response(self, intention_response: str) -> Optional[Dict[str, Any]]:
@@ -1048,64 +1074,14 @@ EJEMPLOS CONTEXTUALES:
         except Exception as e:
             return None
 
-    def _generate_sql_with_strategy(self, user_query: str) -> Optional[str]:
+    def _generate_sql_with_strategy_centralized(self, user_query: str) -> Optional[str]:
         """
-        PROMPT 2 OPTIMIZADO: Genera estrategia + SQL en un solo paso
+        PROMPT 2 CENTRALIZADO: Genera estrategia + SQL en un solo paso
+        REEMPLAZA: _generate_sql_with_strategy() (método eliminado)
         """
         try:
-            # Obtener contexto estructural completo
-            sql_context = self._get_sql_context()
-
-            # Crear prompt combinado de estrategia + SQL
-            combined_prompt = f"""
-Eres un experto en SQL para un sistema escolar. Tu trabajo es analizar consultas de usuarios y generar SQL optimizado en un solo paso.
-
-CONTEXTO COMPLETO DEL SISTEMA:
-- Sistema de gestión escolar para la escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ"
-- Maneja datos de alumnos, información académica y generación de constancias
-- Los usuarios son personal administrativo que necesita información precisa
-
-ESTRUCTURA COMPLETA DE LA BASE DE DATOS:
-{sql_context}
-
-CONSULTA DEL USUARIO: "{user_query}"
-
-INSTRUCCIONES INTELIGENTES:
-1. ANALIZA la consulta comparándola con la estructura completa de la DB
-2. IDENTIFICA qué tablas, columnas y relaciones necesitas
-3. DETERMINA el tipo de consulta (COUNT, SELECT, filtros específicos)
-4. 🧠 INTERPRETA matices del lenguaje natural:
-   - "cualquier alumno" = 1 solo alumno → LIMIT 1
-   - "un alumno" = 1 solo alumno → LIMIT 1
-   - "el nombre de" = solo columna nombre
-   - "la CURP de" = solo columna curp
-   - "todos los alumnos" = sin LIMIT
-   - "lista de alumnos" = múltiples resultados
-5. GENERA directamente el SQL optimizado
-
-REGLAS IMPORTANTES:
-- SOLO consultas SELECT (nunca INSERT, UPDATE, DELETE)
-- Usar nombres exactos de columnas de la estructura
-- Para COUNT: SELECT COUNT(*) as total
-- Para SELECT: incluir SOLO las columnas que el usuario pidió
-- Usar JOINs apropiados: LEFT JOIN para datos opcionales, INNER JOIN para requeridos
-- Aplicar filtros WHERE basándote en los valores reales de la estructura
-- NO añadir LIMIT a consultas COUNT
-- SÍ añadir LIMIT 1 cuando el usuario pida "un/cualquier" elemento específico
-
-EJEMPLOS INTELIGENTES BASADOS EN LA ESTRUCTURA REAL:
-- "cuántos alumnos hay en total" → SELECT COUNT(*) as total FROM alumnos
-- "alumnos de 3er grado" → SELECT a.nombre, a.curp, de.grado, de.grupo, de.turno FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.grado = 3
-- "dame el nombre de cualquier alumno de 3er grado" → SELECT a.nombre FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.grado = 3 LIMIT 1
-- "dame un alumno de primer grado" → SELECT a.nombre FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.grado = 1 LIMIT 1
-- "la CURP de María García" → SELECT curp FROM alumnos WHERE nombre LIKE '%MARIA%' AND nombre LIKE '%GARCIA%'
-- "estudiantes nacidos en 2018" → SELECT nombre, curp, fecha_nacimiento FROM alumnos WHERE STRFTIME('%Y', fecha_nacimiento) = '2018'
-- "alumnos que tengan calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NOT NULL AND de.calificaciones != '[]' AND de.calificaciones != ''
-- "2 alumnos al azar que tengan calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NOT NULL AND de.calificaciones != '[]' AND de.calificaciones != '' ORDER BY RANDOM() LIMIT 2
-- "alumnos sin calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NULL OR de.calificaciones = '[]' OR de.calificaciones = ''
-
-RESPONDE ÚNICAMENTE con la consulta SQL, sin explicaciones adicionales.
-"""
+            # 🎯 USAR PROMPT MANAGER CENTRALIZADO
+            combined_prompt = self.prompt_manager.get_sql_generation_prompt(user_query)
 
             # Enviar al LLM
             response = self.gemini_client.send_prompt_sync(combined_prompt)
@@ -1122,11 +1098,13 @@ RESPONDE ÚNICAMENTE con la consulta SQL, sin explicaciones adicionales.
                 return None
 
         except Exception as e:
+            self.logger.error(f"Error generando SQL centralizado: {e}")
             return None
 
     def _validate_and_generate_response(self, user_query: str, sql_query: str, data: List[Dict], row_count: int) -> Optional[Dict]:
         """
         PROMPT 3 CON AUTO-REFLEXIÓN + FILTRO INTELIGENTE: Filtra datos + Valida SQL + Genera respuesta + Auto-reflexiona sobre continuación
+        🆕 AHORA USA PromptManager centralizado
         """
         try:
             # 🧠 PASO 1: APLICAR FILTRO INTELIGENTE FINAL
@@ -1149,112 +1127,10 @@ RESPONDE ÚNICAMENTE con la consulta SQL, sin explicaciones adicionales.
             # Formatear los datos filtrados para el prompt de manera más clara
             data_summary = self._format_data_for_validation_prompt(final_data, final_row_count, sql_query)
 
-            # Crear prompt de validación + respuesta + auto-reflexión integrada
-            validation_response_prompt = f"""
-Eres un validador y comunicador experto para un sistema escolar con CAPACIDAD DE AUTO-REFLEXIÓN.
-
-CONTEXTO COMPLETO DEL SISTEMA:
-- Sistema de gestión escolar para la escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ"
-- Maneja datos de alumnos, información académica y generación de constancias del ciclo escolar 2024-2025
-- Los usuarios son personal administrativo, maestros y directivos que necesitan información para tomar decisiones educativas
-
-CONSULTA ORIGINAL DEL USUARIO: "{user_query}"
-
-CONSULTA SQL EJECUTADA: {sql_query}
-
-RESULTADOS OBTENIDOS (FILTRADOS INTELIGENTEMENTE):
-{data_summary}
-
-INFORMACIÓN DEL FILTRO INTELIGENTE:
-- Acción aplicada: {filter_decision.get('accion_requerida', 'mantener')}
-- Datos originales: {len(data)} registros
-- Datos filtrados: {final_row_count} registros
-- Razonamiento del filtro: {filter_decision.get('razonamiento', 'N/A')}
-
-INSTRUCCIONES PRINCIPALES:
-1. VALIDA que el SQL resolvió exactamente lo que pidió el usuario
-2. VERIFICA que los resultados son coherentes y lógicos
-3. Si la validación es exitosa, GENERA una respuesta natural integrada
-4. 🆕 AUTO-REFLEXIONA sobre tu respuesta como un secretario experto
-5. Si la validación falla, responde con "VALIDACION_FALLIDA"
-
-IMPORTANTE - USA LOS DATOS REALES:
-- Los datos en RESULTADOS OBTENIDOS son REALES de la base de datos
-- MUESTRA estos datos tal como están, no inventes placeholders
-- Si hay nombres, CURPs, grados - ÚSALOS directamente
-- NO digas "[Listado aquí]" - MUESTRA el listado real
-
-CRITERIOS DE VALIDACIÓN:
-- ¿El SQL responde exactamente la pregunta del usuario?
-- ¿Los resultados tienen sentido en el contexto escolar?
-- ¿La cantidad de resultados es lógica?
-- ¿Los datos mostrados son relevantes para la consulta?
-
-FORMATO DE RESPUESTA NATURAL (si validación exitosa):
-- Presenta la información como un colega educativo profesional
-- Contextualiza los datos dentro del marco escolar real
-- Ofrece acciones específicas (constancias, reportes, seguimiento)
-- Usa el contexto de la escuela y ciclo escolar
-- NO menciones términos técnicos (SQL, base de datos, validación)
-
-REGLAS PARA MOSTRAR DATOS REALES:
-- SIEMPRE muestra los datos reales obtenidos de la consulta
-- NO uses placeholders como "[Listado de alumnos aquí]"
-- NO inventes reglas sobre cuántos mostrar
-- PRESENTA los datos tal como están en los resultados
-- Si hay muchos datos, muestra los primeros y menciona que hay más disponibles
-
-🧠 AUTO-REFLEXIÓN CONVERSACIONAL MEJORADA:
-Después de generar tu respuesta, reflexiona como un secretario escolar experto:
-
-ANÁLISIS REFLEXIVO ESPECÍFICO:
-- ¿La respuesta que acabo de dar podría generar preguntas de seguimiento?
-- ¿Mostré una lista que el usuario podría querer referenciar ("el tercero", "número 5")?
-- ¿Proporcioné información de un alumno específico que podría necesitar CONSTANCIA?
-- ¿Debería sugerir proactivamente la generación de constancias?
-- ¿Ofrecí servicios que requieren confirmación o especificación?
-- ¿Debería recordar estos datos para futuras consultas en esta conversación?
-
-SUGERENCIAS INTELIGENTES DE CONSTANCIAS:
-- Si mostré 1 alumno específico: Sugerir constancia directamente
-- Si mostré pocos alumnos (2-5): Esperar selección, luego sugerir constancia
-- Si mostré muchos alumnos (6+): Esperar refinamiento de búsqueda
-- Si mostré estadísticas: No sugerir constancias
-
-DECISIÓN CONVERSACIONAL:
-Si tu respuesta espera continuación, especifica:
-- Tipo esperado: "selection" (selección de lista), "action" (acción sobre alumno), "confirmation" (confirmación), "specification" (especificación), "constancia_suggestion" (sugerir constancia)
-- Datos a recordar: información relevante para futuras referencias
-- Razonamiento: por qué esperas esta continuación y si incluye sugerencia de constancia
-
-FORMATO DE RESPUESTA COMPLETA:
-{{
-  "respuesta_usuario": "Tu respuesta profesional completa aquí",
-  "reflexion_conversacional": {{
-    "espera_continuacion": true|false,
-    "tipo_esperado": "selection|action|confirmation|specification|none",
-    "datos_recordar": {{
-      "query": "consulta original",
-      "data": [datos relevantes filtrados],
-      "row_count": número_elementos_filtrados,
-      "context": "contexto adicional",
-      "filter_applied": "información del filtro inteligente"
-    }},
-    "razonamiento": "Explicación de por qué esperas o no esperas continuación"
-  }}
-}}
-
-EJEMPLOS DE AUTO-REFLEXIÓN:
-
-Ejemplo 1 - Lista de alumnos:
-"Mostré una lista de 21 alumnos García. Es muy probable que el usuario quiera información específica de alguno, como 'CURP del quinto' o 'constancia para el tercero'. Debería recordar esta lista."
-
-Ejemplo 2 - Información específica:
-"Proporcioné datos completos de Juan Pérez. Esto típicamente lleva a solicitudes de constancias o más información. Debería recordar que estamos hablando de Juan."
-
-Ejemplo 3 - Consulta estadística:
-"Di un número total de alumnos. Esta es información general que no requiere seguimiento específico. No necesito recordar nada especial."
-"""
+            # 🆕 USAR PROMPT MANAGER en lugar de prompt hardcodeado
+            validation_response_prompt = self.prompt_manager.get_validation_and_response_prompt(
+                user_query, sql_query, data_summary, filter_decision, final_row_count, len(data)
+            )
 
             # Enviar al LLM
             response = self.gemini_client.send_prompt_sync(validation_response_prompt)
@@ -1360,37 +1236,9 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
             self.logger.error(f"Error extrayendo SQL: {e}")
             return None
 
-    def _parse_intention_response(self, intention_response: str) -> Optional[Dict[str, Any]]:
-        """Parsea la respuesta de intención JSON"""
-        try:
-            # Limpiar la respuesta
-            clean_response = intention_response.strip()
-
-            # Buscar JSON en la respuesta
-            json_patterns = [
-                r'```json\s*(.*?)\s*```',
-                r'```\s*(.*?)\s*```',
-                r'(\{.*?\})'
-            ]
-
-            for pattern in json_patterns:
-                matches = re.findall(pattern, clean_response, re.DOTALL)
-                if matches:
-                    try:
-                        intention = json.loads(matches[0])
-                        return intention
-                    except json.JSONDecodeError:
-                        continue
-
-            # Si no encuentra JSON, intentar parsear directamente
-            try:
-                intention = json.loads(clean_response)
-                return intention
-            except json.JSONDecodeError:
-                return None
-
-        except Exception as e:
-            return None
+    # 🗑️ MÉTODO DUPLICADO ELIMINADO: _parse_intention_response()
+    # RAZÓN: Ya existe una versión idéntica arriba (línea 976)
+    # MANTENER: Solo la primera versión
 
 
 
@@ -1529,21 +1377,28 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
             # 🚀 USAR ENTIDADES DETECTADAS SI ESTÁN DISPONIBLES
             detected_entities = context.get('detected_entities', {}) if context else {}
 
-            if detected_entities:
-                self.logger.info("🎯 USANDO ENTIDADES PRE-DETECTADAS DEL MASTER")
-                constancia_info = {
-                    'es_solicitud_constancia': True,
-                    'nombre_alumno': detected_entities.get('nombres', [None])[0] if detected_entities.get('nombres') else None,
-                    'tipo_constancia': detected_entities.get('tipo_constancia'),
-                    'fuente_datos': detected_entities.get('fuente_datos', 'base_datos'),
-                    'contexto_especifico': detected_entities.get('contexto_especifico'),
-                    'confianza': 0.95
-                }
-                self.logger.info(f"   - Info construida: {constancia_info}")
-            else:
-                # Fallback: Extraer información usando LLM
-                self.logger.info("🧠 EXTRAYENDO INFORMACIÓN CON LLM (fallback)")
-                constancia_info = self._extract_constancia_info(user_query, context)
+            # 🆕 SOLO USAR ENTIDADES DEL MASTER (sin fallbacks)
+            if not detected_entities:
+                self.logger.error("❌ No hay entidades detectadas del Master para constancia")
+                return InterpretationResult(
+                    action="constancia_error",
+                    parameters={
+                        "message": "❌ Error: No se detectaron entidades para la constancia",
+                        "error": "no_entities_detected"
+                    },
+                    confidence=0.1
+                )
+
+            self.logger.info("🎯 USANDO ENTIDADES PRE-DETECTADAS DEL MASTER")
+            constancia_info = {
+                'es_solicitud_constancia': True,
+                'nombre_alumno': detected_entities.get('nombres', [None])[0] if detected_entities.get('nombres') else None,
+                'tipo_constancia': detected_entities.get('tipo_constancia'),
+                'fuente_datos': detected_entities.get('fuente_datos', 'base_datos'),
+                'contexto_especifico': detected_entities.get('contexto_especifico'),
+                'confianza': 0.95
+            }
+            self.logger.info(f"   - Info construida: {constancia_info}")
 
             if not constancia_info:
                 return InterpretationResult(
@@ -1698,170 +1553,11 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
                 confidence=0.1
             )
 
-    def _extract_constancia_info(self, user_query: str, context: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
-        """Extrae información de constancia usando LLM con contexto completo"""
-        try:
-            # 🧠 CONSTRUIR CONTEXTO INTELIGENTE
-            context_info = self._build_intelligent_context(context)
+    # 🗑️ MÉTODO ELIMINADO: _extract_constancia_info
+    # RAZÓN: Ahora solo usamos entidades del Master, sin fallbacks LLM
 
-            prompt = f"""
-Eres un analizador experto de solicitudes de constancias escolares con COMPRENSIÓN CONTEXTUAL AVANZADA.
-
-🔍 CONTEXTO ACTUAL DEL SISTEMA:
-{context_info}
-
-📝 CONSULTA DEL USUARIO: "{user_query}"
-
-🧠 ANÁLISIS CONTEXTUAL INTELIGENTE:
-⚠️ IMPORTANTE: SÉ MUY ESTRICTO - LA MAYORÍA DE CONSULTAS NO SON CONSTANCIAS
-
-REGLA FUNDAMENTAL:
-❌ SI NO DICE EXPLÍCITAMENTE "CONSTANCIA", "CERTIFICADO", "TRANSFORMA" → NO ES CONSTANCIA
-❌ PEDIR "ALUMNOS", "DATOS", "INFORMACIÓN" → NUNCA ES CONSTANCIA
-
-CRITERIOS ULTRA-ESTRICTOS PARA CONSTANCIAS:
-✅ ES CONSTANCIA SOLO si contiene EXPLÍCITAMENTE: "constancia", "certificado", "transforma", "convierte", "genera constancia"
-✅ ES CONSTANCIA SOLO si hay PDF cargado + palabras de transformación
-✅ ES CONSTANCIA SOLO si es continuación directa de conversación sobre constancias
-❌ NUNCA ES CONSTANCIA si solo pide "alumnos", "datos", "información", "lista", "muestra", "dame"
-❌ NUNCA ES CONSTANCIA si es búsqueda normal sin mencionar documentos
-
-EJEMPLOS ULTRA-CLAROS:
-✅ "constancia de estudios para Juan" → ES CONSTANCIA (dice "constancia")
-✅ "transforma el PDF a constancia" → ES CONSTANCIA (dice "transforma" + "constancia")
-✅ "genera certificado para María" → ES CONSTANCIA (dice "certificado")
-❌ "dame 3 alumnos de 4to grado" → NO ES CONSTANCIA (solo pide alumnos)
-❌ "muestra estudiantes de matemáticas" → NO ES CONSTANCIA (solo pide datos)
-❌ "buscar alumnos García" → NO ES CONSTANCIA (solo busca)
-❌ "información de Juan Pérez" → NO ES CONSTANCIA (solo pide información)
-❌ "lista de alumnos por grado" → NO ES CONSTANCIA (solo pide lista)
-
-SOLO SI ES CONSTANCIA, analiza:
-1. ¿Hay un PDF cargado que se pueda transformar?
-2. ¿Hay resultados de búsqueda previos que se puedan usar?
-3. ¿Es una continuación de una conversación anterior?
-4. ¿El usuario especifica claramente todos los parámetros?
-5. ¿Qué información falta y se debe preguntar?
-
-EXTRAE INFORMACIÓN DISPONIBLE (solo si es constancia):
-- Nombre del alumno (completo, parcial, o referencia contextual como "el tercero", "Juan")
-- Tipo de constancia (estudio/estudios, calificaciones, traslado)
-- Si debe incluir foto (explícito o inferido)
-- Fuente de datos (PDF cargado, base de datos, selección previa)
-
-⚠️ POR DEFECTO: es_solicitud_constancia = false
-⚠️ SOLO cambia a true si cumple criterios ultra-estrictos
-
-RESPONDE SOLO JSON:
-{{
-    "es_solicitud_constancia": false,
-    "confianza": 0.0-1.0,
-    "nombre_alumno": null,
-    "tipo_constancia": null,
-    "incluir_foto": null,
-    "fuente_datos": "no_especificada",
-    "parametros_faltantes": [],
-    "requiere_conversacion": false,
-    "razonamiento": "EXPLICA POR QUÉ NO ES CONSTANCIA (o por qué sí es)"
-}}
-
-RECUERDA: "dame alumnos" = búsqueda normal, NO constancia
-"""
-
-            response = self.gemini_client.send_prompt_sync(prompt)
-            if response:
-                result = self._parse_json_response(response)
-                if result:
-                    # 🛡️ VERIFICACIÓN ADICIONAL DE SEGURIDAD
-                    # Si el LLM dice que es constancia, verificar con palabras clave
-                    if result.get("es_solicitud_constancia", False):
-                        # Verificar que realmente contenga palabras de constancia
-                        constancia_keywords = ["constancia", "certificado", "transforma", "convierte", "genera constancia"]
-                        user_lower = user_query.lower()
-                        has_constancia_word = any(keyword in user_lower for keyword in constancia_keywords)
-
-                        if not has_constancia_word:
-                            self.logger.warning(f"🚨 LLM detectó constancia pero no hay palabras clave. Forzando a false.")
-                            self.logger.warning(f"   - Query: '{user_query}'")
-                            self.logger.warning(f"   - Razonamiento LLM: {result.get('razonamiento', '')}")
-                            return None  # Forzar que no sea constancia
-
-                        self.logger.info(f"🎯 Constancia detectada con contexto: {result.get('razonamiento', '')}")
-                        return result
-                    else:
-                        self.logger.debug(f"❌ No es solicitud de constancia: {result.get('razonamiento', '')}")
-                        return None
-                else:
-                    self.logger.debug("❌ No se pudo parsear respuesta del LLM")
-                    return None
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Error extrayendo info de constancia: {e}")
-            return None
-
-    def _build_intelligent_context(self, context: Dict[str, Any] = None) -> str:
-        """Construye contexto inteligente para análisis de constancias"""
-        try:
-            context_parts = []
-
-            # 📄 INFORMACIÓN DE PDF CARGADO
-            if context and context.get('pdf_panel'):
-                pdf_panel = context['pdf_panel']
-                if hasattr(pdf_panel, 'original_pdf') and pdf_panel.original_pdf:
-                    context_parts.append(f"📄 PDF CARGADO: {pdf_panel.original_pdf}")
-                    if hasattr(pdf_panel, 'pdf_data') and pdf_panel.pdf_data:
-                        alumno_pdf = pdf_panel.pdf_data.get('nombre', 'Desconocido')
-                        context_parts.append(f"   - Alumno en PDF: {alumno_pdf}")
-                        context_parts.append(f"   - Datos disponibles: {list(pdf_panel.pdf_data.keys())}")
-                else:
-                    context_parts.append("📄 PDF: No hay PDF cargado")
-            else:
-                context_parts.append("📄 PDF: No hay PDF cargado")
-
-            # 🔍 RESULTADOS DE BÚSQUEDA PREVIOS
-            if hasattr(self, 'last_query_results') and self.last_query_results:
-                results = self.last_query_results
-                if results.get('data') and len(results['data']) > 0:
-                    count = len(results['data'])
-                    context_parts.append(f"🔍 BÚSQUEDA PREVIA: {count} resultado(s) encontrado(s)")
-                    if count == 1:
-                        alumno = results['data'][0]
-                        context_parts.append(f"   - Alumno único: {alumno.get('nombre', 'N/A')}")
-                    elif count <= 5:
-                        nombres = [r.get('nombre', 'N/A') for r in results['data'][:3]]
-                        context_parts.append(f"   - Primeros alumnos: {', '.join(nombres)}")
-                    else:
-                        context_parts.append(f"   - Lista múltiple disponible")
-                else:
-                    context_parts.append("🔍 BÚSQUEDA PREVIA: Sin resultados")
-            else:
-                context_parts.append("🔍 BÚSQUEDA PREVIA: No hay búsquedas previas")
-
-            # 💬 PILA CONVERSACIONAL
-            if hasattr(self, 'conversation_stack') and self.conversation_stack:
-                stack_item = self.conversation_stack[-1]  # Último elemento
-                context_parts.append(f"💬 CONVERSACIÓN ACTIVA:")
-                context_parts.append(f"   - Tipo: {stack_item.get('awaiting', 'N/A')}")
-                context_parts.append(f"   - Consulta previa: {stack_item.get('query', 'N/A')}")
-                if stack_item.get('data'):
-                    data_count = len(stack_item['data']) if isinstance(stack_item['data'], list) else 1
-                    context_parts.append(f"   - Datos disponibles: {data_count} elemento(s)")
-            else:
-                context_parts.append("💬 CONVERSACIÓN: No hay conversación activa")
-
-            # 🎯 ESTADO DEL SISTEMA
-            context_parts.append("🎯 CAPACIDADES DISPONIBLES:")
-            context_parts.append("   - Buscar alumnos en base de datos")
-            context_parts.append("   - Generar constancias (estudios, calificaciones, traslado)")
-            context_parts.append("   - Transformar PDFs cargados")
-            context_parts.append("   - Continuar conversaciones previas")
-
-            return "\n".join(context_parts)
-
-        except Exception as e:
-            self.logger.error(f"Error construyendo contexto inteligente: {e}")
-            return "❌ Error obteniendo contexto del sistema"
+    # 🗑️ MÉTODO ELIMINADO: _build_intelligent_context
+    # RAZÓN: Ya no se usa, era parte del sistema LLM fallback eliminado
 
     def _normalize_constancia_type(self, tipo_raw: str) -> str:
         """Normaliza el tipo de constancia a los valores esperados por el servicio"""
@@ -2152,7 +1848,6 @@ RECUERDA: "dame alumnos" = búsqueda normal, NO constancia
             # 3. Fue cargado por el usuario (no generado automáticamente)
 
             import tempfile
-            import os
 
             temp_dir = tempfile.gettempdir()
 
@@ -2279,6 +1974,37 @@ FORMATO DE RESPUESTA:
         except Exception as e:
             self.logger.error(f"Error generando respuesta de constancia: {e}")
             return None
+
+    def _is_simple_confirmation(self, user_query: str) -> bool:
+        """Detecta si es una confirmación simple (sí, ok, confirmar) vs solicitud específica"""
+        try:
+            user_lower = user_query.lower().strip()
+
+            # Confirmaciones simples
+            simple_confirmations = [
+                "sí", "si", "ok", "vale", "confirmar", "confirmo", "adelante",
+                "procede", "continúa", "continua", "hazlo", "genérala", "generala"
+            ]
+
+            # Si es solo una palabra de confirmación simple
+            if user_lower in simple_confirmations:
+                return True
+
+            # Si contiene palabras específicas de constancia, NO es confirmación simple
+            constancia_keywords = [
+                "constancia", "certificado", "documento", "estudios",
+                "calificaciones", "traslado", "generar", "crear"
+            ]
+
+            for keyword in constancia_keywords:
+                if keyword in user_lower:
+                    return False  # Es solicitud específica, no confirmación simple
+
+            return False
+
+        except Exception as e:
+            self.logger.error(f"Error detectando confirmación simple: {e}")
+            return False
 
     def _detect_confirmation_type(self, user_query: str, context_item: Dict) -> str:
         """Detecta el tipo específico de confirmación para constancias"""

@@ -58,16 +58,16 @@ class HelpInterpreter(BaseInterpreter):
         ARQUITECTURA: PROMPT 0 → PROMPT 1 → PROMPT 2 → PROMPT 3
         """
         try:
-            self.logger.info(f"🆘 HelpInterpreter INICIADO - Consulta: '{context.user_message}'")
+            # 🔄 [HELP] INICIANDO PROCESAMIENTO
+            self.logger.info(f"🔄 [HELP] Iniciando procesamiento: '{context.user_message[:50]}...'")
 
-            # 🎯 PROMPT 0: VERIFICAR SUB-INTENCIÓN DEL MASTER (PATRÓN OPTIMIZADO)
+            # Obtener información de intención del Master
             intention_info = getattr(context, 'intention_info', {})
             sub_intention = intention_info.get('sub_intention', '')
             detected_entities = intention_info.get('detected_entities', {})
 
-            self.logger.info(f"🎯 INFORMACIÓN DE INTENCIÓN RECIBIDA:")
-            self.logger.info(f"   - Sub-intención: {sub_intention}")
-            self.logger.info(f"   - Entidades detectadas: {detected_entities}")
+            self.logger.info(f"   ├── Sub-intención: {sub_intention}")
+            self.logger.info(f"   └── Entidades: {len(detected_entities)} detectadas")
 
             # 🚀 FLUJO DIRECTO USANDO ENTIDADES PRE-DETECTADAS
             if sub_intention == "entender_capacidades":
@@ -121,6 +121,7 @@ class HelpInterpreter(BaseInterpreter):
                 # Determinar tipo de acción basado en el contenido
                 action_type = self._determine_help_action_type(help_content)
 
+                self.logger.info(f"📊 [HELP] Ayuda generada exitosamente: {action_type}")
                 return InterpretationResult(
                     action=action_type,
                     parameters={
@@ -298,22 +299,247 @@ class HelpInterpreter(BaseInterpreter):
             )
 
     def _detect_help_continuation(self, user_query: str, conversation_stack: list) -> Optional[Dict]:
-        """Detecta si la consulta es continuación de ayuda previa"""
-        # Por ahora, implementación básica
-        # TODO: Implementar detección específica para ayuda
-        return {"es_continuacion": False, "tipo_continuacion": "none"}
+        """Detecta si la consulta es continuación de ayuda previa usando contexto inteligente"""
+        try:
+            if not conversation_stack:
+                return {"es_continuacion": False, "tipo_continuacion": "none"}
+
+            # Obtener último nivel de la pila
+            ultimo_nivel = conversation_stack[-1]
+
+            # Crear prompt para detectar continuación de ayuda
+            continuation_prompt = f"""
+Eres un experto en análisis conversacional para sistema de ayuda escolar.
+
+CONTEXTO DE LA CONVERSACIÓN ANTERIOR:
+- Consulta previa: "{ultimo_nivel.get('query', '')}"
+- Datos mostrados: {ultimo_nivel.get('row_count', 0)} elementos
+- Contexto: {ultimo_nivel.get('context', '')}
+
+CONSULTA ACTUAL: "{user_query}"
+
+ANALIZA si la consulta actual es una CONTINUACIÓN que requiere usar el contexto anterior:
+
+TIPOS DE CONTINUACIÓN DE AYUDA:
+1. "explicacion_constancia" - Pregunta cómo obtener constancia para alumno específico del contexto
+2. "tutorial_especifico" - Pide tutorial usando datos del contexto
+3. "aclaracion_proceso" - Necesita aclaración sobre proceso mencionado
+4. "ejemplo_contextual" - Pide ejemplo usando datos específicos del contexto
+
+INDICADORES DE CONTINUACIÓN:
+- Referencias: "ese alumno", "para él/ella", "del anterior", "que mostraste"
+- Preguntas sobre procesos: "cómo obtener", "cómo generar", "qué hacer"
+- Solicitudes específicas: "para [nombre]", "con esos datos"
+
+RESPONDE ÚNICAMENTE con JSON:
+{{
+    "es_continuacion": true|false,
+    "tipo_continuacion": "explicacion_constancia|tutorial_especifico|aclaracion_proceso|ejemplo_contextual|none",
+    "confianza": 0.0-1.0,
+    "razonamiento": "Por qué es/no es continuación",
+    "datos_contextuales_necesarios": ["nombre_alumno", "datos_mostrados", "proceso_anterior"]
+}}
+"""
+
+            # Enviar al LLM
+            response = self.gemini_client.send_prompt_sync(continuation_prompt)
+
+            if response:
+                # Parsear respuesta JSON
+                continuation_data = self.gemini_client.parse_json_response(response)
+                if continuation_data:
+                    return continuation_data
+
+            # Fallback si LLM falla
+            return {"es_continuacion": False, "tipo_continuacion": "none"}
+
+        except Exception as e:
+            self.logger.error(f"Error detectando continuación de ayuda: {e}")
+            return {"es_continuacion": False, "tipo_continuacion": "none"}
 
     def _process_help_continuation(self, user_query: str, continuation_info: Dict, conversation_stack: list) -> InterpretationResult:
-        """Procesa continuaciones de ayuda"""
-        # Por ahora, implementación básica
-        # TODO: Implementar procesamiento de continuaciones
+        """Procesa continuaciones de ayuda usando contexto inteligente"""
+        try:
+            tipo_continuacion = continuation_info.get('tipo_continuacion', 'none')
+            self.logger.info(f"🎯 PROCESANDO CONTINUACIÓN DE AYUDA: {tipo_continuacion}")
+
+            # Extraer datos del contexto
+            ultimo_nivel = conversation_stack[-1] if conversation_stack else {}
+            datos_contextuales = self._extract_contextual_data(ultimo_nivel)
+
+            # Procesar según el tipo de continuación
+            if tipo_continuacion == "explicacion_constancia":
+                return self._process_constancia_explanation(user_query, datos_contextuales)
+            elif tipo_continuacion == "tutorial_especifico":
+                return self._process_contextual_tutorial(user_query, datos_contextuales)
+            elif tipo_continuacion == "aclaracion_proceso":
+                return self._process_process_clarification(user_query, datos_contextuales)
+            elif tipo_continuacion == "ejemplo_contextual":
+                return self._process_contextual_example(user_query, datos_contextuales)
+            else:
+                # Continuación genérica
+                return self._process_generic_continuation(user_query, datos_contextuales)
+
+        except Exception as e:
+            self.logger.error(f"Error procesando continuación de ayuda: {e}")
+            return InterpretationResult(
+                action="ayuda_error",
+                parameters={
+                    "message": "❌ Error procesando tu consulta de seguimiento. Intenta reformular.",
+                    "error": "continuation_error"
+                },
+                confidence=0.3
+            )
+
+    def _extract_contextual_data(self, ultimo_nivel: Dict) -> Dict:
+        """Extrae datos útiles del contexto conversacional"""
+        datos = {
+            "query_anterior": ultimo_nivel.get('query', ''),
+            "datos_mostrados": ultimo_nivel.get('data', []),
+            "row_count": ultimo_nivel.get('row_count', 0),
+            "context": ultimo_nivel.get('context', ''),
+            "nombres_alumnos": [],
+            "primer_alumno": None
+        }
+
+        # Extraer nombres de alumnos si hay datos
+        if datos["datos_mostrados"]:
+            for item in datos["datos_mostrados"]:
+                if isinstance(item, dict) and 'nombre' in item:
+                    datos["nombres_alumnos"].append(item['nombre'])
+
+            # Primer alumno para referencias como "el primero"
+            if datos["nombres_alumnos"]:
+                datos["primer_alumno"] = datos["nombres_alumnos"][0]
+
+        return datos
+
+    def _process_constancia_explanation(self, user_query: str, datos_contextuales: Dict) -> InterpretationResult:
+        """Procesa explicaciones sobre cómo obtener constancias usando contexto específico"""
+        try:
+            # Crear prompt contextual para explicar constancias
+            primer_alumno = datos_contextuales.get("primer_alumno", "")
+            query_anterior = datos_contextuales.get("query_anterior", "")
+
+            contextual_prompt = f"""
+Eres un experto en explicar el proceso de generación de constancias escolares.
+
+CONTEXTO DE LA CONVERSACIÓN:
+- Consulta anterior: "{query_anterior}"
+- Alumno específico encontrado: "{primer_alumno}"
+- Usuario pregunta: "{user_query}"
+
+EXPLICA ESPECÍFICAMENTE cómo obtener una constancia para este alumno usando el sistema de chat:
+
+PROCESO REAL PASO A PASO:
+1. El alumno ya fue encontrado: "{primer_alumno}"
+2. Para generar constancia, escribe: "constancia de [tipo] para {primer_alumno}"
+3. Tipos disponibles: estudios, calificaciones, traslado
+4. El sistema genera vista previa automáticamente
+5. Se abre PDF para revisión
+
+EJEMPLO ESPECÍFICO CON ESTE ALUMNO:
+- "constancia de estudios para {primer_alumno}"
+- "constancia de calificaciones para {primer_alumno}" (si tiene calificaciones)
+
+RESPONDE con explicación clara y específica usando el nombre del alumno.
+"""
+
+            # Enviar al LLM
+            response = self.gemini_client.send_prompt_sync(contextual_prompt)
+
+            if response:
+                return InterpretationResult(
+                    action="ayuda_constancia_contextual",
+                    parameters={
+                        "message": response,
+                        "alumno_contexto": primer_alumno,
+                        "query_anterior": query_anterior,
+                        "origen": "constancia_explanation_contextual"
+                    },
+                    confidence=0.95
+                )
+            else:
+                return self._create_fallback_constancia_help(primer_alumno)
+
+        except Exception as e:
+            self.logger.error(f"Error en explicación contextual de constancia: {e}")
+            return self._create_fallback_constancia_help(datos_contextuales.get("primer_alumno", ""))
+
+    def _create_fallback_constancia_help(self, alumno_nombre: str) -> InterpretationResult:
+        """Crea respuesta de fallback para ayuda de constancias"""
+        if alumno_nombre:
+            message = f"""
+Para generar una constancia para {alumno_nombre}:
+
+1. **Constancia de estudios**: Escribe "constancia de estudios para {alumno_nombre}"
+2. **Constancia de calificaciones**: Escribe "constancia de calificaciones para {alumno_nombre}" (solo si tiene calificaciones)
+3. **Constancia de traslado**: Escribe "constancia de traslado para {alumno_nombre}" (solo si tiene calificaciones)
+
+El sistema generará automáticamente una vista previa que se abrirá para tu revisión.
+"""
+        else:
+            message = """
+Para generar constancias:
+
+1. Primero busca al alumno: "buscar [nombre del alumno]"
+2. Luego solicita la constancia: "constancia de [tipo] para ese alumno"
+3. El sistema genera vista previa automáticamente
+
+Tipos disponibles: estudios, calificaciones, traslado
+"""
+
         return InterpretationResult(
-            action="ayuda_funcionalidades",
+            action="ayuda_constancia_fallback",
             parameters={
-                "message": f"Continuando con ayuda para: {user_query}",
-                "origen": "continuation"
+                "message": message,
+                "origen": "fallback_constancia"
             },
-            confidence=0.7
+            confidence=0.8
+        )
+
+    def _process_contextual_tutorial(self, user_query: str, datos_contextuales: Dict) -> InterpretationResult:
+        """Procesa tutoriales usando datos específicos del contexto"""
+        # Implementación básica por ahora
+        return self._process_generic_continuation(user_query, datos_contextuales)
+
+    def _process_process_clarification(self, user_query: str, datos_contextuales: Dict) -> InterpretationResult:
+        """Procesa aclaraciones sobre procesos usando contexto"""
+        # Implementación básica por ahora
+        return self._process_generic_continuation(user_query, datos_contextuales)
+
+    def _process_contextual_example(self, user_query: str, datos_contextuales: Dict) -> InterpretationResult:
+        """Procesa ejemplos usando datos específicos del contexto"""
+        # Implementación básica por ahora
+        return self._process_generic_continuation(user_query, datos_contextuales)
+
+    def _process_generic_continuation(self, user_query: str, datos_contextuales: Dict) -> InterpretationResult:
+        """Procesa continuaciones genéricas con contexto"""
+        primer_alumno = datos_contextuales.get("primer_alumno", "")
+        query_anterior = datos_contextuales.get("query_anterior", "")
+
+        message = f"""
+Basándome en tu consulta anterior "{query_anterior}" y tu pregunta "{user_query}":
+
+{f"Para el alumno {primer_alumno} que encontramos:" if primer_alumno else ""}
+
+Puedo ayudarte con:
+- Explicaciones sobre el proceso de constancias
+- Tutoriales paso a paso
+- Ejemplos específicos usando los datos mostrados
+- Aclaraciones sobre cualquier funcionalidad
+
+¿Qué específicamente te gustaría saber?
+"""
+
+        return InterpretationResult(
+            action="ayuda_continuacion_generica",
+            parameters={
+                "message": message,
+                "contexto_usado": True,
+                "origen": "generic_continuation"
+            },
+            confidence=0.8
         )
 
     def _generate_help_content(self, user_query: str, context) -> Optional[Dict]:

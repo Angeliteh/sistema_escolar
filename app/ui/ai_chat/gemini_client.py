@@ -150,57 +150,17 @@ class GeminiClient(QObject):
         self.error_occurred.emit(error_message)
 
     def send_prompt_sync(self, prompt):
-        """Envía un prompt a Gemini con estrategia de fallback multinivel"""
+        """Envía un prompt a Gemini con estrategia simple: 2.0 → 1.5"""
         try:
-            # 🆕 USAR ESTRATEGIA DE FALLBACK MULTINIVEL
-            if self.config.get('enable_multi_api_fallback', False):
-                return self._send_with_multi_api_fallback(prompt)
-            else:
-                return self._send_with_single_api_fallback(prompt)
+            # 🎯 ESTRATEGIA SIMPLE: Solo 2 modelos
+            return self._send_with_single_api_fallback(prompt)
 
         except Exception as e:
             self.logger.error(f"Error en consulta síncrona: {str(e)}")
             return None
 
-    def _send_with_multi_api_fallback(self, prompt):
-        """Envía prompt usando estrategia de fallback multinivel con múltiples API keys"""
-        fallback_strategy = self.config.get('fallback_strategy', [])
-
-        for i, strategy in enumerate(fallback_strategy, 1):
-            model_name = strategy['model']
-            api_key_name = strategy['api_key']
-
-            # Verificar si tenemos esta combinación disponible
-            if api_key_name not in self.model_instances:
-                self.logger.debug(f"⏭️ Nivel {i}: API key '{api_key_name}' no disponible")
-                continue
-
-            if model_name not in self.model_instances[api_key_name]:
-                self.logger.debug(f"⏭️ Nivel {i}: Modelo '{model_name}' no disponible para '{api_key_name}'")
-                continue
-
-            try:
-                self.logger.info(f"🎯 Nivel {i}: Intentando {model_name} con API key '{api_key_name}'")
-
-                # Configurar API key para esta solicitud
-                genai.configure(api_key=self.api_keys[api_key_name])
-
-                # Enviar prompt
-                model = self.model_instances[api_key_name][model_name]
-                response = model.generate_content(prompt)
-
-                if response and response.text:
-                    self.logger.info(f"✅ ÉXITO Nivel {i}: Respuesta obtenida con {model_name} ({api_key_name})")
-                    return response.text
-                else:
-                    self.logger.warning(f"❌ Nivel {i}: Respuesta vacía de {model_name} ({api_key_name})")
-
-            except Exception as e:
-                self.logger.warning(f"❌ Nivel {i}: Error con {model_name} ({api_key_name}): {str(e)}")
-                continue
-
-        self.logger.error("❌ TODOS LOS NIVELES FALLARON: No se pudo obtener respuesta")
-        return None
+    # MÉTODO ELIMINADO: _send_with_multi_api_fallback() era demasiado complejo
+    # Usar _send_with_single_api_fallback() para simplicidad
 
     def _send_with_single_api_fallback(self, prompt):
         """Envía prompt usando estrategia de fallback tradicional (una sola API key)"""

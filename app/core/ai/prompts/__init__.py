@@ -14,7 +14,9 @@ Filosofía:
 """
 
 from .student_query_prompt_manager import StudentQueryPromptManager
+from .master_prompt_manager import MasterPromptManager
 
 __all__ = [
-    'StudentQueryPromptManager'
+    'StudentQueryPromptManager',
+    'MasterPromptManager'
 ]

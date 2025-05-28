@@ -57,8 +57,8 @@ class MasterInterpreter:
                 if contextual_result:
                     return contextual_result
 
-            # PASO 2: Detectar intención global (para consultas nuevas)
-            intention = self.intention_detector.detect_intention(context.user_message)
+            # PASO 2: Detectar intención global CON CONTEXTO CONVERSACIONAL
+            intention = self.intention_detector.detect_intention(context.user_message, conversation_stack)
 
             self.logger.debug(f"Intención detectada: {intention.intention_type} | Sub-intención: {intention.sub_intention} (confianza: {intention.confidence})")
             self.logger.debug(f"Razonamiento: {intention.reasoning}")
@@ -74,15 +74,24 @@ class MasterInterpreter:
 
             # PASO 3: Dirigir al intérprete especializado
             if intention.intention_type == "consulta_alumnos":
-                self.logger.info(f"🎯 MasterInterpreter: Dirigiendo a StudentQueryInterpreter")
-                self.logger.info(f"   - Sub-intención: {intention.sub_intention}")
-                self.logger.info(f"   - Entidades: {intention.detected_entities}")
+                self.logger.info(f"🎯 [MASTER] Dirigiendo a StudentQueryInterpreter")
+                self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
+                self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
 
                 result = self.student_interpreter.interpret(context)
-                self.logger.info(f"🎯 MasterInterpreter: StudentQueryInterpreter devolvió: {result.action if result else 'None'}")
+                self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
                 return result
 
 
+
+            elif intention.intention_type == "generar_constancia":
+                self.logger.info("🎯 [MASTER] Dirigiendo a StudentQueryInterpreter (constancia)")
+                self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
+                self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
+
+                result = self.student_interpreter.interpret(context)
+                self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
+                return result
 
             elif intention.intention_type == "transformacion_pdf":
                 self.logger.debug("Dirigiendo a intérprete de transformación PDF")

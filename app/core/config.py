@@ -61,7 +61,17 @@ class Config:
         'main_window': {'min_width': 1200, 'min_height': 800},
         'search_window': {'min_width': 900, 'min_height': 700},
         'chat_window': {'min_width': 1000, 'min_height': 700},
-        'menu_window': {'min_width': 1200, 'min_height': 800}
+        'menu_window': {'min_width': 1200, 'min_height': 800},
+
+        # 🎯 CONFIGURACIÓN DE ESTILOS CENTRALIZADOS
+        'theme': {
+            'use_centralized_styles': True,
+            'theme_name': 'dark_blue',
+            'font_family': 'Inter, "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            'font_size_base': 15,
+            'border_radius': 8,
+            'padding_standard': 12,
+        }
     }
 
     # Configuración de archivos y limpieza
@@ -82,29 +92,24 @@ class Config:
         'max_tokens': 4096
     }
 
-    # 🆕 CONFIGURACIÓN CENTRALIZADA DE GEMINI CON MÚLTIPLES API KEYS
+    # 🎯 CONFIGURACIÓN SIMPLIFICADA DE GEMINI - SOLO 2 MODELOS
     GEMINI = {
         'primary_model': 'gemini-2.0-flash-exp',
         'fallback_model': 'gemini-1.5-flash',
         'enable_fallback': True,
-        'enable_multi_api_fallback': True,  # 🆕 Habilitar múltiples API keys
-        'max_retries': 2,
+        'max_retries': 1,  # Solo 1 retry: 2.0 → 1.5
         'timeout_seconds': 30,
 
-        # 🆕 CONFIGURACIÓN DE MÚLTIPLES API KEYS
+        # 🎯 SOLO 2 API KEYS
         'api_keys': {
             'primary': 'GEMINI_API_KEY',      # Variable de entorno principal
-            'secondary': 'GEMINI_API_KEY_2',  # Variable de entorno secundaria
-            'tertiary': 'GEMINI_API_KEY_3'    # Variable de entorno terciaria (opcional)
+            'secondary': 'GEMINI_API_KEY_2'   # Variable de entorno secundaria
         },
 
-        # 🆕 ESTRATEGIA DE FALLBACK MULTINIVEL
+        # 🎯 ESTRATEGIA SIMPLE: SOLO 2 INTENTOS
         'fallback_strategy': [
             {'model': 'gemini-2.0-flash-exp', 'api_key': 'primary'},
-            {'model': 'gemini-1.5-flash', 'api_key': 'primary'},
-            {'model': 'gemini-2.0-flash-exp', 'api_key': 'secondary'},
-            {'model': 'gemini-1.5-flash', 'api_key': 'secondary'},
-            {'model': 'gemini-1.5-flash', 'api_key': 'tertiary'}  # Último recurso
+            {'model': 'gemini-1.5-flash', 'api_key': 'primary'}
         ]
     }
 

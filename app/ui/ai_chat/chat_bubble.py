@@ -5,6 +5,8 @@ import re
 from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QApplication
 from PyQt5.QtCore import Qt, QSize, QTimer
 from PyQt5.QtGui import QColor, QFont, QFontMetrics
+from app.ui.styles import theme_manager
+from app.core.config import Config
 
 class ChatBubble(QWidget):
     """Widget personalizado para mostrar burbujas de chat"""
@@ -14,9 +16,9 @@ class ChatBubble(QWidget):
     TYPE_ASSISTANT = "assistant"
     TYPE_SYSTEM = "system"
 
-    # Constantes de configuración
-    FONT_FAMILY = 'Inter, "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
-    FONT_SIZE = 15
+    # Constantes de configuración - usando Config centralizado
+    FONT_FAMILY = Config.UI['theme']['font_family']
+    FONT_SIZE = Config.UI['theme']['font_size_base']
     MAX_SINGLE_LINE_WIDTH = 600
     PADDING_MARGIN = 59  # Margen total para padding del layout + bordes
     MAX_WIDTH = 800
@@ -51,12 +53,28 @@ class ChatBubble(QWidget):
         """Calcula el ancho real que necesita un texto con la fuente configurada"""
         font = QFont(self.FONT_FAMILY, self.FONT_SIZE)
         font_metrics = QFontMetrics(font)
-        return font_metrics.horizontalAdvance(text)
+
+        # 🎯 Si el texto contiene HTML, extraer solo el texto plano para calcular ancho
+        if '<' in text and '>' in text:
+            # Crear un QLabel temporal para extraer texto plano del HTML
+            temp_label = QLabel(text)
+            temp_label.setTextFormat(Qt.RichText)
+            plain_text = temp_label.text()
+            return font_metrics.horizontalAdvance(plain_text)
+        else:
+            return font_metrics.horizontalAdvance(text)
 
     def _copy_message(self):
-        """Copia el contenido del mensaje al portapapeles"""
+        """Copia el contenido del mensaje al portapapeles (texto plano)"""
         clipboard = QApplication.clipboard()
-        clipboard.setText(self.text)
+
+        # 🎯 Si el texto contiene HTML, extraer solo el texto plano
+        if '<' in self.text and '>' in self.text:
+            # Usar el texto plano del QLabel que ya procesa el HTML
+            plain_text = self.content_label.text()
+            clipboard.setText(plain_text)
+        else:
+            clipboard.setText(self.text)
 
     def _position_copy_button(self):
         """Posiciona el botón copy como overlay en la esquina superior derecha"""
@@ -70,27 +88,21 @@ class ChatBubble(QWidget):
             self.copy_button.move(x, y)
 
     def _configure_colors(self):
-        """Configura los colores según el tipo de mensaje - estilo modo oscuro con tonos azules"""
+        """Configura los colores usando el ThemeManager centralizado"""
+        # 🎯 USAR THEMEMANAGER CENTRALIZADO
+        style_config = theme_manager.get_chat_bubble_style(self.message_type)
+
+        self.bg_color = QColor(style_config['bg_color'])
+        self.text_color = QColor(style_config['text_color'])
+        self.border_color = QColor(style_config['border_color'])
+        self.header_color = QColor(style_config['header_color'])
+
+        # Configurar alineación según tipo de mensaje
         if self.message_type == self.TYPE_USER:
-            # Estilo usuario - azul oscuro
-            self.bg_color = QColor("#1E3A5F")
-            self.text_color = QColor("#FFFFFF")
-            self.border_color = QColor("#2C4F7C")
-            self.header_color = QColor("#88CCFF")
             self.align = Qt.AlignRight
         elif self.message_type == self.TYPE_ASSISTANT:
-            # Estilo asistente - gris azulado oscuro
-            self.bg_color = QColor("#2C3E50")
-            self.text_color = QColor("#FFFFFF")
-            self.border_color = QColor("#34495E")
-            self.header_color = QColor("#7FB3D5")
             self.align = Qt.AlignLeft
         else:  # System
-            # Estilo sistema - gris oscuro
-            self.bg_color = QColor("#2F3542")
-            self.text_color = QColor("#D3D3D3")
-            self.border_color = QColor("#3C4451")
-            self.header_color = QColor("#A4B0BE")
             self.align = Qt.AlignCenter
 
     def _setup_ui(self):
@@ -139,6 +151,9 @@ class ChatBubble(QWidget):
 
         # QLabel ADAPTATIVO - configurado para ajustarse al contenido
         self.content_label = QLabel(self.text)
+
+        # 🎯 HABILITAR SOPORTE HTML PARA FORMATEO MEJORADO
+        self.content_label.setTextFormat(Qt.RichText)
 
         # Configurar la fuente ANTES de calcular el ancho
         font = QFont(self.FONT_FAMILY, self.FONT_SIZE)

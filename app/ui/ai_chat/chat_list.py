@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QListWidget, QListWidgetItem
 from PyQt5.QtCore import Qt, QSize
 
 from app.ui.ai_chat.chat_bubble import ChatBubble
+from app.ui.styles import theme_manager
 
 class ChatList(QListWidget):
     """Widget para mostrar una lista de mensajes de chat"""
@@ -16,47 +17,8 @@ class ChatList(QListWidget):
         self.setSelectionMode(QListWidget.NoSelection)
         self.setFocusPolicy(Qt.NoFocus)
 
-        # Estilo para la lista - estilo modo oscuro con tonos azules
-        self.setStyleSheet("""
-            QListWidget {
-                background-color: #1A1A2E;  /* Fondo azul muy oscuro */
-                border: none;
-                padding: 6px;
-            }
-            QListWidget::item {
-                border: none;
-                padding: 2px 0;
-                margin: 1px 0;
-                background-color: transparent;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: #16213E;
-                width: 10px;
-                margin: 0px;
-                border-radius: 5px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #2980B9;
-                min-height: 30px;
-                border-radius: 5px;
-                margin: 2px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #3498DB;
-            }
-            QScrollBar::handle:vertical:pressed {
-                background-color: #1B4F72;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-                border: none;
-                background: none;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
-        """)
+        # 🎯 USAR THEMEMANAGER CENTRALIZADO para estilos
+        self.setStyleSheet(theme_manager.get_chat_list_style())
 
     def add_message(self, message_type, text, timestamp=None):
         """Añade un mensaje a la lista de chat"""

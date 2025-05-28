@@ -902,7 +902,7 @@ class AIChatWindow(ChatWindow):
             # Buscar alumno por ID o nombre
             alumno = None
             if alumno_id:
-                alumno = alumno_service.get_alumno_by_id(alumno_id)
+                alumno = alumno_service.get_alumno(alumno_id)
             elif nombre:
                 # Obtener todos los alumnos para búsqueda flexible
                 todos_alumnos = alumno_service.listar_alumnos(limit=100)
