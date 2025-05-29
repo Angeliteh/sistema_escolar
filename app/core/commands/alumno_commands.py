@@ -1,96 +1,10 @@
 """
 Comandos relacionados con alumnos
 """
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple
 from app.core.service_provider import ServiceProvider
 from app.core.commands.base_command import Command
-from app.core.utils import format_curp, is_valid_curp, normalize_text, is_name_match
-
-class BuscarAlumnoCommand(Command):
-    """Comando para buscar alumnos"""
-
-    def __init__(self, query: str, limit: int = 100, busqueda_exacta: bool = False):
-        """
-        Inicializa el comando
-
-        Args:
-            query: Texto de búsqueda (nombre o CURP)
-            limit: Límite de resultados
-            busqueda_exacta: Si es True, busca coincidencias exactas; si es False, busca coincidencias parciales
-        """
-        self.query = query
-        self.limit = limit
-        self.busqueda_exacta = busqueda_exacta
-        self.service_provider = ServiceProvider.get_instance()
-
-    def execute(self) -> Tuple[bool, str, Dict[str, Any]]:
-        """
-        Ejecuta el comando
-
-        Returns:
-            Tupla con (éxito, mensaje, datos)
-        """
-        try:
-            # Si la búsqueda no es exacta y la consulta tiene al menos 3 caracteres,
-            # intentamos buscar coincidencias parciales
-            if not self.busqueda_exacta and len(self.query) >= 3:
-                # Primero intentamos una búsqueda exacta
-                alumnos_exactos = self.service_provider.alumno_service.buscar_alumnos(self.query, self.limit)
-
-                # Si encontramos resultados exactos, los devolvemos
-                if alumnos_exactos:
-                    return True, f"Se encontraron {len(alumnos_exactos)} alumnos", {"alumnos": alumnos_exactos}
-
-                # Si no hay resultados exactos, intentamos una búsqueda parcial
-                # Esto depende de la implementación del servicio, pero podemos hacer una búsqueda
-                # más flexible aquí si el servicio no lo soporta
-                alumnos = []
-
-                # Buscar por nombre parcial (implementación básica)
-                todos_alumnos = self.service_provider.alumno_service.buscar_alumnos("", self.limit)
-
-                for alumno in todos_alumnos:
-                    # Usar la función is_name_match para una búsqueda más flexible
-                    if is_name_match(self.query, alumno.get('nombre', ''), partial_match=True):
-                        alumnos.append(alumno)
-
-                        # Limitar resultados
-                        if len(alumnos) >= self.limit:
-                            break
-
-                return True, f"Se encontraron {len(alumnos)} alumnos", {"alumnos": alumnos}
-            else:
-                # Búsqueda exacta normal
-                alumnos = self.service_provider.alumno_service.buscar_alumnos(self.query, self.limit)
-
-                # Si no hay resultados con búsqueda exacta, intentar con una búsqueda más flexible
-                if not alumnos:
-                    # Obtener todos los alumnos y filtrar manualmente
-                    todos_alumnos = self.service_provider.alumno_service.buscar_alumnos("", self.limit)
-
-                    for alumno in todos_alumnos:
-                        # Usar la función is_name_match para una búsqueda exacta pero insensible a acentos
-                        if is_name_match(self.query, alumno.get('nombre', ''), partial_match=False):
-                            alumnos.append(alumno)
-
-                            # Limitar resultados
-                            if len(alumnos) >= self.limit:
-                                break
-
-                    # Si aún no hay resultados, intentar con búsqueda parcial
-                    if not alumnos:
-                        for alumno in todos_alumnos:
-                            # Usar la función is_name_match para una búsqueda parcial
-                            if is_name_match(self.query, alumno.get('nombre', ''), partial_match=True):
-                                alumnos.append(alumno)
-
-                                # Limitar resultados
-                                if len(alumnos) >= self.limit:
-                                    break
-
-                return True, f"Se encontraron {len(alumnos)} alumnos", {"alumnos": alumnos}
-        except Exception as e:
-            return False, f"Error al buscar alumnos: {str(e)}", {}
+from app.core.utils import format_curp, is_valid_curp
 
 class RegistrarAlumnoCommand(Command):
     """Comando para registrar un nuevo alumno"""

@@ -4,9 +4,10 @@ Especializado en crear respuestas naturales y contextuales
 🆕 AHORA USA HelpPromptManager centralizado
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 from app.core.logging import get_logger
 from app.core.ai.prompts.help_prompt_manager import HelpPromptManager
+from app.core.ai.interpretation.utils.json_parser import JSONParser
 
 class HelpResponseGenerator:
     """
@@ -19,6 +20,8 @@ class HelpResponseGenerator:
         self.gemini_client = gemini_client
         self.logger = get_logger(__name__)
         self.prompt_manager = HelpPromptManager()  # 🆕 PROMPT MANAGER CENTRALIZADO
+        # 🛠️ USAR JSONParser CENTRALIZADO COMO STUDENT INTERPRETER
+        self.json_parser = JSONParser()
 
     def generate_response_with_reflection(self, user_query: str, help_content: Dict) -> Optional[Dict]:
         """
@@ -42,74 +45,80 @@ class HelpResponseGenerator:
             response = self.gemini_client.send_prompt_sync(response_prompt)
 
             if response:
-                # Parsear respuesta con auto-reflexión
-                response_data = self._parse_response_with_reflection(response)
+                self.logger.info(f"🔍 Respuesta cruda del LLM: {response[:200]}...")
+
+                # 🛠️ PARSEAR JSON MANUALMENTE CON LIMPIEZA DE ESCAPES
+                try:
+                    import json
+                    import re
+
+                    # Buscar el JSON en la respuesta
+                    start = response.find('{')
+                    end = response.rfind('}') + 1
+
+                    if start >= 0 and end > start:
+                        json_str = response[start:end]
+
+                        # 🧹 LIMPIAR ESCAPES PROBLEMÁTICOS
+                        # Reemplazar escapes inválidos comunes
+                        json_str = json_str.replace('\\"', '"')  # Comillas escapadas
+                        json_str = re.sub(r'\\(?!["\\/bfnrt])', r'\\\\', json_str)  # Escapes inválidos
+
+                        response_data = json.loads(json_str)
+                        self.logger.info(f"🔧 JSON parseado manualmente exitosamente")
+                    else:
+                        self.logger.warning("🔧 No se encontró JSON válido en la respuesta")
+                        response_data = None
+                except Exception as e:
+                    self.logger.warning(f"🔧 Error parseando JSON manualmente: {e}")
+                    # 🔄 INTENTAR EXTRAER SOLO EL MENSAJE PRINCIPAL CON REGEX MEJORADO
+                    try:
+                        # 🎯 REGEX MEJORADO PARA CAPTURAR MENSAJES LARGOS CON SALTOS DE LÍNEA
+                        # Buscar desde "respuesta_usuario": hasta el siguiente campo o final
+                        pattern = r'"respuesta_usuario":\s*"((?:[^"\\]|\\.)*)"\s*(?:,|\})'
+                        match = re.search(pattern, response, re.DOTALL)
+
+                        if match:
+                            mensaje = match.group(1)
+                            # 🧹 LIMPIAR ESCAPES EN EL MENSAJE
+                            mensaje = mensaje.replace('\\"', '"')
+                            mensaje = mensaje.replace('\\n', '\n')
+                            mensaje = mensaje.replace('\\t', '\t')
+                            mensaje = mensaje.replace('\\\\', '\\')
+
+                            response_data = {"respuesta_usuario": mensaje}
+                            self.logger.info("🔧 Mensaje extraído directamente con regex mejorado")
+                            self.logger.info(f"📏 Longitud del mensaje: {len(mensaje)} caracteres")
+                        else:
+                            self.logger.warning("🔧 No se pudo extraer mensaje con regex")
+                            # Fallback al JSONParser original
+                            response_data = self.json_parser.parse_llm_response(response)
+                    except Exception as e2:
+                        self.logger.warning(f"🔧 Error en extracción con regex: {e2}")
+                        response_data = self.json_parser.parse_llm_response(response)
 
                 if response_data:
-                    self.logger.debug("Respuesta con auto-reflexión generada exitosamente")
+                    self.logger.info("✅ Respuesta con auto-reflexión generada exitosamente")
+                    self.logger.info(f"🔍 Claves en response_data: {list(response_data.keys())}")
+                    self.logger.info(f"📝 Mensaje generado: {response_data.get('respuesta_usuario', 'N/A')[:100]}...")
+
+                    # 🛠️ VERIFICAR SI EL MENSAJE ESTÁ EN OTRA CLAVE
+                    if not response_data.get('respuesta_usuario'):
+                        self.logger.warning("⚠️ Campo 'respuesta_usuario' vacío o ausente")
+                        self.logger.info(f"🔍 Contenido completo: {response_data}")
+
                     return response_data
                 else:
-                    self.logger.warning("No se pudo parsear respuesta con auto-reflexión")
+                    self.logger.warning("❌ No se pudo parsear respuesta con auto-reflexión")
+                    self.logger.info(f"🔍 Respuesta que falló al parsear: {response}")
                     return self._create_fallback_response(user_query, help_content)
             else:
-                self.logger.warning("No hay respuesta del LLM")
+                self.logger.warning("❌ No hay respuesta del LLM")
                 return self._create_fallback_response(user_query, help_content)
 
         except Exception as e:
             self.logger.error(f"Error generando respuesta: {e}")
             return self._create_fallback_response(user_query, help_content)
-
-    # 🗑️ MÉTODO ELIMINADO: _build_response_prompt()
-    # RAZÓN: Duplicado - ya existe versión centralizada en HelpPromptManager
-    # USO: self.prompt_manager.get_help_response_prompt()
-
-    def _parse_response_with_reflection(self, response: str) -> Optional[Dict]:
-        """Parsea la respuesta JSON con auto-reflexión"""
-        try:
-            import json
-            import re
-
-            # Limpiar la respuesta
-            clean_response = response.strip()
-
-            # Buscar JSON en la respuesta
-            json_patterns = [
-                r'```json\s*(.*?)\s*```',
-                r'```\s*(.*?)\s*```',
-                r'(\{.*?\})'
-            ]
-
-            for pattern in json_patterns:
-                matches = re.findall(pattern, clean_response, re.DOTALL)
-                if matches:
-                    try:
-                        response_data = json.loads(matches[0])
-
-                        # Validar estructura esperada
-                        if "respuesta_usuario" in response_data:
-                            self.logger.debug("Respuesta con auto-reflexión parseada exitosamente")
-                            return response_data
-                        else:
-                            self.logger.warning("Respuesta no tiene estructura esperada")
-                            continue
-
-                    except json.JSONDecodeError:
-                        continue
-
-            # Si no encuentra JSON válido, intentar parsear directamente
-            try:
-                response_data = json.loads(clean_response)
-                if "respuesta_usuario" in response_data:
-                    return response_data
-            except json.JSONDecodeError:
-                pass
-
-            self.logger.warning(f"No se pudo parsear respuesta: {clean_response[:100]}...")
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Error parseando respuesta: {e}")
-            return None
 
     def _create_fallback_response(self, user_query: str, help_content: Dict) -> Dict:
         """Crea respuesta de fallback cuando el LLM falla"""
@@ -117,13 +126,16 @@ class HelpResponseGenerator:
             # Extraer información básica del contenido
             content_type = help_content.get("tipo_contenido", "ayuda_general")
 
-            # Generar respuesta básica según el tipo
+            # 🛠️ GENERAR RESPUESTA COMPLETA USANDO EL CONTENIDO DISPONIBLE
+            basic_info = self._extract_basic_info(help_content)
+
             if content_type == "solucion_problema":
-                fallback_message = f"He analizado tu consulta sobre problemas. {self._extract_basic_info(help_content)}"
+                fallback_message = f"He analizado tu consulta sobre problemas.\n\n{basic_info}"
             elif content_type == "ejemplo_practico":
-                fallback_message = f"Aquí tienes ejemplos prácticos para tu consulta. {self._extract_basic_info(help_content)}"
+                fallback_message = f"Aquí tienes ejemplos prácticos para tu consulta.\n\n{basic_info}"
             else:
-                fallback_message = f"He generado información de ayuda para tu consulta: '{user_query}'. {self._extract_basic_info(help_content)}"
+                # Para ayuda general, usar directamente el contenido principal
+                fallback_message = basic_info if basic_info and len(basic_info) > 50 else f"Hola! Soy tu asistente inteligente de la escuela primaria \"PROF. MAXIMO GAMIZ FERNANDEZ\". Puedo ayudarte con consultas de alumnos, generar constancias y más. {basic_info}"
 
             return {
                 "respuesta_usuario": fallback_message,
@@ -156,7 +168,7 @@ class HelpResponseGenerator:
         """Extrae información básica del contenido para fallback"""
         try:
             if "contenido_principal" in help_content:
-                return help_content["contenido_principal"][:200] + "..."
+                return help_content["contenido_principal"]  # 🛠️ SIN TRUNCAR
             elif "ejemplos" in help_content and help_content["ejemplos"]:
                 return f"Incluye ejemplos como: {', '.join(help_content['ejemplos'][:2])}"
             elif "puntos_clave" in help_content and help_content["puntos_clave"]:

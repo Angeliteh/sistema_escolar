@@ -33,7 +33,7 @@ class ConstanciaProcessor:
                 return self._create_error_result(validation_result['message'], validation_result['error_code'])
 
             # Generar constancia
-            generation_result = self._generate_constancia(alumno, tipo_constancia)
+            generation_result = self._generate_constancia(alumno, tipo_constancia, user_query)
 
             if generation_result['success']:
                 # Generar respuesta con auto-reflexión
@@ -110,7 +110,7 @@ class ConstanciaProcessor:
                 'error_code': 'validation_error'
             }
 
-    def _generate_constancia(self, alumno: Dict, tipo_constancia: str) -> Dict[str, Any]:
+    def _generate_constancia(self, alumno: Dict, tipo_constancia: str, user_query: str = "") -> Dict[str, Any]:
         """Genera la constancia usando el servicio correspondiente"""
         try:
             from app.core.service_provider import ServiceProvider
@@ -124,10 +124,13 @@ class ConstanciaProcessor:
             self.logger.info(f"   - Alumno: {alumno.get('nombre')} (ID: {alumno_id})")
             self.logger.info(f"   - Preview mode: True")
 
+            # 🆕 DETECTAR SI SE SOLICITA FOTO EN LA CONSULTA
+            incluir_foto = self._detect_photo_request(user_query)
+
             # Generar vista previa
             self.logger.info("🔄 Llamando a constancia_service.generar_constancia_para_alumno()...")
             success, message, data = constancia_service.generar_constancia_para_alumno(
-                alumno_id, tipo_constancia, incluir_foto=False, preview_mode=True
+                alumno_id, tipo_constancia, incluir_foto=incluir_foto, preview_mode=True
             )
 
             self.logger.info(f"📊 RESULTADO DEL SERVICIO:")
@@ -279,6 +282,16 @@ RESPONDE con un JSON:
         except Exception as e:
             self.logger.error(f"Error obteniendo calificaciones desde BD para alumno {alumno_id}: {e}")
             return []
+
+    def _detect_photo_request(self, user_query: str) -> bool:
+        """Detecta si el usuario solicita incluir foto en la constancia"""
+        if not user_query:
+            return False
+
+        user_lower = user_query.lower()
+        photo_keywords = ["con foto", "incluir foto", "foto", "fotografía", "imagen"]
+
+        return any(keyword in user_lower for keyword in photo_keywords)
 
     def _create_error_result(self, message: str, error_code: str) -> InterpretationResult:
         """Crea un resultado de error estandarizado"""

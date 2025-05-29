@@ -4,7 +4,7 @@ Especializado en crear contenido educativo sobre el sistema
 🆕 AHORA USA HelpPromptManager centralizado
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 from app.core.logging import get_logger
 from app.core.ai.prompts.help_prompt_manager import HelpPromptManager
 
@@ -58,10 +58,6 @@ class HelpContentGenerator:
             self.logger.error(f"Error generando contenido: {e}")
             return None
 
-    # 🗑️ MÉTODO ELIMINADO: _build_content_prompt()
-    # RAZÓN: Duplicado - ya existe versión centralizada en HelpPromptManager
-    # USO: self.prompt_manager.get_help_content_prompt()
-
     def _parse_content_response(self, response: str) -> Optional[Dict]:
         """Parsea la respuesta JSON del LLM"""
         try:
@@ -100,6 +96,4 @@ class HelpContentGenerator:
             self.logger.error(f"Error parseando contenido: {e}")
             return None
 
-    # 🗑️ MÉTODO ELIMINADO: _build_system_context()
-    # RAZÓN: Duplicado - ya existe versión centralizada en HelpPromptManager
-    # USO: self.prompt_manager.system_context
+

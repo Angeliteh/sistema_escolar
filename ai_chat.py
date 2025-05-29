@@ -11,9 +11,25 @@ from app.ui.ai_chat.chat_window import ChatWindow
 # Cargar variables de entorno
 load_dotenv()
 
-if __name__ == "__main__":
-    # Iniciar la aplicación
-    app = QApplication(sys.argv)
+def main():
+    """Función principal para la interfaz de chat con IA"""
+    # Verificar si ya hay una aplicación QApplication
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+
     window = ChatWindow()
     window.show()
-    sys.exit(app.exec_())
+
+    # Asegurar que la aplicación termine cuando se cierre la ventana
+    app.setQuitOnLastWindowClosed(True)
+
+    # Solo llamar exec_() si somos la aplicación principal
+    if app.thread() == window.thread():
+        sys.exit(app.exec_())
+    else:
+        # Si somos llamados desde otro proceso, solo mostrar la ventana
+        return window
+
+if __name__ == "__main__":
+    main()

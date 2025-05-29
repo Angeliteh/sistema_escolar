@@ -185,10 +185,12 @@ class MessageProcessor:
 
                     return True, message, result.parameters
 
-                elif result.action in ["ayuda_proporcionada", "conversacion_general", "estadisticas_generadas",
+                elif result.action in ["ayuda_proporcionada", "ayuda_funcionalidades", "ayuda_solucion", "ayuda_ejemplo",
+                                     "conversacion_general", "estadisticas_generadas",
                                      "constancia_generada", "constancia_requiere_aclaracion"]:
-                    message = result.parameters.get("mensaje",
-                                                   result.parameters.get("message", "Respuesta procesada"))
+                    # 🛠️ USAR EL MENSAJE REAL GENERADO POR EL HELPINTERPRETER
+                    message = result.parameters.get("message",
+                                                   result.parameters.get("mensaje", "Respuesta procesada"))
 
                     # NUEVO: Guardar conversación
                     self.add_to_conversation(consulta_para_procesar, message, result.parameters)

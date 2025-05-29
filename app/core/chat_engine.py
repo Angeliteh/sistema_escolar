@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime
 
 from app.core.service_provider import ServiceProvider
-from app.core.config import Config
+
 from app.ui.ai_chat.gemini_client import GeminiClient
 from app.ui.ai_chat.message_processor import MessageProcessor
 from app.core.logging import get_logger
@@ -61,14 +61,17 @@ class ChatEngine:
         self.logger = get_logger(__name__)
         self.service_provider = ServiceProvider.get_instance()
         self.gemini_client = GeminiClient()
+
+        # 🆕 GUARDAR PDF_PANEL COMO ATRIBUTO PARA ACCESO EN WORKER THREADS
+        self.pdf_panel = pdf_panel
+
         self.message_processor = MessageProcessor(self.gemini_client, pdf_panel)
 
         # Handlers opcionales para diferentes interfaces
         self.file_handler = file_handler or self._default_file_handler
         self.confirmation_handler = confirmation_handler or self._default_confirmation_handler
 
-        # Estado del chat
-        self.conversation_history = []
+        # Estado del chat (historial manejado por MessageProcessor)
         self.context = {}
 
         self.logger.info("ChatEngine inicializado")
@@ -91,23 +94,8 @@ class ChatEngine:
             if user_context:
                 self.context.update(user_context)
 
-            # Agregar a historial
-            self.conversation_history.append({
-                "role": "user",
-                "content": message,
-                "timestamp": datetime.now().isoformat()
-            })
-
-            # Procesar con IA
+            # Procesar con IA (historial manejado por MessageProcessor)
             response = self._process_with_ai(message)
-
-            # Agregar respuesta al historial
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": response.text,
-                "action": response.action,
-                "timestamp": datetime.now().isoformat()
-            })
 
             return response
 
@@ -149,12 +137,16 @@ class ChatEngine:
     def _analyze_ai_response(self, ai_response: str, command_data: dict, command_success: bool) -> ChatResponse:
         """Analiza la respuesta de IA para determinar acciones necesarias"""
 
+        # Validar que ai_response no sea None
+        if ai_response is None:
+            self.logger.error("Error determinando tipo de respuesta: ai_response es None")
+            ai_response = "Error procesando respuesta"
+
         # Detectar si se generó un archivo
         generated_files = []
         action = None
 
         # Buscar patrones de archivos generados en logs y respuesta
-        import re
 
         # Buscar en la respuesta de IA
         if "PDF generado:" in ai_response or "Constancia generada:" in ai_response or "archivo:" in ai_response.lower():
@@ -176,7 +168,7 @@ class ChatEngine:
         current_time = time.time()
 
         # Buscar archivos PDF recientes
-        for root, dirs, files in os.walk(temp_dir):
+        for root, _, files in os.walk(temp_dir):
             for file in files:
                 if file.endswith('.pdf') and 'constancia' in file.lower():
                     file_path = os.path.join(root, file)
@@ -251,12 +243,13 @@ class ChatEngine:
         return True
 
     def get_conversation_history(self) -> List[Dict]:
-        """Obtiene el historial de conversación"""
-        return self.conversation_history.copy()
+        """Obtiene el historial de conversación desde MessageProcessor"""
+        return self.message_processor.conversation_history.copy()
 
     def clear_history(self):
         """Limpia el historial de conversación"""
-        self.conversation_history.clear()
+        self.message_processor.conversation_history.clear()
+        self.message_processor.conversation_stack.clear()
         self.context.clear()
         self.logger.info("Historial de conversación limpiado")
 
@@ -264,7 +257,8 @@ class ChatEngine:
         """Exporta la conversación a un archivo JSON"""
         try:
             export_data = {
-                "conversation": self.conversation_history,
+                "conversation": self.message_processor.conversation_history,
+                "conversation_stack": self.message_processor.conversation_stack,
                 "context": self.context,
                 "exported_at": datetime.now().isoformat()
             }
@@ -281,33 +275,14 @@ class ChatEngine:
 
     def get_stats(self) -> Dict[str, Any]:
         """Obtiene estadísticas del chat"""
+        conversation_history = self.message_processor.conversation_history
         return {
-            "total_messages": len(self.conversation_history),
-            "user_messages": len([m for m in self.conversation_history if m["role"] == "user"]),
-            "assistant_messages": len([m for m in self.conversation_history if m["role"] == "assistant"]),
+            "total_messages": len(conversation_history),
+            "user_messages": len([m for m in conversation_history if m["role"] == "user"]),
+            "assistant_messages": len([m for m in conversation_history if m["role"] in ["assistant", "system"]]),
             "context_size": len(self.context),
-            "session_start": self.conversation_history[0]["timestamp"] if self.conversation_history else None
+            "conversation_stack_size": len(self.message_processor.conversation_stack),
+            "session_start": conversation_history[0]["timestamp"] if conversation_history else None
         }
 
-class ChatInterface:
-    """Interfaz base para diferentes tipos de chat"""
 
-    def __init__(self, chat_engine: ChatEngine):
-        self.chat_engine = chat_engine
-        self.logger = get_logger(__name__)
-
-    def send_message(self, message: str) -> ChatResponse:
-        """Envía un mensaje al motor de chat"""
-        return self.chat_engine.process_message(message)
-
-    def handle_response(self, response: ChatResponse):
-        """Maneja la respuesta del chat (implementar en subclases)"""
-        raise NotImplementedError("Subclases deben implementar handle_response")
-
-    def start(self):
-        """Inicia la interfaz de chat (implementar en subclases)"""
-        raise NotImplementedError("Subclases deben implementar start")
-
-    def stop(self):
-        """Detiene la interfaz de chat (implementar en subclases)"""
-        pass

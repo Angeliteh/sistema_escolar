@@ -18,6 +18,7 @@ from PyQt5.QtCore import Qt, QSize
 from app.ui.ai_chat.chat_list import ChatList
 from app.ui.ai_chat.pdf_panel import PDFPanel
 from app.ui.ai_chat.response_formatter import ResponseFormatter
+from app.ui.ai_chat.async_chat_worker import AsyncChatWorker, TypingIndicator
 from app.core.utils import open_file_with_default_app
 from app.core.chat_engine import ChatEngine, ChatResponse
 from app.core.logging import get_logger
@@ -36,8 +37,7 @@ class ChatWindow(QMainWindow):
         last_generated_file (str): Ruta del último archivo generado.
         temp_transformed_file (str): Ruta del archivo temporal transformado.
         transformation_data (dict): Datos de la última transformación realizada.
-        message_processor (MessageProcessor): Procesador de mensajes para el chat.
-        gemini_client (GeminiClient): Cliente para comunicación con la API de Gemini.
+        chat_engine (ChatEngine): Motor de chat centralizado para procesamiento de mensajes.
         chat_list (ChatList): Lista de mensajes del chat.
         pdf_panel (PDFPanel): Panel para visualización y gestión de PDFs.
         pdf_panel_expanded (bool): Indica si el panel de PDF está expandido.
@@ -80,7 +80,17 @@ class ChatWindow(QMainWindow):
         # 🎯 FORMATEADOR DE RESPUESTAS PARA MEJOR PRESENTACIÓN
         self.response_formatter = ResponseFormatter()
 
-        self.logger.info("ChatWindow inicializado con ChatEngine centralizado")
+        # 🆕 WORKER ASÍNCRONO PARA PROCESAMIENTO SIN BLOQUEO
+        self.async_worker = AsyncChatWorker(self.chat_engine)
+        self.async_worker.message_processed.connect(self._handle_async_response)
+        self.async_worker.processing_started.connect(self._on_processing_started)
+        self.async_worker.processing_finished.connect(self._on_processing_finished)
+        self.async_worker.error_occurred.connect(self._on_processing_error)
+
+        # 🆕 INDICADOR DE ESCRITURA
+        self.typing_indicator = None  # Se inicializa después de crear chat_list
+
+        self.logger.info("ChatWindow inicializado con ChatEngine centralizado y procesamiento asíncrono")
 
         # Configurar la interfaz de usuario
         self.setup_ui()
@@ -127,6 +137,9 @@ class ChatWindow(QMainWindow):
 
         # Lista de chat
         self.chat_list = ChatList()
+
+        # 🆕 INICIALIZAR INDICADOR DE ESCRITURA DESPUÉS DE CREAR CHAT_LIST
+        self.typing_indicator = TypingIndicator(self.chat_list)
 
         # Mensaje de bienvenida - todo en un solo mensaje para evitar espacios innecesarios
         mensaje_bienvenida = """¡Bienvenido al Asistente de Constancias con IA!
@@ -425,6 +438,8 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             self.logger.error(f"Error manejando archivo: {e}")
             return False
 
+
+
     def _handle_confirmation(self, message: str) -> bool:
         """Handler para confirmaciones de ChatEngine"""
         from datetime import datetime
@@ -440,32 +455,110 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         return True
 
     def _process_message_with_chat_engine(self, message_text: str):
-        """Procesa mensaje usando ChatEngine centralizado"""
+        """🆕 PROCESA MENSAJE DE FORMA ASÍNCRONA SIN BLOQUEAR UI"""
         try:
-            self.logger.info(f"Procesando mensaje con ChatEngine: {message_text}")
+            self.logger.info(f"🚀 Iniciando procesamiento asíncrono: {message_text}")
 
-            # Mostrar barra de progreso
-            self.progress_bar.setVisible(True)
+            # 🆕 DESHABILITAR INPUT MIENTRAS SE PROCESA
+            self.input_field.setEnabled(False)
 
-            # 🆕 USAR CHATENGINE CENTRALIZADO
-            response = self.chat_engine.process_message(message_text)
+            # 🆕 MOSTRAR INDICADOR DE ESCRITURA
+            self.typing_indicator.show_typing()
 
-            # Ocultar barra de progreso
-            self.progress_bar.setVisible(False)
-
-            # Manejar respuesta
-            self._handle_chat_engine_response(response)
+            # 🆕 CONFIGURAR Y INICIAR WORKER ASÍNCRONO
+            self.async_worker.set_message(message_text)
+            self.async_worker.start()
 
         except Exception as e:
-            self.progress_bar.setVisible(False)
-            self.logger.error(f"Error procesando mensaje: {e}")
+            self.logger.error(f"❌ Error iniciando procesamiento asíncrono: {e}")
+            self._on_processing_error(str(e))
 
-            from datetime import datetime
-            current_time = datetime.now().strftime("%H:%M:%S")
-            self.chat_list.add_assistant_message(
-                f"❌ Error procesando mensaje: {str(e)}",
-                current_time
-            )
+    def _handle_async_response(self, response: ChatResponse):
+        """🆕 MANEJA RESPUESTA DEL WORKER ASÍNCRONO"""
+        try:
+            self.logger.info("✅ Respuesta asíncrona recibida")
+
+            # 🆕 SINCRONIZAR CONTEXTO DESPUÉS DEL PROCESAMIENTO ASÍNCRONO
+            self._sync_context_from_async_worker()
+
+            self._handle_chat_engine_response(response)
+        except Exception as e:
+            self.logger.error(f"❌ Error manejando respuesta asíncrona: {e}")
+            self._on_processing_error(str(e))
+
+    def _sync_context_from_async_worker(self):
+        """🆕 SINCRONIZA CONTEXTO DEL WORKER ASÍNCRONO AL CHAT ENGINE PRINCIPAL"""
+        try:
+            # 🆕 OBTENER CONTEXTO ACTUALIZADO DEL WORKER
+            # Nota: Por ahora, el worker no devuelve el contexto actualizado
+            # pero podríamos implementar esto en el futuro para mantener
+            # sincronización bidireccional completa
+
+            # 🆕 VERIFICAR SI EL WORKER TIENE CONTEXTO ACTUALIZADO
+            if hasattr(self.async_worker, 'last_thread_engine'):
+                worker_engine = self.async_worker.last_thread_engine
+
+                if hasattr(worker_engine, 'message_processor'):
+                    worker_processor = worker_engine.message_processor
+                    main_processor = self.chat_engine.message_processor
+
+                    # Sincronizar conversation_stack si fue actualizado
+                    if hasattr(worker_processor, 'conversation_stack'):
+                        if worker_processor.conversation_stack:
+                            main_processor.conversation_stack = worker_processor.conversation_stack.copy()
+                            self.logger.debug(f"🔄 conversation_stack sincronizado: {len(worker_processor.conversation_stack)} niveles")
+
+                    # Sincronizar last_query_results
+                    if hasattr(worker_processor, 'last_query_results'):
+                        if worker_processor.last_query_results:
+                            main_processor.last_query_results = worker_processor.last_query_results
+                            self.logger.debug("🔄 last_query_results sincronizado")
+
+            self.logger.debug("✅ Contexto sincronizado desde worker")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error sincronizando contexto: {e}")
+
+    def _on_processing_started(self):
+        """🆕 CALLBACK CUANDO INICIA EL PROCESAMIENTO"""
+        self.logger.info("🔄 Procesamiento iniciado")
+        self.statusBar().showMessage("Procesando mensaje...")
+
+    def _on_processing_finished(self):
+        """🆕 CALLBACK CUANDO TERMINA EL PROCESAMIENTO"""
+        self.logger.info("✅ Procesamiento terminado")
+
+        # 🆕 OCULTAR INDICADOR DE ESCRITURA
+        self.typing_indicator.hide_typing()
+
+        # 🆕 REHABILITAR INPUT
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
+
+        # 🆕 ACTUALIZAR STATUS BAR
+        self.statusBar().showMessage("Listo")
+
+    def _on_processing_error(self, error_message: str):
+        """🆕 CALLBACK CUANDO OCURRE ERROR EN PROCESAMIENTO"""
+        self.logger.error(f"❌ Error en procesamiento: {error_message}")
+
+        # 🆕 OCULTAR INDICADOR DE ESCRITURA
+        self.typing_indicator.hide_typing()
+
+        # 🆕 REHABILITAR INPUT
+        self.input_field.setEnabled(True)
+        self.input_field.setFocus()
+
+        # 🆕 MOSTRAR ERROR EN CHAT
+        from datetime import datetime
+        current_time = datetime.now().strftime("%H:%M:%S")
+        self.chat_list.add_assistant_message(
+            f"❌ Error procesando mensaje: {error_message}",
+            current_time
+        )
+
+        # 🆕 ACTUALIZAR STATUS BAR
+        self.statusBar().showMessage("Error en procesamiento")
 
     def _handle_chat_engine_response(self, response: ChatResponse):
         """Maneja respuesta de ChatEngine"""
@@ -474,7 +567,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 
         # Mostrar texto principal con formato mejorado
         if response.text:
-            # 🎯 APLICAR FORMATEO INTELIGENTE SEGÚN EL TIPO DE RESPUESTA
+            # Aplicar formateo inteligente según el tipo de respuesta
             response_type = self._determine_response_type(response)
             formatted_text = self.response_formatter.format_response(response.text, response_type)
             self.chat_list.add_assistant_message(formatted_text, current_time)
@@ -484,8 +577,14 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             self._handle_constancia_preview_from_engine(response.data, response.files)
         elif response.action == "pdf_transformation" and response.data:
             self._handle_transformation_preview_from_engine(response.data, response.files)
-        # Manejar archivos generados (PDFs normales)
-        elif response.files:
+        # 🔧 MANEJAR ARCHIVOS SOLO SI CHATENGINE NO LOS PROCESÓ
+        elif response.files and response.action != "open_file":
+            # Solo procesar archivos si ChatEngine no los detectó como archivos generados
+            for file_path in response.files:
+                self._handle_file(file_path)
+        elif response.action == "open_file" and response.files:
+            # ChatEngine ya procesó el archivo y modificó el mensaje
+            # Solo cargar en el visor y preguntar por apertura
             for file_path in response.files:
                 self._handle_file(file_path)
 
@@ -566,14 +665,17 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
     def _determine_response_type(self, response: ChatResponse) -> str:
         """Determina el tipo de respuesta para aplicar el formato correcto"""
         try:
+            # Validar que response.action no sea None
+            action = response.action if response.action else ""
+
             # Determinar tipo basado en la acción
-            if response.action in ["ayuda_funcionalidades", "ayuda_ejemplo", "ayuda_solucion"]:
+            if action in ["ayuda_funcionalidades", "ayuda_ejemplo", "ayuda_solucion"]:
                 return "help"
-            elif response.action == "show_data":
+            elif action == "show_data":
                 return "data"
-            elif "error" in response.action.lower():
+            elif action and "error" in action.lower():
                 return "error"
-            elif response.action in ["constancia_preview", "pdf_transformation"]:
+            elif action in ["constancia_preview", "pdf_transformation"]:
                 return "success"
             else:
                 # Determinar por contenido del texto
@@ -819,7 +921,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             if success:
                 self.chat_list.add_assistant_message(
                     "✅ Datos guardados correctamente en la base de datos.",
-                    self.message_processor.get_current_time()
+                    self._get_current_time()
                 )
 
                 # Si hay datos del alumno, mostrarlos
@@ -828,19 +930,19 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             else:
                 self.chat_list.add_assistant_message(
                     f"❌ Error al guardar los datos: {message}",
-                    self.message_processor.get_current_time()
+                    self._get_current_time()
                 )
         except Exception as e:
             self.chat_list.add_assistant_message(
                 f"❌ Error al guardar los datos: {str(e)}",
-                self.message_processor.get_current_time()
+                self._get_current_time()
             )
 
     def _do_nothing_with_file(self):
         """No hace nada con el archivo, solo mantiene la vista previa"""
         self.chat_list.add_assistant_message(
             "✅ De acuerdo, no guardaré el archivo ni los datos. La vista previa seguirá disponible hasta que cierres la aplicación o cargues otro PDF.",
-            self.message_processor.get_current_time()
+            self._get_current_time()
         )
 
     def _show_invalid_option_message(self):
@@ -851,7 +953,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         <p><b>⚠️ Opción no reconocida</b></p>
         <p>Por favor, responde con un número del 1 al 4 o con el nombre de una de las opciones disponibles.</p>
         </div>
-        """, self.message_processor.get_current_time())
+        """, self._get_current_time())
 
         # Mostrar nuevamente las opciones con un mensaje más simple
         self.chat_list.add_assistant_message("""<div style="background-color: #2C3E50; border: 1px solid #34495E; border-radius: 8px; padding: 15px; color: #FFFFFF;">
@@ -860,7 +962,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 <p><b style="color: #88CCFF;">2.</b> Abrir/Imprimir</p>
 <p><b style="color: #88CCFF;">3.</b> Guardar datos</p>
 <p><b style="color: #88CCFF;">4.</b> Nada</p>
-</div>""", self.message_processor.get_current_time())
+</div>""", self._get_current_time())
 
     def _handle_file_open_response(self, message_text):
         """Maneja la respuesta del usuario sobre si abrir un archivo"""
@@ -920,7 +1022,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         if not current_pdf:
             self.chat_list.add_assistant_message(
                 "Error: No hay ningún PDF cargado para transformar.",
-                self.message_processor.get_current_time()
+                self._get_current_time()
             )
             return
 
@@ -974,7 +1076,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             info_message += " con foto"
         else:
             info_message += " sin foto"
-        self.chat_list.add_assistant_message(info_message, self.message_processor.get_current_time())
+        self.chat_list.add_assistant_message(info_message, self._get_current_time())
 
     def _execute_transformation(self, current_pdf, temp_dir):
         """Ejecuta la transformación de la constancia"""
@@ -1003,12 +1105,12 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 
         # Mostrar mensaje de éxito
         self.chat_list.add_assistant_message(
-            self.message_processor.get_random_success_phrase(),
-            self.message_processor.get_current_time()
+            "✅ Transformación completada exitosamente.",
+            self._get_current_time()
         )
         self.chat_list.add_assistant_message(
             "He generado una vista previa de la constancia transformada.",
-            self.message_processor.get_current_time()
+            self._get_current_time()
         )
 
         # Establecer contexto de transformación con datos originales y transformados
@@ -1201,83 +1303,9 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             self._get_current_time()
         )
 
-    def _process_standard_command(self, command_data):
-        """Procesa comandos estándar (no transformaciones)"""
-        current_pdf = self.pdf_panel.get_current_pdf()
-        accion = command_data.get("accion", "")
 
-        # Obtener la consulta original del usuario para el bypass SQL
-        original_query = getattr(self, '_last_user_message', None)
 
-        # NUEVO: Obtener contexto conversacional del Context Manager
-        conversation_context = {
-            "conversation_history": self.context_manager.history,
-            "conversation_state": self.context_manager.state,
-            "recent_messages": self.context_manager.history[-10:] if self.context_manager.history else []
-        }
 
-        success, message, data = self.message_processor.process_command(
-            command_data,
-            current_pdf,
-            original_query,
-            conversation_context
-        )
-
-        if success:
-            # Verificar si es una transformación que necesita manejo especial
-            if data.get("accion") == "transformar_constancia":
-                # Los parámetros están directamente en data, no en data["parametros"]
-                self._handle_transform_constancia(data)
-            else:
-                self._handle_successful_command(accion, message, data)
-        else:
-            self._handle_failed_command(message)
-
-    def _handle_successful_command(self, accion, message, data):
-        """Maneja un comando exitoso"""
-        # Usar frases variadas para respuestas más naturales
-        success_phrase = None
-        if "generada" in message or "generado" in message:
-            # Para constancias generadas, usar una frase de éxito
-            success_phrase = self.message_processor.get_random_success_phrase()
-            self.chat_list.add_assistant_message(
-                success_phrase,
-                self._get_current_time()
-            )
-
-        # Mostrar el mensaje original
-        self.chat_list.add_assistant_message(message, self._get_current_time())
-
-        # NUEVO: Agregar al historial conversacional usando Context Manager
-        full_response = f"{success_phrase}\n{message}" if success_phrase else message
-        self.context_manager.add_message("assistant", full_response, {
-            "action": accion,
-            "success": True,
-            "data_keys": list(data.keys()) if data else []
-        })
-
-        # NUEVO: Limpiar estado de espera si la acción fue exitosa
-        if accion in ["generar_constancia", "indefinida"]:
-            self.context_manager.update_state({
-                "waiting_for": None,
-                "last_action": "constancia_generada",
-                "last_error": None
-            })
-
-        # Mostrar datos adicionales según el tipo de comando
-        self._display_additional_data(data)
-
-        # Manejar archivos generados
-        if "ruta_archivo" in data:
-            if accion == "transformar_constancia":
-                # Las transformaciones ya se manejan en su flujo específico
-                pass
-            elif accion in ["constancia_generada", "generar_constancia"]:
-                # Manejar vista previa de constancia generada
-                self._handle_constancia_preview(data)
-            else:
-                # Otros archivos generados
-                self._handle_generated_file(data["ruta_archivo"])
 
     def _display_additional_data(self, data):
         """Muestra datos adicionales según el tipo de comando"""
@@ -1306,45 +1334,9 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                 # Mostrar alumnos en formato tabular
                 self.mostrar_alumnos_tabla(alumnos)
 
-    def _handle_generated_file(self, ruta_archivo):
-        """Maneja un archivo generado"""
-        import os
-        self.chat_list.add_assistant_message(
-            f"Archivo generado: {os.path.basename(ruta_archivo)}",
-            self._get_current_time()
-        )
 
-        # Cargar el PDF en el visor
-        self.pdf_panel.show_pdf(ruta_archivo)
 
-        # Preguntar si desea abrir el archivo
-        self.chat_list.add_assistant_message(
-            "¿Deseas abrir el archivo? Responde 'sí' o 'no'.",
-            self._get_current_time()
-        )
 
-        # Guardar el archivo actual para posible apertura
-        self.last_generated_file = ruta_archivo
-
-        # Establecer el estado de espera de respuesta
-        self.waiting_for_file_open_response = True
-
-    def _handle_failed_command(self, message):
-        """Maneja un comando fallido"""
-        error_message = f"Error: {message}"
-        self.chat_list.add_assistant_message(
-            error_message,
-            self._get_current_time()
-        )
-
-        # NUEVO: Agregar al historial conversacional usando Context Manager
-        self.context_manager.add_message("assistant", error_message, {
-            "success": False,
-            "error": True
-        })
-
-        # NUEVO: Manejo de errores centralizado en Context Manager
-        self.context_manager.handle_error_with_context(message)
 
     def handle_gemini_error(self, error_message):
         """Maneja errores en la comunicación con Gemini"""
@@ -1585,7 +1577,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                 texto += "ℹ️ Este alumno no tiene calificaciones registradas.\n"
 
             # Mostrar el texto plano en el chat
-            self.chat_list.add_assistant_message(texto, self.message_processor.get_current_time())
+            self.chat_list.add_assistant_message(texto, self._get_current_time())
 
         except Exception as e:
             # Si hay algún error, mostrar los datos del alumno en formato simple

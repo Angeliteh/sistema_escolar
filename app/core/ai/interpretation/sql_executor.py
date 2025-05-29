@@ -337,17 +337,28 @@ class SQLQueryBuilder:
         ORDER BY a.nombre
         """
 
-# Instancia global del ejecutor
-sql_executor = None
+# 🆕 INSTANCIAS POR HILO PARA EVITAR PROBLEMAS DE SQLITE THREADING
+import threading
+_thread_local_executors = threading.local()
 
 def get_sql_executor(db_path: str = None) -> SQLExecutor:
-    """Obtiene la instancia global del ejecutor SQL"""
-    global sql_executor
+    """🆕 OBTIENE INSTANCIA DEL EJECUTOR SQL ESPECÍFICA PARA CADA HILO"""
 
-    if sql_executor is None:
+    # Verificar si ya existe una instancia para este hilo
+    if not hasattr(_thread_local_executors, 'executor'):
+        # Crear nueva instancia para este hilo
         if db_path is None:
             from app.core.config import Config
             db_path = Config.DB_PATH
-        sql_executor = SQLExecutor(db_path)
 
-    return sql_executor
+        _thread_local_executors.executor = SQLExecutor(db_path)
+
+        # Log para debugging
+        try:
+            from app.core.logging import get_logger
+            logger = get_logger(__name__)
+            logger.debug(f"🔄 Nueva instancia SQLExecutor creada para hilo {threading.current_thread().ident}")
+        except:
+            pass
+
+    return _thread_local_executors.executor

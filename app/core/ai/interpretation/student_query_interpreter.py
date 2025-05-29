@@ -73,10 +73,13 @@ class StudentQueryInterpreter(BaseInterpreter):
         """Interpreta la consulta usando el enfoque optimizado de 3 prompts + sistema conversacional"""
         try:
             self.logger.info(f"🎯 StudentQueryInterpreter INICIADO - Consulta: '{context.user_message}'")
-            if hasattr(context, 'conversation_history'):
+            if hasattr(context, 'conversation_history') and context.conversation_history is not None:
                 self.logger.debug(f"Contexto conversacional disponible: {len(context.conversation_history)} mensajes")
             else:
                 self.logger.debug("NO hay contexto conversacional disponible")
+                # 🆕 INICIALIZAR CONVERSATION_HISTORY SI ES NONE
+                if not hasattr(context, 'conversation_history') or context.conversation_history is None:
+                    context.conversation_history = []
 
             # 🆕 PASO 0: VERIFICAR INFORMACIÓN DE INTENCIÓN DEL MASTER
             intention_info = getattr(context, 'intention_info', {})
@@ -90,6 +93,10 @@ class StudentQueryInterpreter(BaseInterpreter):
                 self.logger.info("🎯 SUB-INTENCIÓN: GENERAR CONSTANCIA")
 
                 # 🔧 VERIFICAR PILA CONVERSACIONAL PRIMERO (INCLUSO PARA CONSTANCIAS)
+                # 🆕 ASEGURAR QUE CONVERSATION_STACK EXISTE
+                if not hasattr(context, 'conversation_stack') or context.conversation_stack is None:
+                    context.conversation_stack = []
+
                 if hasattr(context, 'conversation_stack') and context.conversation_stack:
                     self.logger.info(f"📚 VERIFICANDO PILA CONVERSACIONAL: {len(context.conversation_stack)} niveles")
 
@@ -126,6 +133,10 @@ class StudentQueryInterpreter(BaseInterpreter):
                 return result
 
             # PASO 1: Verificar si hay pila conversacional y detectar continuación
+            # 🆕 INICIALIZAR CONVERSATION_STACK SI ES NONE
+            if not hasattr(context, 'conversation_stack') or context.conversation_stack is None:
+                context.conversation_stack = []
+
             if hasattr(context, 'conversation_stack') and context.conversation_stack:
                 self.logger.info(f"📚 PILA CONVERSACIONAL DISPONIBLE: {len(context.conversation_stack)} niveles")
 
@@ -153,6 +164,10 @@ class StudentQueryInterpreter(BaseInterpreter):
 
             # 🆕 PREPARAR CONTEXTO CONVERSACIONAL PARA PROMPT 1
             conversation_context = ""
+            # 🆕 ASEGURAR QUE CONVERSATION_STACK EXISTE ANTES DE USARLO
+            if not hasattr(context, 'conversation_stack') or context.conversation_stack is None:
+                context.conversation_stack = []
+
             if hasattr(context, 'conversation_stack') and context.conversation_stack:
                 conversation_context = self._format_conversation_stack_for_llm(context.conversation_stack)
                 self.logger.info(f"   ├── Contexto conversacional disponible: {len(context.conversation_stack)} niveles")
@@ -169,11 +184,8 @@ class StudentQueryInterpreter(BaseInterpreter):
                 detected_entities.get('tipo_constancia') != 'null'):
 
                 self.logger.info("✅ CONSTANCIA DETECTADA POR MASTER - Procesando directamente")
-                simple_context = {
-                    'pdf_panel': getattr(context, 'pdf_panel', None),
-                    'user_message': context.user_message
-                }
-                result = self._process_constancia_request(context.user_message, simple_context)
+                # 🆕 PASAR CONTEXTO COMPLETO CON INTENTION_INFO
+                result = self._process_constancia_request(context.user_message, context)
                 self.logger.info(f"📊 [STUDENT] Resultado constancia: {result.action if result else 'None'}")
                 return result
 
@@ -243,7 +255,19 @@ class StudentQueryInterpreter(BaseInterpreter):
                 )
 
         except Exception as e:
-            return None
+            self.logger.error(f"❌ Error en StudentQueryInterpreter: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+
+            return InterpretationResult(
+                action="consulta_sql_fallida",
+                parameters={
+                    "error": f"Error interno: {str(e)}",
+                    "message": "❌ Error procesando tu consulta. Intenta reformularla.",
+                    "exception": str(e)
+                },
+                confidence=0.1
+            )
 
 
 
@@ -1371,11 +1395,32 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
             self.logger.info(f"   - Query: '{user_query}'")
             self.logger.info(f"   - Context: {context is not None}")
             if context:
-                self.logger.info(f"   - PDF Panel: {context.get('pdf_panel') is not None}")
-                self.logger.info(f"   - Entidades detectadas: {context.get('detected_entities', {})}")
+                self.logger.info(f"   - PDF Panel: {getattr(context, 'pdf_panel', None) is not None}")
+                self.logger.info(f"   - Entidades detectadas: {getattr(context, 'detected_entities', {})}")
 
             # 🚀 USAR ENTIDADES DETECTADAS SI ESTÁN DISPONIBLES
-            detected_entities = context.get('detected_entities', {}) if context else {}
+            # 🆕 DEBUGGING PROFUNDO - RASTREAR DÓNDE ESTÁN LAS ENTIDADES
+            self.logger.debug(f"🔍 DEBUGGING CONTEXTO COMPLETO:")
+            self.logger.debug(f"   - Tipo de contexto: {type(context)}")
+            self.logger.debug(f"   - Atributos del contexto: {dir(context)}")
+            self.logger.debug(f"   - hasattr intention_info: {hasattr(context, 'intention_info')}")
+
+            if hasattr(context, 'intention_info'):
+                self.logger.debug(f"   - intention_info: {context.intention_info}")
+                self.logger.debug(f"   - tipo intention_info: {type(context.intention_info)}")
+
+            # 🆕 ACCESO CORRECTO A ENTIDADES DEL MASTER
+            detected_entities = {}
+            if hasattr(context, 'intention_info') and context.intention_info:
+                detected_entities = context.intention_info.get('detected_entities', {})
+                self.logger.debug(f"   - Entidades desde intention_info: {detected_entities}")
+
+            # Fallback: buscar en contexto directo (compatibilidad)
+            if not detected_entities and context:
+                detected_entities = getattr(context, 'detected_entities', {})
+                self.logger.debug(f"   - Entidades desde contexto directo: {detected_entities}")
+
+            self.logger.debug(f"🔍 ENTIDADES FINALES DETECTADAS: {detected_entities}")
 
             # 🆕 SOLO USAR ENTIDADES DEL MASTER (sin fallbacks)
             if not detected_entities:
@@ -1396,6 +1441,7 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
                 'tipo_constancia': detected_entities.get('tipo_constancia'),
                 'fuente_datos': detected_entities.get('fuente_datos', 'base_datos'),
                 'contexto_especifico': detected_entities.get('contexto_especifico'),
+                'incluir_foto': detected_entities.get('incluir_foto', False),  # 🆕 FOTO DEL MASTER
                 'confianza': 0.95
             }
             self.logger.info(f"   - Info construida: {constancia_info}")
@@ -1411,7 +1457,7 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
                 )
 
             # 🆕 VERIFICAR SI HAY PDF CARGADO PARA TRANSFORMACIÓN
-            pdf_panel = context.get('pdf_panel')
+            pdf_panel = getattr(context, 'pdf_panel', None)
             if pdf_panel and hasattr(pdf_panel, 'original_pdf') and pdf_panel.original_pdf:
                 # 🎯 DISTINGUIR ENTRE PDF EXTERNO VS VISTA PREVIA GENERADA
                 is_external_pdf = self._is_external_pdf_loaded(pdf_panel)
@@ -2206,8 +2252,18 @@ FORMATO DE RESPUESTA:
             )
 
             if success and data:
-                # Obtener información del alumno desde los datos
+                # 🛠️ OBTENER INFORMACIÓN DEL ALUMNO - MANEJO SEGURO
                 alumno_info = data.get("alumno", {})
+
+                # 🆕 VERIFICAR QUE ALUMNO_INFO SEA UN DICCIONARIO
+                if not isinstance(alumno_info, dict):
+                    self.logger.warning(f"⚠️ alumno_info no es diccionario: {type(alumno_info)}, convirtiendo...")
+                    # Si es una lista, tomar el primer elemento si existe
+                    if isinstance(alumno_info, list) and len(alumno_info) > 0:
+                        alumno_info = alumno_info[0] if isinstance(alumno_info[0], dict) else {}
+                    else:
+                        # Si no es lista o está vacía, usar diccionario vacío
+                        alumno_info = {}
 
                 # Actualizar contexto del panel para transformación
                 if hasattr(pdf_panel, 'set_transformation_completed_context'):

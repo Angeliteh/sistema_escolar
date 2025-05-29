@@ -7,6 +7,7 @@ import platform
 from app.core.config import Config
 from app.core.utils import ensure_directories_exist, copy_file_safely
 from app.core.logging import get_logger
+from app.core.executable_paths import get_path_manager
 
 class PDFGenerator:
     """
@@ -16,14 +17,22 @@ class PDFGenerator:
 
     def __init__(self, template_dir=None):
         """Inicializa el generador con el directorio de plantillas"""
-        self.template_dir = template_dir or Config.TEMPLATES_DIR
-        self.output_dir = Config.OUTPUT_DIR
+        # Usar gestor de rutas para obtener directorios correctos
+        path_manager = get_path_manager()
+
+        if template_dir:
+            self.template_dir = template_dir
+        else:
+            self.template_dir = str(path_manager.get_templates_dir())
+
+        self.output_dir = str(path_manager.get_pdf_output_dir())
 
         # Inicializar logger
         self.logger = get_logger(__name__)
 
         # Crear directorio de salida si no existe
         ensure_directories_exist()
+        path_manager.get_pdf_output_dir().mkdir(parents=True, exist_ok=True)
 
         # Configurar entorno Jinja2
         self.env = Environment(loader=FileSystemLoader(self.template_dir))
@@ -162,16 +171,20 @@ class PDFGenerator:
                 # Continuar a pesar del error
 
             # Copiar el logo si existe
-            logo_origen = os.path.join(Config.LOGOS_DIR, "logo_educacion.png")
+            path_manager = get_path_manager()
+            logos_dir = path_manager.get_logos_dir()
+            photos_dir = path_manager.get_photos_dir()
+
+            logo_origen = logos_dir / "logo_educacion.png"
             logo_destino = os.path.join(salida_logos_dir, "logo_educacion.png")
-            if os.path.exists(logo_origen):
-                copy_file_safely(logo_origen, logo_destino)
+            if logo_origen.exists():
+                copy_file_safely(str(logo_origen), logo_destino)
 
             # Copiar la foto del alumno si existe
-            foto_origen = os.path.join(Config.PHOTOS_DIR, f"{curp}.jpg")
+            foto_origen = photos_dir / f"{curp}.jpg"
             foto_destino = os.path.join(salida_fotos_dir, f"{curp}.jpg")
-            if os.path.exists(foto_origen):
-                copy_file_safely(foto_origen, foto_destino)
+            if foto_origen.exists():
+                copy_file_safely(str(foto_origen), foto_destino)
 
             # Modificar el HTML para usar rutas absolutas para las imágenes en la vista del navegador
             # Usar rutas absolutas para los directorios de salida
@@ -184,11 +197,11 @@ class PDFGenerator:
 
             # Verificar si existe la foto del alumno
             curp = datos.get("curp", "")
-            foto_path = os.path.join(Config.PHOTOS_DIR, f"{curp}.jpg")
-            if not os.path.exists(foto_path) and "has_photo" in datos and datos["has_photo"] == True:
+            foto_path = photos_dir / f"{curp}.jpg"
+            if not foto_path.exists() and "has_photo" in datos and datos["has_photo"] == True:
                 # Si la foto no existe pero se supone que debería tenerla, intentar copiarla desde foto_path
                 if "foto_path" in datos and datos["foto_path"] and os.path.exists(datos["foto_path"]):
-                    copy_file_safely(datos["foto_path"], foto_path)
+                    copy_file_safely(datos["foto_path"], str(foto_path))
 
             # Guardar el HTML modificado
             try:

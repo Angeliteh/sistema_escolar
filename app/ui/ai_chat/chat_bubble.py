@@ -2,8 +2,8 @@
 Componente personalizado para burbujas de chat
 """
 import re
-from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QApplication
-from PyQt5.QtCore import Qt, QSize, QTimer
+from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QApplication, QGraphicsOpacityEffect
+from PyQt5.QtCore import Qt, QSize, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QColor, QFont, QFontMetrics
 from app.ui.styles import theme_manager
 from app.core.config import Config
@@ -48,6 +48,9 @@ class ChatBubble(QWidget):
 
         # Configurar layout
         self._setup_ui()
+
+        # 🎨 ANIMACIÓN DE ENTRADA SUAVE
+        self._animate_entrance()
 
     def _get_text_width(self, text):
         """Calcula el ancho real que necesita un texto con la fuente configurada"""
@@ -199,13 +202,23 @@ class ChatBubble(QWidget):
 
         bubble_layout.addWidget(self.content_label)
 
-        # Estilo SIMPLE del contenedor - padding viene del layout contentsMargins
+        # 🎨 ESTILO MEJORADO CON GRADIENTES Y SOMBRAS SUTILES
+        gradient_start = self.bg_color.lighter(105).name()  # 5% más claro
+        gradient_end = self.bg_color.darker(102).name()     # 2% más oscuro
+
         bubble_container.setStyleSheet(f"""
             #bubbleContainer {{
-                background-color: {self.bg_color.name()};
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {gradient_start}, stop: 1 {gradient_end});
                 border: 1px solid {self.border_color.name()};
-                border-radius: 8px;
-                margin: 0px;
+                border-radius: 12px;
+                margin: 1px;
+            }}
+            #bubbleContainer:hover {{
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 {self.bg_color.lighter(108).name()},
+                    stop: 1 {self.bg_color.name()});
+                border: 1px solid {self.border_color.lighter(115).name()};
             }}
         """)
 
@@ -308,3 +321,39 @@ class ChatBubble(QWidget):
         """Reposicionar el botón copy cuando cambia el tamaño"""
         super().resizeEvent(event)
         self._position_copy_button()
+
+    def update_text(self, new_text: str):
+        """🆕 ACTUALIZA EL TEXTO DEL MENSAJE (PARA ANIMACIONES DE CARGA)"""
+        self.text = new_text
+        if hasattr(self, 'content_label'):
+            self.content_label.setText(new_text)
+            self.updateGeometry()  # Forzar recálculo de tamaño
+
+    def _animate_entrance(self):
+        """🎨 ANIMACIÓN SUAVE DE ENTRADA PARA LA BURBUJA"""
+        # Crear efecto de opacidad
+        self.opacity_effect = QGraphicsOpacityEffect()
+        self.setGraphicsEffect(self.opacity_effect)
+
+        # Configurar animación de fade-in
+        self.fade_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_animation.setDuration(300)  # 300ms - rápido pero suave
+        self.fade_animation.setStartValue(0.0)  # Invisible
+        self.fade_animation.setEndValue(1.0)   # Completamente visible
+        self.fade_animation.setEasingCurve(QEasingCurve.OutCubic)  # Suave al final
+
+        # Iniciar animación
+        self.fade_animation.start()
+
+        # Limpiar efecto después de la animación para mejor rendimiento
+        self.fade_animation.finished.connect(self._cleanup_animation)
+
+    def _cleanup_animation(self):
+        """🧹 LIMPIA LOS EFECTOS DE ANIMACIÓN PARA MEJOR RENDIMIENTO"""
+        # Remover el efecto gráfico para mejor rendimiento
+        self.setGraphicsEffect(None)
+        # Limpiar referencias
+        if hasattr(self, 'opacity_effect'):
+            del self.opacity_effect
+        if hasattr(self, 'fade_animation'):
+            del self.fade_animation

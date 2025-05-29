@@ -1,187 +1,248 @@
 """
-Sistema base de interpretación para comandos de IA
+Clases base para el sistema de interpretación de IA
 """
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List, Tuple
+
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from datetime import datetime
 
 @dataclass
 class InterpretationContext:
-    """Contexto para la interpretación de comandos"""
+    """
+    Contexto para la interpretación de mensajes
+    """
     user_message: str
-    current_pdf: Optional[str] = None
-    conversation_state: Dict[str, Any] = None
-    user_preferences: Dict[str, Any] = None
+    conversation_state: Dict[str, Any]
+    user_preferences: Dict[str, Any]
+
+    # Contexto conversacional
+    conversation_history: Optional[List[Dict]] = None
+    last_query_results: Optional[Dict] = None
+    external_conversation_history: Optional[List[Dict]] = None
+    recent_messages: Optional[List[Dict]] = None
+
+    # Panel PDF para transformaciones
+    pdf_panel: Optional[Any] = None
+
+    # Timestamp
+    timestamp: datetime = None
 
     def __post_init__(self):
-        if self.conversation_state is None:
-            self.conversation_state = {}
-        if self.user_preferences is None:
-            self.user_preferences = {}
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
 
 @dataclass
 class InterpretationResult:
-    """Resultado de la interpretación"""
+    """
+    Resultado de la interpretación
+    """
     action: str
     parameters: Dict[str, Any]
     confidence: float = 1.0
     requires_confirmation: bool = False
-    context_updates: Dict[str, Any] = None
+
+    # Información adicional
+    reasoning: Optional[str] = None
+    suggested_followup: Optional[str] = None
 
     def __post_init__(self):
-        if self.context_updates is None:
-            self.context_updates = {}
+        if self.parameters is None:
+            self.parameters = {}
 
-class BaseInterpreter(ABC):
-    """Clase base para interpretadores de comandos"""
+class BaseInterpreter:
+    """
+    Clase base para todos los intérpretes
+    """
 
     def __init__(self, name: str, priority: int = 0):
         """
-        Inicializa el interpretador
+        Inicializa el intérprete base
 
         Args:
-            name: Nombre del interpretador
-            priority: Prioridad (mayor número = mayor prioridad)
+            name: Nombre del intérprete
+            priority: Prioridad del intérprete (mayor número = mayor prioridad)
         """
         self.name = name
         self.priority = priority
-        self.supported_actions = self._get_supported_actions()
+        self.logger = None
 
-    @abstractmethod
-    def _get_supported_actions(self) -> List[str]:
-        """Retorna la lista de acciones que este interpretador puede manejar"""
-        pass
+        # Inicializar logger si está disponible
+        try:
+            from app.core.logging import get_logger
+            self.logger = get_logger(f"{__name__}.{name}")
+        except ImportError:
+            pass
 
-    @abstractmethod
     def can_handle(self, context: InterpretationContext) -> bool:
         """
-        Determina si este interpretador puede manejar el contexto dado
+        Determina si este intérprete puede manejar el contexto dado
 
         Args:
             context: Contexto de interpretación
 
         Returns:
-            True si puede manejar el contexto
+            True si puede manejar, False en caso contrario
         """
-        pass
+        raise NotImplementedError("Subclases deben implementar can_handle")
 
-    @abstractmethod
-    def interpret(self, context: InterpretationContext) -> Optional[InterpretationResult]:
+    def interpret(self, context: InterpretationContext) -> InterpretationResult:
         """
-        Interpreta el contexto y retorna un resultado
+        Interpreta el contexto y devuelve un resultado
 
         Args:
             context: Contexto de interpretación
 
         Returns:
-            Resultado de interpretación o None si no puede interpretar
+            Resultado de la interpretación
         """
-        pass
+        raise NotImplementedError("Subclases deben implementar interpret")
 
-    def get_prompt_template(self, context: InterpretationContext) -> str:
-        """
-        Genera el template de prompt específico para este interpretador
+    def _log_debug(self, message: str):
+        """Registra mensaje de debug si el logger está disponible"""
+        if self.logger:
+            self.logger.debug(f"[{self.name}] {message}")
 
-        Args:
-            context: Contexto de interpretación
+    def _log_info(self, message: str):
+        """Registra mensaje de info si el logger está disponible"""
+        if self.logger:
+            self.logger.info(f"[{self.name}] {message}")
 
-        Returns:
-            Template de prompt
-        """
-        return self._create_base_prompt(context)
+    def _log_error(self, message: str):
+        """Registra mensaje de error si el logger está disponible"""
+        if self.logger:
+            self.logger.error(f"[{self.name}] {message}")
 
-    def _create_base_prompt(self, context: InterpretationContext) -> str:
-        """Crea el prompt base común"""
-        actions_list = "\n".join([f"- {action}" for action in self.supported_actions])
-
-        return f"""
-        Eres un asistente especializado en {self.name}.
-
-        Acciones disponibles:
-        {actions_list}
-
-        Usuario dice: "{context.user_message}"
-
-        Responde ÚNICAMENTE con JSON:
-        {{
-            "accion": "nombre_accion",
-            "parametros": {{"param": "valor"}},
-            "confianza": 0.9
-        }}
-        """
-
-    def validate_parameters(self, action: str, parameters: Dict[str, Any]) -> Tuple[bool, str]:
-        """
-        Valida los parámetros para una acción específica
-
-        Args:
-            action: Acción a validar
-            parameters: Parámetros a validar
-
-        Returns:
-            Tupla (es_válido, mensaje_error)
-        """
-        # Implementación base - los interpretadores específicos pueden sobrescribir
-        return True, ""
-
-    def post_process_result(self, result: InterpretationResult, context: InterpretationContext) -> InterpretationResult:
-        """
-        Post-procesa el resultado de interpretación
-
-        Args:
-            result: Resultado original
-            context: Contexto de interpretación
-
-        Returns:
-            Resultado post-procesado
-        """
-        # Implementación base - los interpretadores específicos pueden sobrescribir
-        return result
-
-class CompositeInterpreter:
-    """Interpretador compuesto que maneja múltiples interpretadores"""
+class InterpreterChain:
+    """
+    Cadena de intérpretes que procesa contextos en orden
+    """
 
     def __init__(self):
         self.interpreters: List[BaseInterpreter] = []
+        self.logger = None
 
-    def register_interpreter(self, interpreter: BaseInterpreter):
-        """Registra un nuevo interpretador"""
-        self.interpreters.append(interpreter)
-        # Ordenar por prioridad (mayor prioridad primero)
-        self.interpreters.sort(key=lambda x: x.priority, reverse=True)
+        try:
+            from app.core.logging import get_logger
+            self.logger = get_logger(__name__)
+        except ImportError:
+            pass
 
-    def interpret(self, context: InterpretationContext) -> Optional[InterpretationResult]:
+    def add_interpreter(self, interpreter: BaseInterpreter):
         """
-        Intenta interpretar usando todos los interpretadores registrados
+        Agrega un intérprete a la cadena
 
         Args:
-            context: Contexto de interpretación
+            interpreter: Intérprete a agregar
+        """
+        self.interpreters.append(interpreter)
+        if self.logger:
+            self.logger.debug(f"Intérprete agregado: {interpreter.name}")
+
+    def process(self, context: InterpretationContext) -> Optional[InterpretationResult]:
+        """
+        Procesa el contexto a través de la cadena de intérpretes
+
+        Args:
+            context: Contexto a procesar
 
         Returns:
-            Primer resultado exitoso o None
+            Resultado del primer intérprete que pueda manejar el contexto
         """
         for interpreter in self.interpreters:
-            if interpreter.can_handle(context):
-                try:
+            try:
+                if interpreter.can_handle(context):
+                    if self.logger:
+                        self.logger.debug(f"Procesando con intérprete: {interpreter.name}")
+
                     result = interpreter.interpret(context)
-                    if result:
-                        return interpreter.post_process_result(result, context)
-                except Exception as e:
-                    # Error en interpretador - usar logging si está disponible
-                    try:
-                        from app.core.logging import get_logger
-                        logger = get_logger(__name__)
-                        logger.error(f"Error en interpretador {interpreter.name}: {str(e)}")
-                    except ImportError:
-                        print(f"Error en interpretador {interpreter.name}: {str(e)}")
-                    continue
+
+                    if self.logger:
+                        self.logger.debug(f"Resultado: {result.action}")
+
+                    return result
+
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"Error en intérprete {interpreter.name}: {e}")
+                continue
+
+        if self.logger:
+            self.logger.warning("Ningún intérprete pudo manejar el contexto")
 
         return None
 
-    def get_all_supported_actions(self) -> Dict[str, str]:
-        """Retorna todas las acciones soportadas por interpretador"""
-        actions = {}
-        for interpreter in self.interpreters:
-            for action in interpreter.supported_actions:
-                actions[action] = interpreter.name
-        return actions
+# Utilidades para crear contextos y resultados comunes
+
+def create_error_result(error_message: str, action: str = "error") -> InterpretationResult:
+    """
+    Crea un resultado de error estándar
+
+    Args:
+        error_message: Mensaje de error
+        action: Tipo de acción (por defecto "error")
+
+    Returns:
+        Resultado de interpretación con error
+    """
+    return InterpretationResult(
+        action=action,
+        parameters={
+            "message": error_message,
+            "error": True
+        },
+        confidence=1.0
+    )
+
+def create_success_result(action: str, message: str, **kwargs) -> InterpretationResult:
+    """
+    Crea un resultado de éxito estándar
+
+    Args:
+        action: Tipo de acción
+        message: Mensaje de éxito
+        **kwargs: Parámetros adicionales
+
+    Returns:
+        Resultado de interpretación exitoso
+    """
+    parameters = {
+        "message": message,
+        "success": True,
+        **kwargs
+    }
+
+    return InterpretationResult(
+        action=action,
+        parameters=parameters,
+        confidence=1.0
+    )
+
+def extract_conversation_context(context: InterpretationContext) -> str:
+    """
+    Extrae el contexto conversacional en formato texto
+
+    Args:
+        context: Contexto de interpretación
+
+    Returns:
+        Contexto conversacional formateado
+    """
+    if not context.conversation_history:
+        return ""
+
+    formatted_context = "=== CONTEXTO CONVERSACIONAL ===\n"
+
+    # Últimos mensajes
+    recent_messages = context.conversation_history[-6:] if len(context.conversation_history) > 6 else context.conversation_history
+
+    for msg in recent_messages:
+        role_emoji = "👤" if msg.get('role') == 'user' else "🤖"
+        content = msg.get('content', '')
+
+        # Truncar mensajes largos
+        if len(content) > 100:
+            content = content[:100] + "..."
+
+        formatted_context += f"{role_emoji} {msg.get('role', 'unknown').title()}: {content}\n"
+
+    return formatted_context

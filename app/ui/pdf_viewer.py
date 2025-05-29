@@ -62,108 +62,99 @@ class PDFViewer(QScrollArea):
         # Contenedor para la página del PDF
         self.container = QWidget()
         self.container.setStyleSheet("background-color: white;")
+        container_layout = QVBoxLayout(self.container)
+        container_layout.setAlignment(Qt.AlignCenter)
 
-        # Layout para la página del PDF
-        self.page_layout = QVBoxLayout(self.container)
-        self.page_layout.setContentsMargins(0, 0, 0, 0)
-        self.page_layout.setAlignment(Qt.AlignCenter)
-
-        # Área para mostrar la página del PDF
+        # Etiqueta para mostrar la página del PDF
         self.page_label = QLabel()
         self.page_label.setAlignment(Qt.AlignCenter)
-        self.page_label.setMinimumSize(300, 400)  # Tamaño mínimo para evitar que sea demasiado pequeño
-
-        # Añadir el label al contenedor
-        self.page_layout.addWidget(self.page_label)
+        self.page_label.setStyleSheet("border: 1px solid #ccc; background-color: white;")
+        container_layout.addWidget(self.page_label)
 
         # Establecer el widget del área de desplazamiento
         self.setWidget(self.container)
 
-        # Crear controles de navegación y zoom (fuera del área de desplazamiento)
-        controls_layout = QHBoxLayout()
+        # Crear controles de navegación y zoom
+        self.setup_controls()
+
+        # 🆕 REORGANIZAR LAYOUT: Área de visualización arriba, controles abajo
+        self.main_layout.addWidget(self)  # Añadir el área de desplazamiento primero
+        self.main_layout.addWidget(self.controls_widget)  # Controles abajo
+
+    def setup_controls(self):
+        """Configura los controles de navegación y zoom"""
+        # Widget contenedor para los controles
+        self.controls_widget = QWidget()
+        controls_layout = QHBoxLayout(self.controls_widget)
         controls_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Botones de navegación
-        self.prev_btn = QPushButton("◀")
-        self.prev_btn.setToolTip("Página anterior")
-        self.prev_btn.clicked.connect(self.previous_page)
+        # Botón página anterior
+        self.prev_btn = QPushButton("◀ Anterior")
         self.prev_btn.setEnabled(False)
-        self.prev_btn.setFixedWidth(40)
-        self.prev_btn.setCursor(Qt.PointingHandCursor)
+        self.prev_btn.clicked.connect(self.previous_page)
         self.prev_btn.setStyleSheet("""
             QPushButton {
-                background-color: #1E3A5F;
+                background-color: #3498DB;
                 color: white;
                 border-radius: 4px;
-                border: 1px solid #2C4F7C;
-                padding: 4px;
+                padding: 8px 15px;
                 font-size: 12px;
+                font-weight: bold;
+                min-width: 80px;
             }
             QPushButton:hover {
-                background-color: #2C4F7C;
+                background-color: #2980B9;
             }
             QPushButton:disabled {
-                background-color: #16213E;
-                color: #555555;
+                background-color: #BDC3C7;
+                color: #7F8C8D;
             }
         """)
 
-        self.page_info = QLabel("Página 0 de 0")
+        # Etiqueta de información de página
+        self.page_info = QLabel("0 / 0")
         self.page_info.setAlignment(Qt.AlignCenter)
-        self.page_info.setStyleSheet("color: white; font-size: 12px;")
-        self.page_info.setMinimumWidth(100)
+        self.page_info.setStyleSheet("font-weight: bold; color: #2C3E50; min-width: 60px;")
 
-        self.next_btn = QPushButton("▶")
-        self.next_btn.setToolTip("Página siguiente")
-        self.next_btn.clicked.connect(self.next_page)
+        # Botón página siguiente
+        self.next_btn = QPushButton("Siguiente ▶")
         self.next_btn.setEnabled(False)
-        self.next_btn.setFixedWidth(40)
-        self.next_btn.setCursor(Qt.PointingHandCursor)
+        self.next_btn.clicked.connect(self.next_page)
         self.next_btn.setStyleSheet("""
             QPushButton {
-                background-color: #1E3A5F;
+                background-color: #3498DB;
                 color: white;
                 border-radius: 4px;
-                border: 1px solid #2C4F7C;
-                padding: 4px;
+                padding: 8px 15px;
                 font-size: 12px;
+                font-weight: bold;
+                min-width: 80px;
             }
             QPushButton:hover {
-                background-color: #2C4F7C;
+                background-color: #2980B9;
             }
             QPushButton:disabled {
-                background-color: #16213E;
-                color: #555555;
+                background-color: #BDC3C7;
+                color: #7F8C8D;
             }
         """)
 
-        # Controles de zoom con slider
+        # Etiqueta de zoom
         zoom_label = QLabel("Zoom:")
-        zoom_label.setStyleSheet("color: white; font-size: 12px;")
+        zoom_label.setStyleSheet("font-weight: bold; color: #2C3E50;")
 
-        self.zoom_info = QLabel("100%")
-        self.zoom_info.setAlignment(Qt.AlignCenter)
-        self.zoom_info.setStyleSheet("color: white; font-size: 12px;")
-        self.zoom_info.setFixedWidth(50)
-
-        # Crear slider para zoom
+        # Slider de zoom
         self.zoom_slider = QSlider(Qt.Horizontal)
-        self.zoom_slider.setRange(20, 300)  # 20% a 300%
-        self.zoom_slider.setValue(100)      # Valor inicial 100%
-        self.zoom_slider.setTickPosition(QSlider.TicksBelow)
-        self.zoom_slider.setTickInterval(25)  # Marcas más frecuentes
-        self.zoom_slider.setFixedWidth(150)
-        self.zoom_slider.setSingleStep(5)     # Paso más pequeño para movimientos más graduales
-        self.zoom_slider.setPageStep(25)      # Paso de página más pequeño
+        self.zoom_slider.setMinimum(25)  # 25%
+        self.zoom_slider.setMaximum(300)  # 300%
+        self.zoom_slider.setValue(100)  # 100% por defecto
+        self.zoom_slider.setEnabled(False)
         self.zoom_slider.valueChanged.connect(self.on_zoom_slider_changed)
         self.zoom_slider.setStyleSheet("""
-            QSlider {
-                height: 20px;
-            }
             QSlider::groove:horizontal {
-                border: 1px solid #2C4F7C;
+                border: 1px solid #BDC3C7;
                 height: 8px;
-                background: #16213E;
+                background: #ECF0F1;
                 margin: 2px 0;
                 border-radius: 4px;
             }
@@ -179,74 +170,67 @@ class PDFViewer(QScrollArea):
             }
         """)
 
-        # Crear botón para ver el PDF original
-        self.view_original_btn = QPushButton("📄 Original")
-        self.view_original_btn.setToolTip("Ver el PDF original")
-        self.view_original_btn.setCursor(Qt.PointingHandCursor)
-        self.view_original_btn.setFixedWidth(100)
-        self.view_original_btn.setVisible(False)  # Oculto por defecto
+        # Etiqueta de porcentaje de zoom
+        self.zoom_percentage = QLabel("100%")
+        self.zoom_percentage.setStyleSheet("font-weight: bold; color: #2C3E50; min-width: 40px;")
+
+        # Botones para ver PDF original y transformado (inicialmente ocultos)
+        self.view_original_btn = QPushButton("📄 Ver Original")
+        self.view_original_btn.setVisible(False)
         self.view_original_btn.setStyleSheet("""
             QPushButton {
-                background-color: #3498DB;
+                background-color: #E67E22;
                 color: white;
                 border-radius: 4px;
-                border: 1px solid #2980B9;
-                padding: 4px;
+                padding: 8px 15px;
                 font-size: 12px;
+                font-weight: bold;
+                min-width: 100px;
             }
             QPushButton:hover {
-                background-color: #2980B9;
+                background-color: #D35400;
             }
-            QPushButton:pressed {
-                background-color: #1F618D;
+            QPushButton:disabled {
+                background-color: #BDC3C7;
+                color: #7F8C8D;
             }
         """)
 
-        # Crear botón para ver el PDF transformado
-        self.view_transformed_btn = QPushButton("🔄 Transformado")
-        self.view_transformed_btn.setToolTip("Ver el PDF transformado")
-        self.view_transformed_btn.setCursor(Qt.PointingHandCursor)
-        self.view_transformed_btn.setFixedWidth(120)
-        self.view_transformed_btn.setVisible(False)  # Oculto por defecto
+        self.view_transformed_btn = QPushButton("🔄 Ver Transformado")
+        self.view_transformed_btn.setVisible(False)
         self.view_transformed_btn.setStyleSheet("""
             QPushButton {
-                background-color: #9B59B6;
+                background-color: #27AE60;
                 color: white;
                 border-radius: 4px;
-                border: 1px solid #8E44AD;
-                padding: 4px;
+                padding: 8px 15px;
                 font-size: 12px;
+                font-weight: bold;
+                min-width: 120px;
             }
             QPushButton:hover {
-                background-color: #8E44AD;
+                background-color: #229954;
             }
-            QPushButton:pressed {
-                background-color: #7D3C98;
+            QPushButton:disabled {
+                background-color: #BDC3C7;
+                color: #7F8C8D;
             }
         """)
 
-        # Añadir widgets al layout de controles
-        controls_layout.addWidget(self.prev_btn)
-        controls_layout.addWidget(self.page_info)
-        controls_layout.addWidget(self.next_btn)
+        # 🆕 OCULTAR BOTONES DE NAVEGACIÓN (no necesarios para un solo PDF)
+        self.prev_btn.setVisible(False)
+        self.next_btn.setVisible(False)
+        self.page_info.setVisible(False)
 
-        # Añadir botones para ver PDF original y transformado
-        controls_layout.addWidget(self.view_original_btn)
-        controls_layout.addWidget(self.view_transformed_btn)
-
-        controls_layout.addStretch()
+        # 🆕 AÑADIR SOLO CONTROLES DE ZOOM Y VISTA (centrados)
+        controls_layout.addStretch()  # Espacio flexible izquierdo
         controls_layout.addWidget(zoom_label)
         controls_layout.addWidget(self.zoom_slider)
-        controls_layout.addWidget(self.zoom_info)
-
-        # Añadir el área de desplazamiento y los controles al layout principal
-        self.main_layout.addWidget(self)  # Añadir este QScrollArea al layout principal
-        self.main_layout.addLayout(controls_layout)
-
-        # Nota: Ya no necesitamos estas líneas porque:
-        # 1. Ya añadimos el page_label al page_layout en la línea 46
-        # 2. Ya establecimos el widget del área de desplazamiento en la línea 49
-        # 3. Ya no usamos nav_layout, ahora usamos controls_layout
+        controls_layout.addWidget(self.zoom_percentage)
+        controls_layout.addStretch()  # Espacio flexible central
+        controls_layout.addWidget(self.view_original_btn)
+        controls_layout.addWidget(self.view_transformed_btn)
+        controls_layout.addStretch()  # Espacio flexible derecho
 
     def load_pdf(self, pdf_path, maintain_state=False, zoom=None, page=None):
         """
@@ -285,10 +269,13 @@ class PDFViewer(QScrollArea):
             # Actualizar el slider de zoom
             self.zoom_slider.setValue(int(self.zoom_factor * 100))
 
-            # Habilitar/deshabilitar botones según corresponda
+            # 🆕 SOLO HABILITAR CONTROLES DE ZOOM (botones de navegación están ocultos)
+            self.zoom_slider.setEnabled(True)
+
+            # 🆕 MANTENER FUNCIONALIDAD DE NAVEGACIÓN INTERNA (para PDFs multipágina)
+            # pero sin mostrar los botones al usuario
             self.prev_btn.setEnabled(self.current_page > 0)
             self.next_btn.setEnabled(self.current_page < self.total_pages - 1)
-            self.zoom_slider.setEnabled(True)
 
             # Mostrar la página actual
             self.show_page(self.current_page)
@@ -325,59 +312,25 @@ class PDFViewer(QScrollArea):
                 fit_width_zoom = viewport_width / page_width
                 effective_zoom = fit_width_zoom * self.zoom_factor
 
-                # Crear matriz de transformación con el zoom efectivo
-                # Usar un DPI más alto para mejor calidad
-                dpi_factor = 2.0  # Factor de mejora de DPI
-                render_zoom = effective_zoom * dpi_factor
-                mat = fitz.Matrix(render_zoom, render_zoom)
+                # Crear la matriz de transformación
+                mat = fitz.Matrix(effective_zoom, effective_zoom)
 
-                # Renderizar con alta calidad
-                pix = page.get_pixmap(matrix=mat, alpha=False)
+                # Renderizar la página como imagen
+                pix = page.get_pixmap(matrix=mat)
+                img_data = pix.tobytes("ppm")
 
-                # Convertir a QImage directamente para mejor calidad
-                qimg = QImage(
-                    pix.samples,
-                    pix.width,
-                    pix.height,
-                    pix.stride,
-                    QImage.Format_RGB888
-                )
-
-                # Escalar la imagen de vuelta al tamaño deseado con alta calidad
-                scaled_width = int(page_width * effective_zoom)
-                scaled_height = int(page_height * effective_zoom)
-
-                # Escalar la imagen con alta calidad
-                if dpi_factor > 1.0:
-                    qimg = qimg.scaled(
-                        scaled_width,
-                        scaled_height,
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation
-                    )
-
-                # Convertir a QPixmap para mostrar
+                # Convertir a QImage y luego a QPixmap
+                qimg = QImage.fromData(img_data)
                 pixmap = QPixmap.fromImage(qimg)
 
-            # Mostrar en el QLabel y ajustar su tamaño
-            self.page_label.setPixmap(pixmap)
-            self.page_label.setAlignment(Qt.AlignCenter)  # Centrar la imagen
+                # Mostrar la imagen en la etiqueta
+                self.page_label.setPixmap(pixmap)
 
-            # Asegurarnos de que el contenedor tenga el tamaño adecuado
-            # para permitir el desplazamiento cuando sea necesario
-            self.container.setMinimumSize(pixmap.size())
+                # Ajustar el tamaño del contenedor
+                self.container.setFixedSize(pixmap.size())
 
             # Actualizar información de página
-            self.page_info.setText(f"Página {page_num + 1} de {self.total_pages}")
-
-            # Actualizar información de zoom con precisión de 1 decimal
-            zoom_percent = round(self.zoom_factor * 100)
-            self.zoom_info.setText(f"{zoom_percent}%")
-
-            # Actualizar el slider de zoom (sin disparar el evento valueChanged)
-            self.zoom_slider.blockSignals(True)
-            self.zoom_slider.setValue(zoom_percent)
-            self.zoom_slider.blockSignals(False)
+            self.page_info.setText(f"{page_num + 1} / {self.total_pages}")
 
             # Actualizar página actual
             self.current_page = page_num
@@ -388,9 +341,6 @@ class PDFViewer(QScrollArea):
 
             # Actualizar estado del slider de zoom
             self.zoom_slider.setEnabled(True)
-
-            # No reiniciamos las barras de desplazamiento aquí para mantener la posición
-            # cuando se cambia el zoom desde on_zoom_slider_changed
 
         except Exception as e:
             print(f"Error al mostrar página: {e}")
@@ -406,102 +356,35 @@ class PDFViewer(QScrollArea):
             self.show_page(self.current_page - 1)
 
     def on_zoom_slider_changed(self, value):
-        """Maneja los cambios en el slider de zoom"""
-        # Guardar la posición de desplazamiento actual
-        h_value = self.horizontalScrollBar().value()
-        v_value = self.verticalScrollBar().value()
-
-        # Calcular la posición relativa (porcentaje) del centro de la vista
-        viewport_width = self.viewport().width()
-        viewport_height = self.viewport().height()
-        content_width = self.container.width()
-        content_height = self.container.height()
-
-        # Evitar división por cero
-        if content_width > 0 and content_height > 0:
-            center_x_percent = (h_value + viewport_width / 2) / content_width
-            center_y_percent = (v_value + viewport_height / 2) / content_height
-        else:
-            center_x_percent = 0.5
-            center_y_percent = 0.5
-
-        # Convertir el valor del slider (20-300) a un factor de zoom (0.2-3.0)
+        """Maneja el cambio en el slider de zoom"""
         self.zoom_factor = value / 100.0
+        self.zoom_percentage.setText(f"{value}%")
 
-        # Actualizar la etiqueta de información de zoom
-        self.zoom_info.setText(f"{value}%")
-
-        # Actualizar la vista con el nuevo zoom
-        self.show_page(self.current_page)
-
-        # Esperar a que se actualice la interfaz
-        QApplication.processEvents()
-
-        # Calcular la nueva posición de desplazamiento para mantener el centro
-        new_content_width = self.container.width()
-        new_content_height = self.container.height()
-
-        # Calcular y establecer las nuevas posiciones de desplazamiento
-        if new_content_width > 0 and new_content_height > 0:
-            new_h_value = max(0, (center_x_percent * new_content_width) - (viewport_width / 2))
-            new_v_value = max(0, (center_y_percent * new_content_height) - (viewport_height / 2))
-
-            # Aplicar las nuevas posiciones de desplazamiento
-            self.horizontalScrollBar().setValue(int(new_h_value))
-            self.verticalScrollBar().setValue(int(new_v_value))
-
-    def zoom_in(self):
-        """Aumenta el nivel de zoom con incrementos más pequeños"""
-        if self.zoom_factor < 3.0:  # Limitar zoom máximo
-            self.zoom_factor += self.zoom_step
-            # Redondear a 2 decimales para evitar errores de punto flotante
-            self.zoom_factor = round(self.zoom_factor, 2)
-
-            # Actualizar el slider
-            self.zoom_slider.setValue(int(self.zoom_factor * 100))
-
-            # La actualización de la vista se hará a través del evento valueChanged del slider
-
-    def zoom_out(self):
-        """Reduce el nivel de zoom con incrementos más pequeños"""
-        if self.zoom_factor > 0.2:  # Limitar zoom mínimo
-            self.zoom_factor -= self.zoom_step
-            # Redondear a 2 decimales para evitar errores de punto flotante
-            self.zoom_factor = round(self.zoom_factor, 2)
-
-            # Actualizar el slider
-            self.zoom_slider.setValue(int(self.zoom_factor * 100))
-
-            # La actualización de la vista se hará a través del evento valueChanged del slider
-
-    def reset_zoom(self):
-        """Restablece el zoom al nivel predeterminado"""
-        self.zoom_factor = 1.0
-
-        # Actualizar el slider
-        self.zoom_slider.setValue(100)
-
-        # La actualización de la vista se hará a través del evento valueChanged del slider
+        # Volver a mostrar la página actual con el nuevo zoom
+        if self.current_pdf:
+            self.show_page(self.current_page)
 
     def close_pdf(self):
         """Cierra el PDF actual"""
         if self.current_pdf:
-            # Usar el contexto para suprimir mensajes de consola
-            with SuppressOutput():
-                self.current_pdf.close()
-
+            self.current_pdf.close()
             self.current_pdf = None
-            self.current_page = 0
-            self.total_pages = 0
-            self.zoom_factor = 1.0  # Restablecer zoom
-            self.page_label.clear()
-            self.page_info.setText("Página 0 de 0")
-            self.zoom_info.setText("100%")
-            self.prev_btn.setEnabled(False)
-            self.next_btn.setEnabled(False)
-            self.zoom_slider.setEnabled(False)
 
-            # Actualizar el slider de zoom (sin disparar el evento valueChanged)
-            self.zoom_slider.blockSignals(True)
-            self.zoom_slider.setValue(100)
-            self.zoom_slider.blockSignals(False)
+        # Limpiar la vista
+        self.page_label.clear()
+        self.page_label.setVisible(False)
+
+        # Restablecer controles
+        self.current_page = 0
+        self.total_pages = 0
+        self.zoom_factor = 1.0
+        self.page_info.setText("0 / 0")
+        self.zoom_slider.setValue(100)
+        self.zoom_percentage.setText("100%")
+
+        # 🆕 DESHABILITAR SOLO CONTROLES VISIBLES
+        self.zoom_slider.setEnabled(False)
+
+        # 🆕 MANTENER ESTADO DE BOTONES OCULTOS
+        self.prev_btn.setEnabled(False)
+        self.next_btn.setEnabled(False)

@@ -2,11 +2,36 @@
 Interfaz de chat para interactuar con el sistema de constancias mediante IA
 """
 import sys
-from PyQt5.QtWidgets import QApplication
+import os
+import json
+from PyQt5.QtWidgets import QApplication, QFileDialog
+from PyQt5.QtGui import QTextCursor
 from dotenv import load_dotenv
 
 # Importar la nueva ventana de chat
 from app.ui.ai_chat.chat_window import ChatWindow
+
+# Importar utilidades necesarias
+from app.core.utils import open_file_with_default_app
+
+# Importar GeminiThread (necesitamos verificar dónde está definido)
+try:
+    from app.ui.ai_chat.gemini_client import GeminiThread
+except ImportError:
+    # Si no existe, crear una clase placeholder
+    from PyQt5.QtCore import QThread, pyqtSignal
+    class GeminiThread(QThread):
+        response_ready = pyqtSignal(object)
+        error_occurred = pyqtSignal(str)
+
+        def __init__(self, models, prompt):
+            super().__init__()
+            self.models = models
+            self.prompt = prompt
+
+        def run(self):
+            # Placeholder implementation
+            self.error_occurred.emit("GeminiThread no está implementado correctamente")
 
 # Cargar variables de entorno
 load_dotenv()

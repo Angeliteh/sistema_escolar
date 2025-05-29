@@ -94,7 +94,7 @@ class Config:
 
     # 🎯 CONFIGURACIÓN SIMPLIFICADA DE GEMINI - SOLO 2 MODELOS
     GEMINI = {
-        'primary_model': 'gemini-2.0-flash-exp',
+        'primary_model': 'gemini-2.0-flash',  # ✅ CORREGIDO: Sin -exp
         'fallback_model': 'gemini-1.5-flash',
         'enable_fallback': True,
         'max_retries': 1,  # Solo 1 retry: 2.0 → 1.5
@@ -108,7 +108,7 @@ class Config:
 
         # 🎯 ESTRATEGIA SIMPLE: SOLO 2 INTENTOS
         'fallback_strategy': [
-            {'model': 'gemini-2.0-flash-exp', 'api_key': 'primary'},
+            {'model': 'gemini-2.0-flash', 'api_key': 'primary'},  # ✅ CORREGIDO
             {'model': 'gemini-1.5-flash', 'api_key': 'primary'}
         ]
     }

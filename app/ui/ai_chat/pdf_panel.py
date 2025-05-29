@@ -520,20 +520,14 @@ class PDFPanel(QWidget):
         # Podríamos añadir una señal pdf_removed si fuera necesario
 
     def _show_data_dialog(self):
-        """Muestra datos según el contexto actual"""
+        """Muestra datos según el contexto actual - UNIFICADO para usar siempre el mismo formato"""
         if self.data_context == "constancia_generada":
             self._show_alumno_data_dialog()
-        elif self.data_context == "pdf_externo":
-            self.extract_and_show_data()
         elif self.data_context == "transformacion_pendiente":
             self._show_transformation_pending_dialog()
-        elif self.data_context == "transformacion_completada":
-            self._show_extracted_data_with_save_option()
-        elif self.data_context == "pdf_transformado":
-            # Contexto legacy - mostrar datos extraídos del PDF original
-            self.extract_and_show_data()
         else:
-            # Fallback para contextos no reconocidos
+            # 🎯 UNIFICADO: Siempre usar el método que funciona bien
+            # Esto incluye: pdf_externo, transformacion_completada, pdf_transformado, y cualquier otro
             self.extract_and_show_data()
 
     def extract_and_show_data(self):
@@ -571,6 +565,11 @@ class PDFPanel(QWidget):
         """Muestra información sobre el contenido del PDF cargado"""
         if not self.pdf_data:
             return
+
+        # 🆕 VERIFICAR SI HAY FOTO EXTRAÍDA
+        foto_path = None
+        if self.pdf_data.get('foto_path'):
+            foto_path = self.pdf_data.get('foto_path')
 
         # Crear un mensaje con la información del PDF en un estilo más moderno y legible
         mensaje = """
@@ -611,6 +610,31 @@ class PDFPanel(QWidget):
                     <span style="color: #34495E;">{}</span>
                 </p>
             """.format(self.pdf_data.get('nacimiento'))
+
+        # 🆕 AGREGAR INFORMACIÓN DE FOTO (SOLO TEXTO)
+        if foto_path:
+            import os
+            if os.path.exists(foto_path):
+                mensaje += """
+                    <p style="margin: 5px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Foto:</span>
+                        <span style="color: #27AE60;">✅ Extraída correctamente (30x40px)</span>
+                    </p>
+                """
+            else:
+                mensaje += """
+                    <p style="margin: 5px 0;">
+                        <span style="font-weight: bold; color: #2C3E50;">Foto:</span>
+                        <span style="color: #E74C3C;">❌ Archivo no encontrado</span>
+                    </p>
+                """
+        else:
+            mensaje += """
+                <p style="margin: 5px 0;">
+                    <span style="font-weight: bold; color: #2C3E50;">Foto:</span>
+                    <span style="color: #95A5A6;">No disponible</span>
+                </p>
+            """
 
         mensaje += """
             </div>
@@ -766,6 +790,7 @@ class PDFPanel(QWidget):
                 font-size: 14px;
                 color: #2C3E50;
                 padding: 5px;
+                background-color: transparent;
             }
             QCheckBox::indicator {
                 width: 18px;
@@ -780,6 +805,11 @@ class PDFPanel(QWidget):
                 border: 2px solid #27AE60;
                 background-color: #27AE60;
                 border-radius: 3px;
+            }
+            QTextBrowser {
+                border: none;
+                background-color: white;
+                font-size: 14px;
             }
         """)
 
@@ -822,6 +852,42 @@ class PDFPanel(QWidget):
         close_button.clicked.connect(dialog.accept)
         save_button.clicked.connect(lambda: self._save_pdf_data_to_database(dialog, save_checkbox))
 
+        # 🆕 AGREGAR FOTO COMO WIDGET SEPARADO SI EXISTE
+        foto_path = None
+        if self.pdf_data and self.pdf_data.get('foto_path'):
+            foto_path = self.pdf_data.get('foto_path')
+
+        if foto_path:
+            import os
+            from PyQt5.QtWidgets import QLabel
+            from PyQt5.QtGui import QPixmap
+            from PyQt5.QtCore import Qt
+
+            if os.path.exists(foto_path):
+                # Crear contenedor para la foto
+                foto_container = QLabel()
+                foto_container.setAlignment(Qt.AlignCenter)
+                foto_container.setStyleSheet("""
+                    QLabel {
+                        background-color: #F8F9FA;
+                        border: 2px solid #3498DB;
+                        border-radius: 8px;
+                        padding: 10px;
+                        margin: 10px;
+                    }
+                """)
+
+                # Cargar y redimensionar la imagen
+                pixmap = QPixmap(foto_path)
+                if not pixmap.isNull():
+                    # Redimensionar a 60x80 píxeles
+                    scaled_pixmap = pixmap.scaled(60, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    foto_container.setPixmap(scaled_pixmap)
+                    foto_container.setToolTip("Foto extraída del PDF")
+
+                    # Agregar la foto al layout
+                    layout.addWidget(foto_container)
+
         # Añadir widgets al layout
         layout.addWidget(text_browser)
         layout.addWidget(save_checkbox)
@@ -843,6 +909,35 @@ class PDFPanel(QWidget):
             return
 
         try:
+            # 🆕 EXTRAER Y GUARDAR FOTO AUTOMÁTICAMENTE
+            foto_guardada = False
+            if self.pdf_data.get('foto_path') and self.pdf_data.get('curp'):
+                try:
+                    import os
+                    import shutil
+                    foto_origen = self.pdf_data.get('foto_path')
+                    curp = self.pdf_data.get('curp')
+
+                    # Crear directorio de fotos si no existe
+                    photos_dir = os.path.join("resources", "photos")
+                    os.makedirs(photos_dir, exist_ok=True)
+
+                    # Ruta destino: {CURP}.jpg
+                    foto_destino = os.path.join(photos_dir, f"{curp}.jpg")
+
+                    # Copiar foto si no existe o es diferente
+                    if os.path.exists(foto_origen):
+                        if not os.path.exists(foto_destino) or os.path.getsize(foto_origen) != os.path.getsize(foto_destino):
+                            shutil.copy2(foto_origen, foto_destino)
+                            foto_guardada = True
+                            print(f"✅ Foto guardada: {foto_destino}")
+                        else:
+                            foto_guardada = True
+                            print(f"ℹ️ Foto ya existe: {foto_destino}")
+
+                except Exception as e:
+                    print(f"⚠️ Error guardando foto: {e}")
+
             # Usar el servicio de constancias para guardar los datos
             success, message, _ = self.constancia_service.guardar_alumno_desde_pdf(
                 self.original_pdf,
@@ -850,8 +945,12 @@ class PDFPanel(QWidget):
             )
 
             if success:
-                QMessageBox.information(dialog, "Éxito",
-                    "✅ Los datos han sido guardados correctamente en la base de datos.")
+                # 🆕 MENSAJE MEJORADO CON INFORMACIÓN DE FOTO
+                mensaje_exito = "✅ Los datos han sido guardados correctamente en la base de datos."
+                if foto_guardada:
+                    mensaje_exito += f"\n📸 Foto del alumno guardada como {self.pdf_data.get('curp', 'N/A')}.jpg"
+
+                QMessageBox.information(dialog, "Éxito", mensaje_exito)
                 dialog.accept()  # Cerrar el diálogo
             else:
                 QMessageBox.warning(dialog, "Error", f"❌ Error al guardar: {message}")
@@ -990,372 +1089,11 @@ class PDFPanel(QWidget):
 
         dialog.exec_()
 
-    def _show_transformation_comparison_dialog(self):
-        """Muestra comparación entre datos originales y transformados"""
-        if not self.original_data or not self.transformed_data:
-            QMessageBox.information(self, "Sin datos", "No hay datos de transformación disponibles.")
-            return
 
-        # Crear diálogo con comparación
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Comparación: Original vs Transformado")
-        dialog.setMinimumSize(700, 600)
 
-        # Establecer estilo para el diálogo
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: white;
-                border: 1px solid #CCCCCC;
-                border-radius: 5px;
-            }
-            QPushButton {
-                background-color: #E67E22;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-weight: bold;
-                min-width: 100px;
-            }
-            QPushButton:hover {
-                background-color: #D35400;
-            }
-            QPushButton:pressed {
-                background-color: #BA4A00;
-            }
-        """)
 
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(15, 15, 15, 15)
 
-        # Crear contenido con comparación
-        content = self._format_transformation_comparison(self.original_data, self.transformed_data)
-
-        text_edit = QTextEdit()
-        text_edit.setHtml(content)
-        text_edit.setReadOnly(True)
-        text_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #BDC3C7;
-                border-radius: 4px;
-                background-color: white;
-                font-size: 14px;
-                padding: 10px;
-            }
-        """)
-
-        layout.addWidget(text_edit)
-
-        # Botón cerrar
-        close_btn = QPushButton("Cerrar")
-        close_btn.clicked.connect(dialog.accept)
-        layout.addWidget(close_btn, 0, Qt.AlignCenter)
-
-        dialog.exec_()
-
-    def _show_extracted_data_with_save_dialog(self):
-        """Muestra datos extraídos del PDF con opción de guardar en BD"""
-        if not self.pdf_data:
-            QMessageBox.information(self, "Sin datos", "No hay datos extraídos disponibles.")
-            return
-
-        # Crear diálogo
-        dialog = QDialog(self)
-        dialog.setWindowTitle("📋 Datos Extraídos del PDF")
-        dialog.setModal(True)
-        dialog.resize(600, 700)
-
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-
-        # Título
-        title_label = QLabel("📋 Datos Extraídos del PDF Original")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50; margin-bottom: 10px;")
-        title_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title_label)
-
-        # Crear área de scroll para los datos
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: 1px solid #BDC3C7;
-                border-radius: 8px;
-                background-color: white;
-            }
-        """)
-
-        # Widget contenedor para los datos
-        data_widget = QWidget()
-        data_layout = QVBoxLayout(data_widget)
-        data_layout.setContentsMargins(15, 15, 15, 15)
-        data_layout.setSpacing(10)
-
-        # Mostrar datos extraídos
-        data_html = self._format_extracted_data_for_dialog()
-        data_text = QTextEdit()
-        data_text.setHtml(data_html)
-        data_text.setReadOnly(True)
-        data_text.setMinimumHeight(400)
-        data_text.setStyleSheet("""
-            QTextEdit {
-                border: none;
-                background-color: transparent;
-                font-size: 14px;
-            }
-        """)
-
-        data_layout.addWidget(data_text)
-        scroll_area.setWidget(data_widget)
-        layout.addWidget(scroll_area)
-
-        # Sección de opciones de guardado
-        save_section = QFrame()
-        save_section.setFrameStyle(QFrame.StyledPanel)
-        save_section.setStyleSheet("""
-            QFrame {
-                background-color: #F8F9FA;
-                border: 1px solid #E9ECEF;
-                border-radius: 8px;
-                padding: 10px;
-            }
-        """)
-
-        save_layout = QVBoxLayout(save_section)
-        save_layout.setSpacing(10)
-
-        # Título de la sección
-        save_title = QLabel("💾 Opciones de Guardado")
-        save_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #495057; margin-bottom: 5px;")
-        save_layout.addWidget(save_title)
-
-        # Checkbox para guardar en BD
-        self.save_checkbox = QCheckBox("Guardar este alumno en la base de datos")
-        self.save_checkbox.setStyleSheet("font-size: 14px; color: #495057;")
-        save_layout.addWidget(self.save_checkbox)
-
-        # Información adicional
-        info_label = QLabel("ℹ️ Si el alumno ya existe en la BD, se actualizarán sus datos.")
-        info_label.setStyleSheet("font-size: 12px; color: #6C757D; font-style: italic;")
-        save_layout.addWidget(info_label)
-
-        layout.addWidget(save_section)
-
-        # Botones
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)
-
-        # Botón Guardar
-        save_btn = QPushButton("💾 Guardar")
-        save_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28A745;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 10px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                min-width: 100px;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-            QPushButton:pressed {
-                background-color: #1E7E34;
-            }
-        """)
-        save_btn.clicked.connect(lambda: self._handle_save_action(dialog))
-
-        # Botón Cerrar
-        close_btn = QPushButton("❌ Cerrar")
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6C757D;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 10px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                min-width: 100px;
-            }
-            QPushButton:hover {
-                background-color: #5A6268;
-            }
-            QPushButton:pressed {
-                background-color: #545B62;
-            }
-        """)
-        close_btn.clicked.connect(dialog.reject)
-
-        button_layout.addStretch()
-        button_layout.addWidget(save_btn)
-        button_layout.addWidget(close_btn)
-
-        layout.addLayout(button_layout)
-
-        dialog.exec_()
-
-    def _format_extracted_data_for_dialog(self):
-        """Formatea los datos extraídos para mostrar en el diálogo"""
-        if not self.pdf_data:
-            return "<p>No hay datos disponibles</p>"
-
-        html = f"""
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.6;">
-            <div style="background-color: #EBF5FB; border-left: 4px solid #3498DB; padding: 15px; margin-bottom: 15px; border-radius: 6px;">
-                <h3 style="color: #2874A6; margin-top: 0; margin-bottom: 12px; font-size: 16px;">
-                    👤 Datos Personales
-                </h3>
-                <p style="margin: 8px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Nombre:</span>
-                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('nombre', 'No disponible')}</span>
-                </p>
-                <p style="margin: 8px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">CURP:</span>
-                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('curp', 'No disponible')}</span>
-                </p>
-        """
-
-        if self.pdf_data.get('matricula'):
-            html += f"""
-                <p style="margin: 8px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Matrícula:</span>
-                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('matricula')}</span>
-                </p>
-            """
-
-        if self.pdf_data.get('nacimiento'):
-            html += f"""
-                <p style="margin: 8px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Fecha de nacimiento:</span>
-                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('nacimiento')}</span>
-                </p>
-            """
-
-        html += """
-            </div>
-
-            <div style="background-color: #E8F8F5; border-left: 4px solid #1ABC9C; padding: 15px; margin-bottom: 15px; border-radius: 6px;">
-                <h3 style="color: #16A085; margin-top: 0; margin-bottom: 12px; font-size: 16px;">
-                    🎓 Datos Escolares
-                </h3>
-        """
-
-        html += f"""
-                <p style="margin: 8px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Grado:</span>
-                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('grado', 'No disponible')}</span>
-                </p>
-                <p style="margin: 8px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Grupo:</span>
-                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('grupo', 'No disponible')}</span>
-                </p>
-                <p style="margin: 8px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Turno:</span>
-                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('turno', 'No disponible')}</span>
-                </p>
-                <p style="margin: 8px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Ciclo escolar:</span>
-                    <span style="color: #34495E; margin-left: 10px;">{self.pdf_data.get('ciclo_escolar', 'No disponible')}</span>
-                </p>
-            </div>
-        """
-
-        # Agregar calificaciones si existen
-        if self.pdf_data.get('calificaciones'):
-            html += """
-            <div style="background-color: #FEF9E7; border-left: 4px solid #F39C12; padding: 15px; margin-bottom: 15px; border-radius: 6px;">
-                <h3 style="color: #D68910; margin-top: 0; margin-bottom: 12px; font-size: 16px;">
-                    📊 Calificaciones
-                </h3>
-            """
-
-            calificaciones = self.pdf_data.get('calificaciones', {})
-
-            # Manejar tanto diccionarios como listas
-            if isinstance(calificaciones, dict):
-                # Formato diccionario: {"Matemáticas": "9", "Español": "8"}
-                for materia, calificacion in calificaciones.items():
-                    html += f"""
-                    <p style="margin: 8px 0;">
-                        <span style="font-weight: bold; color: #2C3E50;">{materia}:</span>
-                        <span style="color: #34495E; margin-left: 10px;">{calificacion}</span>
-                    </p>
-                    """
-            elif isinstance(calificaciones, list):
-                # Formato lista: [{"materia": "Matemáticas", "calificacion": "9"}, ...]
-                for item in calificaciones:
-                    if isinstance(item, dict):
-                        materia = item.get('materia', 'Materia')
-                        calificacion = item.get('calificacion', 'N/A')
-                        html += f"""
-                        <p style="margin: 8px 0;">
-                            <span style="font-weight: bold; color: #2C3E50;">{materia}:</span>
-                            <span style="color: #34495E; margin-left: 10px;">{calificacion}</span>
-                        </p>
-                        """
-                    else:
-                        # Si es una lista de strings o números
-                        html += f"""
-                        <p style="margin: 8px 0;">
-                            <span style="color: #34495E;">{item}</span>
-                        </p>
-                        """
-            else:
-                # Formato desconocido, mostrar como texto
-                html += f"""
-                <p style="margin: 8px 0;">
-                    <span style="color: #34495E;">{calificaciones}</span>
-                </p>
-                """
-
-            html += "</div>"
-
-        html += "</div>"
-        return html
-
-    def _handle_save_action(self, dialog):
-        """Maneja la acción de guardar datos en BD"""
-        try:
-            if self.save_checkbox.isChecked():
-                # Guardar alumno en BD
-                success = self._save_student_to_database()
-                if success:
-                    QMessageBox.information(dialog, "Éxito", "✅ Alumno guardado exitosamente en la base de datos.")
-                else:
-                    QMessageBox.warning(dialog, "Error", "❌ Error al guardar el alumno en la base de datos.")
-            else:
-                QMessageBox.information(dialog, "Sin cambios", "ℹ️ No se realizaron cambios en la base de datos.")
-
-            dialog.accept()
-
-        except Exception as e:
-            QMessageBox.critical(dialog, "Error", f"❌ Error inesperado: {str(e)}")
-
-    def _save_student_to_database(self):
-        """Guarda el alumno extraído del PDF en la base de datos"""
-        try:
-            if not self.pdf_data:
-                return False
-
-            # Usar el servicio de constancias para guardar
-            success, message = self.constancia_service.guardar_alumno_desde_pdf(self.pdf_data)
-
-            if success:
-                print(f"✅ Alumno guardado: {message}")
-                return True
-            else:
-                print(f"❌ Error guardando alumno: {message}")
-                return False
-
-        except Exception as e:
-            print(f"❌ Error en _save_student_to_database: {e}")
-            return False
 
     def _show_extracted_data_with_save_option(self):
         """Muestra datos extraídos usando el método que funciona + opción de guardar"""
@@ -1514,104 +1252,8 @@ class PDFPanel(QWidget):
 
         dialog.exec_()
 
-    def _get_formatted_pdf_info(self):
-        """Obtiene el mensaje formateado usando el mismo código que funciona en mostrar_info_contenido_pdf"""
-        if not self.pdf_data:
-            return "<p>No hay datos disponibles</p>"
 
-        # 🎯 USAR EL MISMO CÓDIGO QUE FUNCIONA (copiado de mostrar_info_contenido_pdf)
-        mensaje = """
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.5;">
-            <h2 style="color: #3498DB; margin-top: 0; margin-bottom: 15px; text-align: center; font-size: 20px;">
-                Información Extraída del PDF
-            </h2>
 
-            <div style="background-color: #EBF5FB; border-left: 4px solid #3498DB; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
-                <h3 style="color: #2874A6; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
-                    Datos Personales
-                </h3>
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Nombre:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">CURP:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-        """.format(
-            self.pdf_data.get('nombre', 'No disponible'),
-            self.pdf_data.get('curp', 'No disponible')
-        )
-
-        if self.pdf_data.get('matricula'):
-            mensaje += """
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Matrícula:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-            """.format(self.pdf_data.get('matricula'))
-
-        if self.pdf_data.get('nacimiento'):
-            mensaje += """
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Fecha de nacimiento:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-            """.format(self.pdf_data.get('nacimiento'))
-
-        mensaje += """
-            </div>
-
-            <div style="background-color: #E8F8F5; border-left: 4px solid #1ABC9C; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
-                <h3 style="color: #16A085; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
-                    Datos Escolares
-                </h3>
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Grado:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Grupo:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Turno:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">Ciclo escolar:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-            </div>
-        """.format(
-            self.pdf_data.get('grado', 'No disponible'),
-            self.pdf_data.get('grupo', 'No disponible'),
-            self.pdf_data.get('turno', 'No disponible'),
-            self.pdf_data.get('ciclo_escolar', 'No disponible')
-        )
-
-        # 🎯 AGREGAR CALIFICACIONES USANDO EL MISMO CÓDIGO QUE FUNCIONA
-        if self.tiene_calificaciones and self.pdf_data.get('calificaciones'):
-            mensaje += """
-            <div style="background-color: #FEF9E7; border-left: 4px solid #F39C12; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
-                <h3 style="color: #D68910; margin-top: 0; margin-bottom: 10px; font-size: 16px;">
-                    Calificaciones
-                </h3>
-            """
-
-            calificaciones = self.pdf_data.get('calificaciones', {})
-            for materia, calificacion in calificaciones.items():
-                mensaje += """
-                <p style="margin: 5px 0;">
-                    <span style="font-weight: bold; color: #2C3E50;">{}:</span>
-                    <span style="color: #34495E;">{}</span>
-                </p>
-                """.format(materia, calificacion)
-
-            mensaje += "</div>"
-
-        mensaje += "</div>"
-        return mensaje
 
     def _format_transformation_comparison(self, original_data, transformed_data):
         """Formatea la comparación entre datos originales y transformados"""

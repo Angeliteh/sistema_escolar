@@ -112,7 +112,17 @@ class GeminiClient(QObject):
                 # Modelo principal
                 try:
                     primary_model = self.config['primary_model']
-                    models_for_key[primary_model] = genai.GenerativeModel(primary_model)
+                    # 🛠️ CONFIGURAR PARÁMETROS DE GENERACIÓN
+                    generation_config = genai.types.GenerationConfig(
+                        max_output_tokens=8192,  # Aumentar límite de tokens
+                        temperature=0.7,
+                        top_p=0.8,
+                        top_k=40
+                    )
+                    models_for_key[primary_model] = genai.GenerativeModel(
+                        primary_model,
+                        generation_config=generation_config
+                    )
                     self.logger.debug(f"✅ {primary_model} inicializado con API key '{key_name}'")
                 except Exception as e:
                     self.logger.warning(f"❌ No se pudo inicializar {primary_model} con '{key_name}': {e}")
@@ -121,7 +131,17 @@ class GeminiClient(QObject):
                 if self.config['enable_fallback']:
                     try:
                         fallback_model = self.config['fallback_model']
-                        models_for_key[fallback_model] = genai.GenerativeModel(fallback_model)
+                        # 🛠️ MISMA CONFIGURACIÓN PARA MODELO DE RESPALDO
+                        generation_config = genai.types.GenerationConfig(
+                            max_output_tokens=8192,  # Aumentar límite de tokens
+                            temperature=0.7,
+                            top_p=0.8,
+                            top_k=40
+                        )
+                        models_for_key[fallback_model] = genai.GenerativeModel(
+                            fallback_model,
+                            generation_config=generation_config
+                        )
                         self.logger.debug(f"✅ {fallback_model} inicializado con API key '{key_name}'")
                     except Exception as e:
                         self.logger.warning(f"❌ No se pudo inicializar {fallback_model} con '{key_name}': {e}")

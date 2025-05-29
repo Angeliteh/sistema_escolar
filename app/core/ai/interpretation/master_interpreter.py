@@ -64,19 +64,22 @@ class MasterInterpreter:
             self.logger.debug(f"Razonamiento: {intention.reasoning}")
             self.logger.debug(f"Entidades detectadas: {intention.detected_entities}")
 
-            # 🆕 AGREGAR INFORMACIÓN DE INTENCIÓN AL CONTEXTO
-            context.intention_info = {
-                'intention_type': intention.intention_type,
-                'sub_intention': intention.sub_intention,
-                'detected_entities': intention.detected_entities,
-                'confidence': intention.confidence
-            }
+            # 🆕 NOTA: intention_info se agrega en cada caso específico abajo
 
             # PASO 3: Dirigir al intérprete especializado
             if intention.intention_type == "consulta_alumnos":
                 self.logger.info(f"🎯 [MASTER] Dirigiendo a StudentQueryInterpreter")
                 self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
                 self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
+
+                # 🆕 AGREGAR INFORMACIÓN DE INTENCIÓN AL CONTEXTO
+                context.intention_info = {
+                    'intention_type': intention.intention_type,
+                    'sub_intention': intention.sub_intention,
+                    'confidence': intention.confidence,
+                    'reasoning': intention.reasoning,
+                    'detected_entities': intention.detected_entities
+                }
 
                 result = self.student_interpreter.interpret(context)
                 self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
@@ -89,15 +92,42 @@ class MasterInterpreter:
                 self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
                 self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
 
+                # 🆕 AGREGAR INFORMACIÓN DE INTENCIÓN AL CONTEXTO
+                context.intention_info = {
+                    'intention_type': intention.intention_type,
+                    'sub_intention': intention.sub_intention,
+                    'confidence': intention.confidence,
+                    'reasoning': intention.reasoning,
+                    'detected_entities': intention.detected_entities
+                }
+
                 result = self.student_interpreter.interpret(context)
                 self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
                 return result
 
             elif intention.intention_type == "transformacion_pdf":
-                self.logger.debug("Dirigiendo a intérprete de transformación PDF")
+                self.logger.info("🎯 [MASTER] Dirigiendo a StudentQueryInterpreter (transformación PDF)")
+                self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
+                self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
+
+                # 🆕 AGREGAR INFORMACIÓN DE INTENCIÓN AL CONTEXTO
+                context.intention_info = {
+                    'intention_type': intention.intention_type,
+                    'sub_intention': intention.sub_intention,
+                    'confidence': intention.confidence,
+                    'reasoning': intention.reasoning,
+                    'detected_entities': intention.detected_entities
+                }
+
+                self.logger.debug(f"🔄 Contexto enriquecido con intention_info: {context.intention_info}")
+                self.logger.debug(f"🔄 Tipo de contexto antes de enviar: {type(context)}")
+                self.logger.debug(f"🔄 Atributos del contexto: {[attr for attr in dir(context) if not attr.startswith('_')]}")
+
                 # Usar el StudentQueryInterpreter para manejar transformaciones
                 # ya que tiene la lógica para detectar parámetros de constancias
-                return self.student_interpreter.interpret(context)
+                result = self.student_interpreter.interpret(context)
+                self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
+                return result
 
             elif intention.intention_type == "ayuda_sistema":
                 self.logger.debug("Dirigiendo a intérprete de ayuda")

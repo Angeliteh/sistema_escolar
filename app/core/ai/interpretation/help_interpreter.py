@@ -121,11 +121,14 @@ class HelpInterpreter(BaseInterpreter):
                 # Determinar tipo de acción basado en el contenido
                 action_type = self._determine_help_action_type(help_content)
 
+                message_content = response_with_reflection.get("respuesta_usuario", "Ayuda generada")
                 self.logger.info(f"📊 [HELP] Ayuda generada exitosamente: {action_type}")
+                self.logger.info(f"📝 [HELP] Mensaje generado: {message_content[:100]}...")
+
                 return InterpretationResult(
                     action=action_type,
                     parameters={
-                        "message": response_with_reflection.get("respuesta_usuario", "Ayuda generada"),
+                        "message": message_content,
                         "help_content": help_content,
                         "auto_reflexion": response_with_reflection.get("reflexion_conversacional", {}),
                         "origen": "help_interpreter"

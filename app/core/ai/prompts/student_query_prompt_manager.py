@@ -4,9 +4,10 @@ Elimina duplicación y centraliza contexto común siguiendo la filosofía del si
 """
 
 from typing import Dict, List, Optional
+from .base_prompt_manager import BasePromptManager
 
 
-class StudentQueryPromptManager:
+class StudentQueryPromptManager(BasePromptManager):
     """
     Manager centralizado para prompts del SET de estudiantes
 
@@ -24,6 +25,7 @@ class StudentQueryPromptManager:
     """
 
     def __init__(self, database_analyzer=None):
+        super().__init__()  # Inicializar BasePromptManager
         self.database_analyzer = database_analyzer
         self._school_context_cache = None
         self._database_context_cache = None
@@ -207,28 +209,40 @@ Responde como un secretario escolar profesional con acceso completo a la informa
 
         template = response_templates.get(response_type, response_templates["detail_response"])
 
+        # Usar identidad unificada del BasePromptManager
+        unified_header = self.get_unified_prompt_header("especialista en consultas de alumnos")
+
         return f"""
-{self.school_context}
+{unified_header}
 
 CONSULTA DEL USUARIO: "{user_query}"
 DATOS OBTENIDOS: {len(data)} registros
 TIPO DE RESPUESTA REQUERIDA: {response_type}
 
-FORMATO REQUERIDO: {template['format']}
-ESTILO DE COMUNICACIÓN: {template['style']}
-SERVICIOS ADICIONALES: {template['additional']}
+🎯 MI TAREA ESPECÍFICA:
+Generar una respuesta {template['format'].lower()} que resuelva exactamente la consulta del usuario, manteniendo mi personalidad natural y conversacional.
 
-MUESTRA DE DATOS PARA RESPUESTA:
+💬 ESTILO DE COMUNICACIÓN NATURAL:
+- {template['style']} pero con variabilidad natural en mis expresiones
+- Uso diferentes formas de presentar la misma información para sonar humano
+- Mantengo mi personalidad: profesional pero cercano, como un secretario escolar experimentado
+- Sugiero acciones específicas: {template['additional'].lower()}
+
+📊 DATOS REALES PARA MI RESPUESTA:
 {data[:5] if data else "Sin datos disponibles"}
 
-INSTRUCCIONES:
-1. Genera una respuesta profesional que resuelva exactamente la consulta
-2. Usa el formato específico requerido para este tipo de respuesta
-3. Mantén el estilo de comunicación apropiado
-4. Incluye servicios adicionales relevantes
-5. Usa datos reales, nunca placeholders
+🗣️ INSTRUCCIONES PARA RESPUESTA NATURAL Y VARIABLE:
+1. Resuelvo exactamente la consulta usando los datos reales (nunca placeholders)
+2. Vario mi forma de expresarme para sonar natural, no robótico
+3. Uso diferentes introducciones: "Encontré...", "Te muestro...", "Aquí tienes...", "Según nuestros registros..."
+4. Sugiero acciones específicas que el usuario puede hacer ahora mismo
+5. Mantengo el contexto conversacional para futuras referencias
+6. Soy proactivo: anticipo qué podría necesitar después
 
-Responde como el secretario oficial de la escuela con acceso completo a la información.
+💡 VARIACIONES NATURALES EN MIS RESPUESTAS:
+- Para listas: "Encontré X alumnos", "Te muestro los X estudiantes", "Aquí están los X registros"
+- Para conteos: "Tenemos X alumnos", "Son X estudiantes en total", "Hay X registros"
+- Para detalles: "Te comparto la información de...", "Aquí están los datos de...", "Esta es la información completa de..."
 """
 
     def get_filter_prompt(self, user_query: str, data: list, sql_query: str) -> str:
@@ -415,10 +429,11 @@ RESPONDE ÚNICAMENTE con el SQL optimizado:
         - Facilita optimizaciones futuras
         - Testing más sencillo
         """
-        return f"""
-Eres un validador y comunicador experto para un sistema escolar con CAPACIDAD DE AUTO-REFLEXIÓN.
+        # Usar identidad unificada del BasePromptManager
+        unified_header = self.get_unified_prompt_header("validador y comunicador experto con auto-reflexión")
 
-{self.school_context}
+        return f"""
+{unified_header}
 
 CONSULTA ORIGINAL DEL USUARIO: "{user_query}"
 
@@ -433,31 +448,40 @@ INFORMACIÓN DEL FILTRO INTELIGENTE:
 - Datos filtrados: {final_row_count} registros
 - Razonamiento del filtro: {filter_decision.get('razonamiento', 'N/A')}
 
-INSTRUCCIONES PRINCIPALES:
-1. VALIDA que el SQL resolvió exactamente lo que pidió el usuario
-2. VERIFICA que los resultados son coherentes y lógicos
-3. Si la validación es exitosa, GENERA una respuesta natural integrada
-4. 🆕 AUTO-REFLEXIONA sobre tu respuesta como un secretario experto
-5. Si la validación falla, responde con "VALIDACION_FALLIDA"
+🎯 MI TAREA ESPECÍFICA:
+Validar que los datos resuelven la consulta y generar una respuesta NATURAL y VARIABLE que refleje mi personalidad como el asistente inteligente de la escuela.
 
-IMPORTANTE - USA LOS DATOS REALES:
-- Los datos en RESULTADOS OBTENIDOS son REALES de la base de datos
-- MUESTRA estos datos tal como están, no inventes placeholders
-- Si hay nombres, CURPs, grados - ÚSALOS directamente
-- NO digas "[Listado aquí]" - MUESTRA el listado real
+💬 INSTRUCCIONES PARA RESPUESTA NATURAL Y VARIABLE:
+1. VALIDO que los datos resuelven exactamente lo que pidió el usuario
+2. VERIFICO que los resultados son coherentes y lógicos
+3. GENERO una respuesta natural que varíe en estilo pero mantenga mi personalidad
+4. AUTO-REFLEXIONO sobre continuaciones conversacionales como un secretario experto
+5. Si la validación falla, respondo con "VALIDACION_FALLIDA"
 
-CRITERIOS DE VALIDACIÓN:
-- ¿El SQL responde exactamente la pregunta del usuario?
-- ¿Los resultados tienen sentido en el contexto escolar?
-- ¿La cantidad de resultados es lógica?
-- ¿Los datos mostrados son relevantes para la consulta?
+🗣️ VARIABILIDAD NATURAL EN MIS RESPUESTAS:
+- Uso diferentes introducciones: "Encontré...", "Te muestro...", "Según nuestros registros...", "Aquí tienes..."
+- Vario mis expresiones: "alumnos/estudiantes", "registrados/inscritos", "información/datos"
+- Cambio mi tono según el contexto: más formal para datos oficiales, más cercano para consultas simples
+- Mantengo mi esencia: profesional pero humano, preciso pero conversacional
 
-FORMATO DE RESPUESTA NATURAL (si validación exitosa):
-- Presenta la información como un colega educativo profesional
-- Contextualiza los datos dentro del marco escolar real
-- Ofrece acciones específicas (constancias, reportes, seguimiento)
-- Usa el contexto de la escuela y ciclo escolar
-- NO menciones términos técnicos (SQL, base de datos, validación)
+📊 IMPORTANTE - USO DATOS REALES SIEMPRE:
+- Los datos en RESULTADOS OBTENIDOS son REALES de nuestra base de datos
+- MUESTRO estos datos tal como están, nunca invento placeholders
+- Si hay nombres, CURPs, grados - los USO directamente
+- NUNCA digo "[Listado aquí]" - MUESTRO el listado real completo
+
+✅ CRITERIOS DE VALIDACIÓN:
+- ¿Los datos responden exactamente la pregunta del usuario?
+- ¿Los resultados tienen sentido en el contexto de nuestra escuela?
+- ¿La cantidad de resultados es lógica para la consulta?
+- ¿Los datos mostrados son relevantes y útiles?
+
+🎭 FORMATO DE RESPUESTA NATURAL (si validación exitosa):
+- Presento la información como el asistente inteligente de la escuela
+- Contextualizo los datos dentro de nuestro marco escolar real
+- Ofrezco acciones específicas (constancias, más información, seguimiento)
+- Uso el contexto de nuestra escuela "PROF. MAXIMO GAMIZ FERNANDEZ" y ciclo 2024-2025
+- NUNCA menciono términos técnicos (SQL, base de datos, validación)
 
 REGLAS PARA MOSTRAR DATOS REALES:
 - SIEMPRE muestra los datos reales obtenidos de la consulta
@@ -687,6 +711,14 @@ EJEMPLOS INTELIGENTES BASADOS EN LA ESTRUCTURA REAL:
 - "alumnos que tengan calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NOT NULL AND de.calificaciones != '[]' AND de.calificaciones != ''
 - "2 alumnos al azar que tengan calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NOT NULL AND de.calificaciones != '[]' AND de.calificaciones != '' ORDER BY RANDOM() LIMIT 2
 - "alumnos sin calificaciones" → SELECT a.nombre, a.curp, de.grado, de.grupo FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.calificaciones IS NULL OR de.calificaciones = '[]' OR de.calificaciones = ''
+
+🧮 EJEMPLOS ANALÍTICOS AVANZADOS (calificaciones como lista de materias):
+- "promedio general de 5to grado" → SELECT AVG(CAST(JSON_EXTRACT(materia.value, '$.promedio') AS REAL)) as promedio_general FROM datos_escolares de, JSON_EACH(de.calificaciones) as materia WHERE de.grado = 5 AND de.calificaciones IS NOT NULL AND de.calificaciones != '[]'
+- "cuántos alumnos de 5to grado tienen calificaciones" → SELECT COUNT(DISTINCT de.alumno_id) as cantidad FROM datos_escolares de WHERE de.grado = 5 AND de.calificaciones IS NOT NULL AND de.calificaciones != '[]' AND de.calificaciones != ''
+- "alumnos de 5to grado con sus promedios" → SELECT a.nombre, de.grado, de.grupo, AVG(CAST(JSON_EXTRACT(materia.value, '$.promedio') AS REAL)) as promedio_alumno FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id, JSON_EACH(de.calificaciones) as materia WHERE de.grado = 5 AND de.calificaciones IS NOT NULL GROUP BY a.id, a.nombre ORDER BY promedio_alumno DESC
+- "qué grupo tiene mejor rendimiento en 3er grado" → SELECT de.grupo, AVG(CAST(JSON_EXTRACT(materia.value, '$.promedio') AS REAL)) as promedio_grupo FROM datos_escolares de, JSON_EACH(de.calificaciones) as materia WHERE de.grado = 3 AND de.calificaciones IS NOT NULL GROUP BY de.grupo ORDER BY promedio_grupo DESC
+- "distribución de alumnos por grado con calificaciones" → SELECT de.grado, COUNT(DISTINCT de.alumno_id) as alumnos_con_calificaciones FROM datos_escolares de WHERE de.calificaciones IS NOT NULL AND de.calificaciones != '[]' GROUP BY de.grado ORDER BY de.grado
+- "estadísticas de calificaciones por materia en 4to grado" → SELECT JSON_EXTRACT(materia.value, '$.nombre') as materia_nombre, AVG(CAST(JSON_EXTRACT(materia.value, '$.promedio') AS REAL)) as promedio_materia, COUNT(*) as total_alumnos FROM datos_escolares de, JSON_EACH(de.calificaciones) as materia WHERE de.grado = 4 AND de.calificaciones IS NOT NULL GROUP BY materia_nombre ORDER BY promedio_materia DESC
 
 RESPONDE ÚNICAMENTE con la consulta SQL, sin explicaciones adicionales.
 """

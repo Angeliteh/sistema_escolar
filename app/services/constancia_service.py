@@ -15,6 +15,7 @@ from app.core.pdf_extractor import PDFExtractor
 from app.core.pdf_generator import PDFGenerator
 from app.core.config import Config
 from app.core.utils import ensure_directories_exist
+from app.core.executable_paths import get_path_manager
 
 class ConstanciaService:
     """Servicio para gestión de constancias"""
@@ -29,7 +30,10 @@ class ConstanciaService:
         if db_connection:
             self.conn = db_connection
         else:
-            self.conn = sqlite3.connect(Config.DB_PATH)
+            # Usar gestor de rutas para obtener la ruta correcta de la BD
+            path_manager = get_path_manager()
+            db_path = str(path_manager.get_database_path())
+            self.conn = sqlite3.connect(db_path)
             self.conn.row_factory = sqlite3.Row
 
         self.alumno_repository = AlumnoRepository(self.conn)
@@ -271,13 +275,15 @@ class ConstanciaService:
                 })
 
             # Verificar si hay foto y si se debe incluir
-            foto_path = os.path.join(Config.PHOTOS_DIR, f"{alumno.curp}.jpg")
+            path_manager = get_path_manager()
+            photos_dir = path_manager.get_photos_dir()
+            foto_path = photos_dir / f"{alumno.curp}.jpg"
 
             # Solo incluir foto si el usuario lo ha solicitado explícitamente
             if incluir_foto:
-                if os.path.exists(foto_path):
+                if foto_path.exists():
                     datos["has_photo"] = True
-                    datos["foto_path"] = foto_path
+                    datos["foto_path"] = str(foto_path)
                     datos["show_placeholder"] = True
                 else:
                     # Si no hay foto pero se solicitó incluirla, mostrar un espacio para foto

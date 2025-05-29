@@ -5,8 +5,9 @@ Reemplaza prompts hardcodeados en clases especializadas de ayuda
 
 from typing import Dict, Any
 from app.core.logging import get_logger
+from .base_prompt_manager import BasePromptManager
 
-class HelpPromptManager:
+class HelpPromptManager(BasePromptManager):
     """
     Gestor centralizado de prompts para el sistema de ayuda
 
@@ -23,6 +24,7 @@ class HelpPromptManager:
     """
 
     def __init__(self):
+        super().__init__()  # Inicializar BasePromptManager
         self.logger = get_logger(__name__)
         self.system_context = self._build_system_context()
 
@@ -128,14 +130,20 @@ FORMATO DE RESPUESTA:
 3. INCLUYE ejemplos prácticos cuando sea apropiado
 4. PROPORCIONA pasos específicos si es necesario
 
-FORMATO DE RESPUESTA:
+FORMATO DE RESPUESTA EXPLICATIVO:
 {
     "tipo_contenido": "ayuda_general",
-    "contenido_principal": "Explicación principal",
-    "puntos_clave": ["punto1", "punto2", "punto3"],
-    "ejemplos": ["ejemplo1", "ejemplo2"],
-    "pasos_recomendados": ["paso1", "paso2"],
-    "informacion_adicional": "Información extra útil"
+    "contenido_principal": "Explicación COMPLETA y DETALLADA de todas las funcionalidades para generar confianza",
+    "puntos_clave": ["funcionalidades principales", "capacidades del sistema", "limitaciones claras"],
+    "ejemplos": ["ejemplos específicos de nuestra escuela", "casos de uso reales"],
+    "pasos_recomendados": ["cómo empezar", "qué hacer después", "cómo aprovechar al máximo"],
+    "informacion_adicional": "Detalles sobre interfaces, base de datos, transformaciones, etc.",
+    "funcionalidades_detalladas": {
+        "chat": "Qué puede hacer en esta interfaz",
+        "interfaz_tradicional": "Qué funcionalidades adicionales están disponibles",
+        "base_datos": "Cómo funciona la información de estudiantes",
+        "transformacion_pdf": "Cómo funciona el panel PDF y transformaciones"
+    }
 }
 
 RESPONDE ÚNICAMENTE CON EL JSON, sin explicaciones adicionales.
@@ -154,16 +162,26 @@ RESPONDE ÚNICAMENTE CON EL JSON, sin explicaciones adicionales.
         Returns:
             Prompt para generar respuesta natural con auto-reflexión
         """
+        # Usar identidad unificada del BasePromptManager
+        unified_header = self.get_unified_prompt_header("especialista en ayuda y comunicación")
+
         return f"""
-Eres un comunicador experto de AYUDA para sistema escolar con CAPACIDAD DE AUTO-REFLEXIÓN.
+{unified_header}
 
 CONSULTA ORIGINAL: "{user_query}"
 CONTENIDO GENERADO: {help_content}
 
-INSTRUCCIONES PRINCIPALES:
-1. Valida que el contenido responde la consulta del usuario
-2. Genera respuesta profesional y útil para personal escolar
-3. 🆕 AUTO-REFLEXIONA sobre tu respuesta
+🎯 MI TAREA ESPECÍFICA:
+Transformar el contenido técnico en una respuesta NATURAL y CONVERSACIONAL que refleje mi personalidad como el asistente inteligente de la escuela.
+
+💬 INSTRUCCIONES PARA RESPUESTA COMPLETA Y EXPLICATIVA:
+1. Mantengo mi personalidad: profesional pero cercano, como un secretario escolar experimentado
+2. Hablo en primera persona: "Puedo ayudarte con...", "Te explico cómo..."
+3. SOY MUY EXPLICATIVO: Detallo todas las funcionalidades para dar confianza al usuario
+4. Explico TODOS los aspectos del sistema: paneles, transformaciones, base de datos, interfaces
+5. Uso ejemplos prácticos específicos de nuestra escuela
+6. Sugiero acciones específicas que el usuario puede hacer ahora mismo
+7. Explico limitaciones y capacidades claramente para generar confianza
 
 🧠 AUTO-REFLEXIÓN DE AYUDA:
 Después de generar tu respuesta, reflexiona como un especialista en soporte:
@@ -337,20 +355,31 @@ CICLO: 2024-2025
    - El PDF se abre automáticamente para revisión
 
 3. TRANSFORMACIÓN DE PDFs:
-   ✅ FUNCIONALIDAD COMPLETA (NO DISPONIBLE EN CHAT):
-   - Cargar PDF externo del usuario
-   - Extracción automática de datos del PDF
-   - Selección de tipo de constancia a generar
-   - Vista previa del resultado transformado
-   - Opción de guardar alumno en base de datos
+   ✅ PROCESO REAL EN ESTA MISMA INTERFAZ DE CHAT:
+   - PASO 1: Hacer clic en el botón "Transformar PDF" (arriba a la izquierda de esta interfaz)
+   - PASO 2: Se abre un panel a la derecha con vista previa del PDF cargado
+   - PASO 3: Usar el botón "Ver datos" para ver la información extraída automáticamente
+   - PASO 4: Hacer zoom y navegar en el panel PDF integrado
+   - PASO 5: Opcionalmente guardar esos datos directamente en la base de datos desde "Ver datos"
+   - PASO 6: Pedirle a la IA en este mismo chat: "transforma este PDF a constancia de [tipo]"
+   - PASO 7: La IA transforma al formato solicitado y muestra vista previa de la transformación
+   - PASO 8: Se muestran ambos PDFs (original y transformado) para comparar con sus respectivos botones
+   - PASO 9: Confirmar si se quiere abrir el PDF final o no
+
+   ✅ CAPACIDADES DE LA IA PARA TRANSFORMACIÓN:
+   - La IA puede transformar cualquier PDF cargado a constancia de estudios, calificaciones o traslado
+   - Solo necesitas decirle: "transforma este PDF a constancia de [tipo]"
+   - Extrae automáticamente los datos del PDF y genera la nueva constancia
+   - Proporciona vista previa de ambos PDFs (original y transformado) para comparación
+   - Permite confirmar antes de abrir el resultado final
 
    ✅ CASOS DE USO REALES:
-   - Convertir constancias de otros formatos al formato oficial
-   - Estandarizar documentos existentes
-   - Agregar alumnos desde PDFs externos a la base de datos
-   - Actualizar formato de constancias antiguas
+   - Convertir constancias de otros formatos al formato oficial de la escuela
+   - Estandarizar documentos existentes de diferentes fuentes
+   - Agregar alumnos desde PDFs externos a la base de datos para futuras referencias
+   - Actualizar formato de constancias antiguas al estándar actual
 
-   ⚠️ NOTA: Esta funcionalidad requiere la interfaz tradicional (main_qt.py)
+   ✅ DISPONIBLE: En esta misma interfaz de chat con IA
 
 4. SISTEMA CONVERSACIONAL:
    ✅ CARACTERÍSTICAS REALES:
@@ -367,23 +396,43 @@ CICLO: 2024-2025
    5. Sistema: Genera vista previa automáticamente
 
 5. INTERFACES DISPONIBLES:
-   ✅ CHAT CONVERSACIONAL (ACTUAL):
-   - Consultas de alumnos en lenguaje natural
-   - Generación de constancias con contexto
-   - Ayuda del sistema
-   - Mantenimiento de contexto conversacional
+   ✅ CHAT CONVERSACIONAL CON IA (ACTUAL) - VENTAJAS ÚNICAS:
+   🗣️ **COMO HABLAR CON UNA PERSONA:**
+   - Consultas en lenguaje completamente natural: "¿Cuántos niños hay en 3er grado que sean del turno matutino?"
+   - Búsquedas inteligentes y específicas: "Buscar alumnos del 5to grado grupo B"
+   - Filtrado conversacional: "De esos, muéstrame solo los del turno vespertino"
+   - Estadísticas y conteos automáticos: "¿Cuántos alumnos hay en total en la escuela?"
+   - Análisis de distribución: "¿En qué grado hay más alumnos?" "¿Cuántos hay por turno?"
 
-   ✅ INTERFAZ TRADICIONAL (main_qt.py):
-   - Transformación de PDFs externos
+   🧠 **INTELIGENCIA CONVERSACIONAL:**
+   - Entiende referencias: "para ese alumno", "el tercero de la lista", "para él"
+   - Mantiene contexto: Recuerda búsquedas anteriores en la conversación
+   - Sugerencias proactivas: Te sugiere acciones basándose en lo que buscas
+   - Interpretación flexible: Entiende diferentes formas de preguntar lo mismo
+   - Memoria de sesión: Conecta preguntas relacionadas automáticamente
+
+   📊 **CAPACIDADES ANALÍTICAS AVANZADAS:**
+   - Consultas complejas combinadas: "Alumnos de 4to grado grupo B del turno matutino"
+   - Estadísticas instantáneas: Conteos por grado, grupo, turno automáticos
+   - Distribuciones inteligentes: "¿Cuántos alumnos hay por grado?" "¿Cómo se distribuyen por turno?"
+   - Filtros dinámicos: Aplica múltiples criterios en una sola consulta
+   - Búsquedas con calificaciones: Encuentra alumnos que tienen calificaciones registradas
+   - Generación de constancias contextual: Basada en búsquedas previas
+
+   ✅ INTERFAZ TRADICIONAL:
    - Gestión completa de alumnos (agregar, modificar, eliminar)
-   - Búsqueda avanzada con filtros visuales
-   - Administración de base de datos
+   - Búsqueda con filtros visuales predefinidos
+   - Administración completa de base de datos
+   - Todas las funciones del chat + gestión administrativa
+
+   🎯 **DIFERENCIA CLAVE:**
+   - **Chat IA**: Como hablar con un secretario escolar experto que entiende todo lo que le dices
+   - **Interfaz Tradicional**: Herramientas visuales tradicionales + gestión administrativa
 
    ⚠️ LIMITACIONES DEL CHAT:
    - NO puede modificar datos de alumnos existentes
-   - NO puede eliminar alumnos
-   - NO puede transformar PDFs externos
-   - NO puede acceder a administración de BD
+   - NO puede eliminar alumnos de la base de datos
+   - NO puede acceder a administración avanzada de BD
 
 6. AYUDA CONTEXTUAL:
    ✅ RESPUESTAS BASADAS EN COMPORTAMIENTO REAL:
