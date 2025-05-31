@@ -1,5 +1,6 @@
 """
 Procesador de mensajes y comandos para la interfaz de chat
+VERSIÓN SIMPLIFICADA CON SISTEMA DE PLANTILLAS SQL
 """
 import random
 from datetime import datetime
@@ -7,23 +8,28 @@ from typing import Dict, Any
 from app.core.config import Config
 from app.core.logging import get_logger
 
-# CommandExecutor eliminado - ahora usamos MasterInterpreter directamente
-
 class MessageProcessor:
-    """Procesador de mensajes y comandos para la interfaz de chat"""
+    """Procesador de mensajes simplificado con sistema de plantillas SQL"""
 
     def __init__(self, gemini_client=None, pdf_panel=None):
         """Inicializa el procesador de mensajes"""
         self.gemini_client = gemini_client
         self.pdf_panel = pdf_panel
-        # NUEVO: Sin CommandExecutor, MasterInterpreter se inicializa cuando se necesita
-        self.master_interpreter = None
 
-        # NUEVO: Contexto conversacional inteligente
+        # 🆕 LOGGING CENTRALIZADO
+        self.logger = get_logger(__name__)
+
+        # 🎯 INICIALIZAR MASTER INTERPRETER AL CARGAR EL SISTEMA
+        self.logger.info("🎯 [MESSAGEPROCESSOR] Inicializando MasterInterpreter al cargar sistema...")
+        from app.core.ai.interpretation.master_interpreter import MasterInterpreter
+        self.master_interpreter = MasterInterpreter(self.gemini_client)
+        self.logger.info("✅ [MESSAGEPROCESSOR] MasterInterpreter inicializado y listo")
+
+        # CONTEXTO CONVERSACIONAL SIMPLE
         self.conversation_history = []
-        self.last_query_results = None  # Para referencias a resultados anteriores
+        self.last_query_results = None
 
-        # NUEVO: Pila conversacional dinámica
+        # 🔧 ATRIBUTOS REQUERIDOS PARA COMPATIBILIDAD
         self.conversation_stack = []
         self.awaiting_continuation = False
 
@@ -31,8 +37,9 @@ class MessageProcessor:
         self.greeting_phrases = Config.RESPONSES['greeting_phrases']
         self.success_phrases = Config.RESPONSES['success_phrases']
 
-        # 🆕 LOGGING CENTRALIZADO
-        self.logger = get_logger(__name__)
+        self.logger.info("✅ MessageProcessor inicializado con MasterInterpreter cargado")
+
+
 
 
 
@@ -84,26 +91,24 @@ class MessageProcessor:
         return self._execute_with_master_interpreter(command_data)
 
     def _execute_with_master_interpreter(self, command_data):
-        """Ejecuta comando directamente con MasterInterpreter (sin CommandExecutor)"""
+        """Ejecuta comando con sistema de plantillas SQL (simplificado)"""
         try:
             accion = command_data.get("accion", "")
             parametros = command_data.get("parametros", {})
             original_query = command_data.get("original_query", "")
             conversation_context = command_data.get("conversation_context", {})
 
-            self.logger.debug(f"Procesando directamente: {accion}")
-            self.logger.debug(f"Historial conversacional actual: {len(self.conversation_history)} mensajes")
-
-            # Inicializar MasterInterpreter si no existe
-            if not hasattr(self, 'master_interpreter') or self.master_interpreter is None:
-                from app.core.ai.interpretation.master_interpreter import MasterInterpreter
-                self.master_interpreter = MasterInterpreter(self.gemini_client)
+            self.logger.debug(f"Procesando: {accion}")
+            self.logger.debug(f"Query original: {original_query}")
 
             # Preparar consulta para procesar
             consulta_para_procesar = original_query or parametros.get("consulta_original", "")
 
             if not consulta_para_procesar:
                 return False, "No se pudo determinar la consulta a procesar", {}
+
+            # 🎯 FLUJO PRINCIPAL: MASTERINTERPRETER
+            self.logger.info("🎯 [MESSAGEPROCESSOR] Procesando con MasterInterpreter (ya inicializado)")
 
             self.logger.debug(f"Enviando a MasterInterpreter: '{consulta_para_procesar}'")
 
@@ -178,12 +183,36 @@ class MessageProcessor:
                     else:
                         self.logger.info("❌ LLM auto-reflexión: No espera continuación")
 
-                    # NUEVO: Guardar conversación con resultados
-                    self.logger.debug(f"Guardando conversación: '{consulta_para_procesar}' -> '{message[:50]}...'")
-                    self.add_to_conversation(consulta_para_procesar, message, result.parameters)
-                    self.logger.debug(f"Total mensajes en historial: {len(self.conversation_history)}")
+                    # 🎯 CONFIGURAR DATOS ESTRUCTURADOS PARA DATADISPLAYMANAGER
+                    data = result.parameters.get("data", [])
+                    row_count = result.parameters.get("row_count", 0)
 
-                    return True, message, result.parameters
+                    # Si hay datos, configurar para mostrar con DataDisplayManager
+                    if data and row_count > 0:
+                        self.logger.info(f"🎯 Datos estructurados detectados ({row_count} registros) - Configurando para DataDisplayManager")
+
+                        # Configurar parámetros para DataDisplayManager
+                        formatted_parameters = result.parameters.copy()
+                        formatted_parameters["action"] = "show_data"
+
+                        # Mantener datos en formato original para que DataDisplayManager los detecte
+                        # No necesitamos agregar clave "alumnos" - DataDisplayManager lo detecta automáticamente
+
+                        # NUEVO: Guardar conversación con resultados formateados
+                        self.logger.debug(f"Guardando conversación con datos estructurados: '{consulta_para_procesar}' -> '{message[:50]}...'")
+                        self.add_to_conversation(consulta_para_procesar, message, formatted_parameters)
+                        self.logger.debug(f"Total mensajes en historial: {len(self.conversation_history)}")
+
+                        return True, message, formatted_parameters
+
+                    else:
+                        # Sin datos estructurados, procesar normalmente
+                        # NUEVO: Guardar conversación con resultados
+                        self.logger.debug(f"Guardando conversación: '{consulta_para_procesar}' -> '{message[:50]}...'")
+                        self.add_to_conversation(consulta_para_procesar, message, result.parameters)
+                        self.logger.debug(f"Total mensajes en historial: {len(self.conversation_history)}")
+
+                        return True, message, result.parameters
 
                 elif result.action in ["ayuda_proporcionada", "ayuda_funcionalidades", "ayuda_solucion", "ayuda_ejemplo",
                                      "conversacion_general", "estadisticas_generadas",
@@ -315,6 +344,10 @@ class MessageProcessor:
         except Exception as e:
             self.logger.error(f"Error en _execute_with_master_interpreter: {str(e)}")
             return False, f"Error procesando consulta: {str(e)}", {}
+
+
+
+
 
     def get_current_time(self):
         """Obtiene la hora actual en formato HH:MM"""
@@ -548,3 +581,7 @@ PATRONES DE CONTINUACIÓN:
 
         self.logger.debug("No se detectó patrón de continuación")
         return None  # No espera continuación
+
+    # 🗑️ MÉTODOS DEL SISTEMA DE MEMORIA PROBLEMÁTICO ELIMINADOS
+    # El sistema de plantillas SQL los reemplaza completamente
+

@@ -106,11 +106,26 @@ Mantengo el contexto de nuestra conversación para detectar continuaciones y ref
 TIPOS DE INTENCIÓN DISPONIBLES:
 
 1. **consulta_alumnos**: Gestión de datos de estudiantes y constancias
-   - Sub-intenciones: busqueda_simple, generar_constancia, estadisticas, listado_completo
-   - ✅ Búsquedas: "buscar Juan Pérez", "alumnos de 3er grado", "cuántos estudiantes hay"
-   - ✅ Constancias: "constancia de estudios para María García", "generar constancia de calificaciones"
-   - ✅ Estadísticas: "cuántos alumnos hay en total", "distribución por grados"
-   - ❌ NO incluye: Preguntas teóricas sobre tipos o procesos
+   - Sub-intenciones OFICIALES (según INTENCIONES_ACCIONES_DEFINITIVAS.md):
+     * **busqueda_simple**: Búsquedas con 1-2 criterios básicos y directos
+     * **busqueda_compleja**: Búsquedas con múltiples criterios (3+) o campos especiales
+     * **estadisticas**: Cálculos, conteos y análisis estadísticos
+     * **generar_constancia**: Generación de documentos oficiales PDF
+     * **transformacion_pdf**: Transformación de constancias entre formatos
+
+   🎯 **CRITERIOS DE CLASIFICACIÓN**:
+   - **busqueda_simple**: 1-2 criterios básicos (nombre, grado, grupo, turno)
+   - **busqueda_compleja**: 3+ criterios combinados O campos especiales (promedio)
+   - **estadisticas**: Solicita números, conteos, promedios ("cuántos", "total")
+   - **generar_constancia**: Solicita documentos ("constancia", "certificado")
+   - **transformacion_pdf**: Conversión de formatos ("convertir", "transformar")
+
+   📋 **EJEMPLOS POR SUB-INTENCIÓN**:
+   - **busqueda_simple**: "buscar García", "alumnos de 2do A", "turno matutino"
+   - **busqueda_compleja**: "alumnos de 2do A turno matutino", "García del vespertino con calificaciones"
+   - **estadisticas**: "cuántos alumnos hay", "total por grado", "distribución de estudiantes"
+   - **generar_constancia**: "constancia para Juan Pérez", "certificado de María García"
+   - **transformacion_pdf**: "convertir PDF", "cambiar formato de constancia"
 
 2. **transformacion_pdf**: Procesar PDFs de constancias en el panel integrado
    - Sub-intenciones: cargar_pdf, transformar_formato, comparar_formatos
@@ -129,8 +144,9 @@ TIPOS DE INTENCIÓN DISPONIBLES:
 
 REGLAS ESPECIALES PARA CONTINUACIONES:
 - Si hay contexto conversacional previo, analiza si es continuación
-- Continuaciones de alumnos → SIEMPRE "consulta_alumnos"
+- Continuaciones de alumnos → SIEMPRE "consulta_alumnos" con "busqueda_simple"
 - Palabras como "sí", "generala", "para él" → continuaciones
+- Filtros sobre datos previos → "busqueda_simple" (usar BUSCAR_UNIVERSAL)
 - Usa "fuente_datos": "conversacion_previa" para continuaciones
 
 REGLAS CRÍTICAS PARA EVITAR CONFUSIONES:
@@ -173,6 +189,15 @@ INSTRUCCIONES FINALES:
 6. Extrae entidades relevantes (nombres, tipos, acciones)
 7. 🆕 DETECTA SI SE SOLICITA FOTO: Busca palabras como "con foto", "incluir foto", "foto", "fotografía"
 8. Asigna confianza basada en claridad y especificidad de la consulta
+
+DETECCIÓN DE TIPO DE CONSTANCIA:
+- "constancia de estudios" → tipo_constancia: "estudios"
+- "constancia de calificaciones" → tipo_constancia: "calificaciones"
+- "constancia de traslado" → tipo_constancia: "traslado"
+- "certificado de estudios" → tipo_constancia: "estudios"
+- "certificado de calificaciones" → tipo_constancia: "calificaciones"
+- "constancia" (sin especificar) → tipo_constancia: "estudios" (por defecto)
+- "genera una constancia" → tipo_constancia: "estudios" (por defecto)
 
 DETECCIÓN DE FOTO:
 - "constancia con foto" → incluir_foto: true

@@ -124,8 +124,8 @@ class ConstanciaProcessor:
             self.logger.info(f"   - Alumno: {alumno.get('nombre')} (ID: {alumno_id})")
             self.logger.info(f"   - Preview mode: True")
 
-            # 🆕 DETECTAR SI SE SOLICITA FOTO EN LA CONSULTA
-            incluir_foto = self._detect_photo_request(user_query)
+            # 🎯 LÓGICA INTELIGENTE DE FOTO
+            incluir_foto = self._detect_photo_request_intelligent(user_query)
 
             # Generar vista previa
             self.logger.info("🔄 Llamando a constancia_service.generar_constancia_para_alumno()...")
@@ -173,17 +173,19 @@ INFORMACIÓN DE LA CONSTANCIA GENERADA:
 - Archivo: {data.get('ruta_archivo', 'N/A')}
 
 INSTRUCCIONES:
-1. Genera una respuesta amigable confirmando la generación
-2. Incluye auto-reflexión sobre posibles acciones siguientes
+1. Genera UNA SOLA respuesta consolidada y limpia
+2. NO preguntes si quiere abrir el archivo
+3. Simplemente confirma que se generó y está visible en el panel
+4. NO esperes continuación - la tarea está completa
 
 RESPONDE con un JSON:
 {{
-    "respuesta_usuario": "Mensaje amigable para el usuario",
+    "respuesta_usuario": "✅ Constancia de [tipo] generada exitosamente para [nombre]. La vista previa está disponible en el panel derecho.",
     "reflexion_conversacional": {{
-        "espera_continuacion": true|false,
-        "tipo_esperado": "confirmation|action|none",
-        "datos_recordar": {{"constancia_generada": true, "alumno": "nombre", "tipo": "tipo"}},
-        "razonamiento": "Por qué esperas o no continuación"
+        "espera_continuacion": false,
+        "tipo_esperado": "none",
+        "datos_recordar": {{}},
+        "razonamiento": "La constancia se generó exitosamente y está visible en el panel. No se requiere acción adicional."
     }}
 }}
 """
@@ -292,6 +294,34 @@ RESPONDE con un JSON:
         photo_keywords = ["con foto", "incluir foto", "foto", "fotografía", "imagen"]
 
         return any(keyword in user_lower for keyword in photo_keywords)
+
+    def _detect_photo_request_intelligent(self, user_query: str) -> bool:
+        """
+        🎯 LÓGICA INTELIGENTE DE FOTO:
+        - Si dice "sin foto" → False (no incluir)
+        - Si dice "con foto" → True (incluir)
+        - Si no especifica → None (automático: mostrar si existe)
+        """
+        if not user_query:
+            return None  # Comportamiento automático
+
+        user_lower = user_query.lower()
+
+        # Detectar solicitud explícita de NO incluir foto
+        no_photo_keywords = ["sin foto", "no foto", "sin fotografía", "no fotografía", "sin imagen"]
+        if any(keyword in user_lower for keyword in no_photo_keywords):
+            self.logger.info("🚫 Usuario solicita explícitamente NO incluir foto")
+            return False
+
+        # Detectar solicitud explícita de incluir foto
+        photo_keywords = ["con foto", "incluir foto", "foto", "fotografía", "imagen"]
+        if any(keyword in user_lower for keyword in photo_keywords):
+            self.logger.info("📸 Usuario solicita explícitamente incluir foto")
+            return True
+
+        # Si no especifica, usar comportamiento automático (None = mostrar si existe)
+        self.logger.info("🎯 Comportamiento automático: mostrar foto si existe")
+        return None
 
     def _create_error_result(self, message: str, error_code: str) -> InterpretationResult:
         """Crea un resultado de error estandarizado"""

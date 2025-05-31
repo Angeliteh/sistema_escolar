@@ -15,6 +15,13 @@ from app.ui.ai_chat.gemini_client import GeminiClient
 from app.ui.ai_chat.message_processor import MessageProcessor
 from app.core.logging import get_logger
 
+# 🆕 IMPORTAR NUEVO SISTEMA DE ORQUESTACIÓN (OPCIONAL)
+try:
+    from app.core.ai.orchestration.master_orchestrator import MasterOrchestrator
+    ORCHESTRATOR_AVAILABLE = True
+except ImportError:
+    ORCHESTRATOR_AVAILABLE = False
+
 class ChatResponse:
     """Respuesta estructurada del chat"""
 
@@ -51,12 +58,14 @@ class ChatEngine:
     def __init__(self,
                  file_handler: Optional[Callable] = None,
                  confirmation_handler: Optional[Callable] = None,
-                 pdf_panel = None):
+                 pdf_panel = None,
+                 use_orchestrator: bool = False):
         """
         Args:
             file_handler: Función para manejar archivos (abrir PDFs, etc.)
             confirmation_handler: Función para manejar confirmaciones
             pdf_panel: Panel de PDF para transformaciones
+            use_orchestrator: Si usar el nuevo sistema de orquestación (experimental)
         """
         self.logger = get_logger(__name__)
         self.service_provider = ServiceProvider.get_instance()
@@ -64,6 +73,14 @@ class ChatEngine:
 
         # 🆕 GUARDAR PDF_PANEL COMO ATRIBUTO PARA ACCESO EN WORKER THREADS
         self.pdf_panel = pdf_panel
+
+        # 🆕 SISTEMA DE ORQUESTACIÓN OPCIONAL
+        self.use_orchestrator = use_orchestrator and ORCHESTRATOR_AVAILABLE
+        if self.use_orchestrator:
+            self.master_orchestrator = MasterOrchestrator()
+            self.logger.info("🎯 MasterOrchestrator habilitado")
+        else:
+            self.master_orchestrator = None
 
         self.message_processor = MessageProcessor(self.gemini_client, pdf_panel)
 
@@ -74,7 +91,8 @@ class ChatEngine:
         # Estado del chat (historial manejado por MessageProcessor)
         self.context = {}
 
-        self.logger.info("ChatEngine inicializado")
+        orchestrator_status = "con MasterOrchestrator" if self.use_orchestrator else "sistema tradicional"
+        self.logger.info(f"ChatEngine inicializado ({orchestrator_status})")
 
     def process_message(self, message: str, user_context: Optional[Dict] = None) -> ChatResponse:
         """
@@ -88,7 +106,7 @@ class ChatEngine:
             ChatResponse con la respuesta procesada
         """
         try:
-            self.logger.info(f"Procesando mensaje: {message[:50]}...")
+            self.logger.info(f"🎯 [CHATENGINE] Procesando: '{message[:50]}...'")
 
             # Actualizar contexto
             if user_context:
@@ -109,7 +127,11 @@ class ChatEngine:
     def _process_with_ai(self, message: str) -> ChatResponse:
         """Procesa el mensaje con el servicio de IA usando GeminiClient centralizado"""
         try:
-            # 🚀 FLUJO DIRECTO: Sin create_prompt, directo a MasterInterpreter
+            # 🎯 NUEVO: USAR ORCHESTRATOR SI ESTÁ HABILITADO
+            if self.use_orchestrator and self.master_orchestrator:
+                return self._process_with_orchestrator(message)
+
+            # 🔄 FLUJO TRADICIONAL: Sin create_prompt, directo a MasterInterpreter
             # Crear comando directo para el MessageProcessor
             command_data = {
                 "accion": "consulta_directa",
@@ -133,6 +155,55 @@ class ChatEngine:
                 text=f"❌ Error en el servicio de IA: {str(e)}",
                 success=False
             )
+
+    def _process_with_orchestrator(self, message: str) -> ChatResponse:
+        """🎯 NUEVO: Procesa con MasterOrchestrator"""
+        try:
+            self.logger.info(f"🎯 [ORCHESTRATOR] Procesando: {message[:50]}...")
+
+            # TODO: Crear contexto apropiado para el orchestrator
+            # Por ahora, usar un contexto básico
+            from app.core.ai.interpretation.base_interpreter import InterpretationContext
+
+            context = InterpretationContext(
+                user_message=message,
+                conversation_stack=getattr(self.message_processor, 'conversation_stack', []),
+                additional_context=self.context
+            )
+
+            # Procesar con orchestrator
+            result = self.master_orchestrator.process_query(message, context)
+
+            # Convertir resultado a ChatResponse
+            return ChatResponse(
+                text=result.get('message', result.get('text', 'Procesado por orchestrator')),
+                success=result.get('success', True),
+                action=result.get('action'),
+                data=result.get('data', {}),
+                files=result.get('files', [])
+            )
+
+        except Exception as e:
+            self.logger.error(f"❌ [ORCHESTRATOR] Error: {e}")
+            # Fallback al sistema tradicional
+            self.logger.info("🔄 Fallback al sistema tradicional")
+            return self._process_with_traditional_system(message)
+
+    def _process_with_traditional_system(self, message: str) -> ChatResponse:
+        """🔄 Sistema tradicional como fallback"""
+        command_data = {
+            "accion": "consulta_directa",
+            "parametros": {"consulta_original": message}
+        }
+
+        success, response_text, data = self.message_processor.process_command(
+            command_data,
+            None,  # current_pdf
+            message,  # original_query
+            self.context  # conversation_context
+        )
+
+        return self._analyze_ai_response(response_text, data, success)
 
     def _analyze_ai_response(self, ai_response: str, command_data: dict, command_success: bool) -> ChatResponse:
         """Analiza la respuesta de IA para determinar acciones necesarias"""
@@ -160,27 +231,34 @@ class ChatEngine:
                             generated_files.append(file_path)
                             action = "open_file"
 
-        # NUEVO: Buscar archivos PDF recientes en temp (últimos 30 segundos)
-        import tempfile
-        import time
+        # 🎯 DETECCIÓN INTELIGENTE DE PDF - SOLO PARA CONSTANCIAS GENERADAS
+        # Solo buscar archivos PDF si command_data indica que se generó una constancia
+        if (command_data and isinstance(command_data, dict) and
+            (command_data.get('action') == 'constancia_preview' or
+             'constancia' in str(command_data.get('message', '')).lower() or
+             'ruta_archivo' in command_data)):
 
-        temp_dir = tempfile.gettempdir()
-        current_time = time.time()
+            import tempfile
+            import time
 
-        # Buscar archivos PDF recientes
-        for root, _, files in os.walk(temp_dir):
-            for file in files:
-                if file.endswith('.pdf') and 'constancia' in file.lower():
-                    file_path = os.path.join(root, file)
-                    try:
-                        # Verificar si el archivo es reciente (últimos 30 segundos)
-                        file_time = os.path.getmtime(file_path)
-                        if current_time - file_time < 30:
-                            generated_files.append(file_path)
-                            action = "open_file"
-                            self.logger.info(f"Archivo PDF reciente detectado: {file_path}")
-                    except:
-                        pass
+            temp_dir = tempfile.gettempdir()
+            current_time = time.time()
+
+            # Buscar archivos PDF recientes SOLO cuando se generó una constancia
+            for root, _, files in os.walk(temp_dir):
+                for file in files:
+                    if file.endswith('.pdf') and 'constancia' in file.lower():
+                        file_path = os.path.join(root, file)
+                        try:
+                            # Verificar si el archivo es muy reciente (últimos 5 segundos)
+                            file_time = os.path.getmtime(file_path)
+                            if current_time - file_time < 5:
+                                if file_path not in generated_files:
+                                    generated_files.append(file_path)
+                                    action = "open_file"
+                                    self.logger.info(f"Archivo PDF de constancia detectado: {file_path}")
+                        except:
+                            pass
 
         # 🆕 DETECTAR CONSTANCIAS EN COMMAND_DATA
         # (La integración completa con interpretadores se hará después)
@@ -211,17 +289,33 @@ class ChatEngine:
 
         # Detectar datos estructurados (listas, tablas)
         data = command_data if command_data else {}
-        if "📊" in ai_response or "📋" in ai_response:
-            action = action or "show_data"
 
-        # Mejorar mensaje si se generaron archivos
+        # 🔧 PRIORIZAR ACTION DE COMMAND_DATA (configurado por MessageProcessor)
+        if command_data and isinstance(command_data, dict) and "action" in command_data:
+            action = action or command_data["action"]
+            self.logger.info(f"🔧 Usando action de command_data: {action}")
+
+        # Fallback: detectar por contenido de respuesta
+        if not action and ("📊" in ai_response or "📋" in ai_response):
+            action = "show_data"
+
+        # 🔧 MENSAJE CONSOLIDADO Y LIMPIO para archivos generados
         final_text = ai_response
         if generated_files:
-            file_names = [os.path.basename(f) for f in generated_files]
-            final_text = f"✅ Constancia generada exitosamente!\n📁 Archivo: {', '.join(file_names)}"
+            # Usar el mensaje del ConstanciaProcessor si está disponible
+            if hasattr(data, 'get') and data.get('message'):
+                final_text = data['message']
+            else:
+                final_text = f"✅ Constancia generada exitosamente. La vista previa está disponible en el panel derecho."
+
             if not command_success:
                 # Si el comando falló pero encontramos archivos, es éxito
                 command_success = True
+
+        # 🎯 CONSTANCIAS COMO ACCIONES COMPLETAS (NO REQUIEREN CONFIRMACIÓN)
+        if generated_files and any(f.lower().endswith('.pdf') for f in generated_files):
+            requires_confirmation = False  # Las constancias no requieren confirmación
+            action = "constancia_generated"  # Acción específica para constancias
 
         return ChatResponse(
             text=final_text,

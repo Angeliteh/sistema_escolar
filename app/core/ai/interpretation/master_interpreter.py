@@ -9,97 +9,232 @@ from app.core.logging import get_logger
 from app.core.config import Config
 
 class MasterInterpreter:
-    """Intérprete maestro que coordina todos los módulos especializados"""
+    """
+    🎯 INTÉRPRETE MAESTRO - LÍDER INTELIGENTE DEL SISTEMA
+
+    RESPONSABILIDADES:
+    - Detectar intenciones con contexto estratégico completo
+    - Dirigir al especialista correcto con información precisa
+    - Mantener memoria de interacciones para retroalimentación
+    - Comunicación bidireccional con especialistas
+    """
 
     def __init__(self, gemini_client):
         self.gemini_client = gemini_client
         self.logger = get_logger(__name__)
 
-        # Inicializar detector de intención maestro
+        # 🎯 CONTEXTO ESTRATÉGICO DEL SISTEMA (SEGÚN INTENCIONES_ACCIONES_DEFINITIVAS.md)
+        self.system_map = {
+            "StudentQueryInterpreter": {
+                "handles": ["consulta_alumnos"],
+                "sub_intentions": ["busqueda_simple", "busqueda_compleja", "estadisticas", "generar_constancia", "transformacion_pdf"],
+                "capabilities": "Consultas de BD, documentos, análisis de 211 alumnos",
+                "description": "Especialista en datos de alumnos y generación de documentos"
+            },
+            "HelpInterpreter": {
+                "handles": ["ayuda_sistema"],
+                "sub_intentions": ["pregunta_capacidades", "pregunta_tecnica"],
+                "capabilities": "Ayuda y soporte técnico del sistema",
+                "description": "Especialista en ayuda y explicaciones del sistema"
+            }
+        }
+
+        # 💭 MEMORIA DE INTERACCIONES (RETROALIMENTACIÓN)
+        self.interaction_memory = {
+            "last_specialist": None,
+            "last_result_summary": None,
+            "conversation_flow": None,
+            "specialist_feedback": None,
+            "awaiting_continuation": False,
+            "continuation_type": None
+        }
+
+        # 🔧 INICIALIZAR COMPONENTES
         self.intention_detector = IntentionDetector(gemini_client)
 
-        # Inicializar intérpretes especializados
-        # Obtener la ruta de la base de datos desde la configuración
+        # 🎯 LOGS DE DEPURACIÓN FORZADOS - CONTEXTO ESTRATÉGICO COMPLETO
+        self.logger.info("🎯 [MASTER] INICIALIZADO CON CONTEXTO ESTRATÉGICO")
+        self.logger.info(f"   ├── Especialistas disponibles: {len(self.system_map)}")
+        self.logger.info(f"   ├── StudentQueryInterpreter: {self.system_map['StudentQueryInterpreter']['capabilities']}")
+        self.logger.info(f"   └── HelpInterpreter: {self.system_map['HelpInterpreter']['capabilities']}")
+
+        # 🔍 DEBUG DETALLADO DEL CONTEXTO ESTRATÉGICO
+        # Puedes cambiar esto a False para desactivar logs detallados
+        self.debug_detailed_context = True
+        if self.debug_detailed_context:
+            self._log_detailed_strategic_context()
+
+        # 🎯 INICIALIZAR ESPECIALISTAS (DESPUÉS DE MOSTRAR CONTEXTO MASTER)
+        self.logger.info("🎯 [MASTER] Inicializando especialistas...")
         from app.core.config import Config
         db_path = Config.DB_PATH
-
         self.student_interpreter = StudentQueryInterpreter(db_path, gemini_client)
 
-        # Inicializar intérprete de ayuda
         from app.core.ai.interpretation.help_interpreter import HelpInterpreter
         self.help_interpreter = HelpInterpreter(gemini_client)
-
-
-
-        # 🆕 SOLO INTÉRPRETES IMPLEMENTADOS (sin placeholders)
+        self.logger.info("✅ [MASTER] Especialistas inicializados correctamente")
 
     def interpret(self, context: InterpretationContext, conversation_stack=None) -> Optional[InterpretationResult]:
         """
-        Interpreta la consulta usando el flujo modular con análisis contextual + pila conversacional
+        🎯 INTERPRETACIÓN MAESTRO CON CONTEXTO ESTRATÉGICO COMPLETO
+
+        FLUJO MEJORADO:
+        1. Análisis con contexto estratégico completo
+        2. Detección de intención con memoria de interacciones
+        3. Delegación inteligente al especialista correcto
+        4. Comunicación bidireccional y retroalimentación
         """
         try:
-            self.logger.debug(f"Iniciando interpretación maestro para: '{context.user_message}'")
+            # 🎯 LOGS DE DEPURACIÓN FORZADOS
+            self.logger.info("🎯 [MASTER] INICIANDO INTERPRETACIÓN CON CONTEXTO ESTRATÉGICO")
+            self.logger.info(f"   ├── Consulta: '{context.user_message}'")
+            self.logger.info(f"   ├── Conversation_stack: {len(conversation_stack) if conversation_stack else 0} niveles")
+            self.logger.info(f"   └── Memoria anterior: {self.interaction_memory}")
 
-            # NUEVO: Agregar pila conversacional al contexto si está disponible
+            # PASO 1: PREPARAR CONTEXTO ESTRATÉGICO COMPLETO
+            strategic_context = self._prepare_strategic_context(context, conversation_stack)
+            self.logger.info(f"🧠 [MASTER] Contexto estratégico preparado: {len(strategic_context)} elementos")
+
+            # PASO 2: DETECTAR INTENCIÓN CON CONTEXTO ESTRATÉGICO
+            intention = self._detect_intention_with_strategic_context(
+                context.user_message, conversation_stack, strategic_context
+            )
+
+            # 🎯 LOGS DE DEPURACIÓN DE INTENCIÓN
+            self.logger.info(f"🎯 [MASTER] INTENCIÓN DETECTADA:")
+            self.logger.info(f"   ├── Tipo: {intention.intention_type}")
+            self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
+            self.logger.info(f"   ├── Confianza: {intention.confidence}")
+            self.logger.info(f"   └── Razonamiento: {intention.reasoning}")
+
+            # PASO 3: VALIDAR INTENCIÓN CON SISTEMA MAP
+            validated_intention = self._validate_intention_with_system_map(intention)
+            if validated_intention != intention:
+                self.logger.info(f"🔧 [MASTER] Intención corregida por system_map")
+
+            # PASO 4: DIRIGIR AL ESPECIALISTA CON CONTEXTO COMPLETO
+            result = self._delegate_to_specialist_with_context(
+                context, validated_intention, strategic_context
+            )
+
+            # PASO 5: PROCESAR RETROALIMENTACIÓN DEL ESPECIALISTA
+            self._process_specialist_feedback(validated_intention, result)
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ [MASTER] Error en interpretación: {e}")
+            return None
+
+    def _prepare_strategic_context(self, context: InterpretationContext, conversation_stack) -> dict:
+        """🎯 PREPARAR CONTEXTO ESTRATÉGICO COMPLETO"""
+        try:
+            # Agregar conversation_stack al contexto
             if conversation_stack is not None:
                 context.conversation_stack = conversation_stack
-                self.logger.debug(f"Pila conversacional agregada al contexto: {len(conversation_stack)} niveles")
 
-            # NUEVO: PASO 1 - Análisis contextual usando Context Manager
-            # Nota: El análisis contextual ahora se hace en el Context Manager
-            # antes de llegar aquí, por lo que este código se simplifica
+            strategic_context = {
+                "system_map": self.system_map,
+                "interaction_memory": self.interaction_memory,
+                "conversation_stack": conversation_stack or [],
+                "available_specialists": list(self.system_map.keys())
+            }
 
-            # Si el contexto tiene información de continuación, manejarla
-            conversation_state = getattr(context, 'conversation_state', {})
-            if conversation_state.get('waiting_for'):
-                # Verificar si el mensaje actual es una respuesta esperada
-                contextual_result = self._handle_expected_response(context, conversation_state)
-                if contextual_result:
-                    return contextual_result
+            self.logger.info(f"🧠 [MASTER] Contexto estratégico incluye:")
+            self.logger.info(f"   ├── System map: {len(self.system_map)} especialistas")
+            self.logger.info(f"   ├── Memoria: {bool(self.interaction_memory.get('last_specialist'))}")
+            self.logger.info(f"   └── Stack conversacional: {len(conversation_stack) if conversation_stack else 0}")
 
-            # PASO 2: Detectar intención global CON CONTEXTO CONVERSACIONAL
-            intention = self.intention_detector.detect_intention(context.user_message, conversation_stack)
+            return strategic_context
 
-            self.logger.debug(f"Intención detectada: {intention.intention_type} | Sub-intención: {intention.sub_intention} (confianza: {intention.confidence})")
-            self.logger.debug(f"Razonamiento: {intention.reasoning}")
-            self.logger.debug(f"Entidades detectadas: {intention.detected_entities}")
+        except Exception as e:
+            self.logger.error(f"❌ Error preparando contexto estratégico: {e}")
+            return {"system_map": self.system_map}
 
-            # 🆕 NOTA: intention_info se agrega en cada caso específico abajo
+    def _detect_intention_with_strategic_context(self, user_message: str, conversation_stack, strategic_context: dict):
+        """🎯 DETECTAR INTENCIÓN CON CONTEXTO ESTRATÉGICO"""
+        try:
+            # Usar el detector existente pero con contexto mejorado
+            intention = self.intention_detector.detect_intention(user_message, conversation_stack)
 
-            # PASO 3: Dirigir al intérprete especializado
+            # 🎯 FORZAR LOGS DE DEPURACIÓN
+            self.logger.info(f"🔍 [MASTER] Detector original devolvió:")
+            self.logger.info(f"   ├── Intención: {intention.intention_type}")
+            self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
+            self.logger.info(f"   └── Confianza: {intention.confidence}")
+
+            return intention
+
+        except Exception as e:
+            self.logger.error(f"❌ Error en detección de intención: {e}")
+            # Fallback básico
+            from app.core.ai.interpretation.intention_detector import IntentionResult
+            return IntentionResult(
+                intention_type="conversacion_general",
+                sub_intention="chat_casual",
+                confidence=0.1,
+                reasoning=f"Error en detección: {e}",
+                detected_entities={}
+            )
+
+    def _validate_intention_with_system_map(self, intention):
+        """🎯 VALIDAR INTENCIÓN CON SYSTEM MAP"""
+        try:
+            intention_type = intention.intention_type
+
+            # Verificar si la intención es manejada por algún especialista
+            for specialist, config in self.system_map.items():
+                if intention_type in config["handles"]:
+                    self.logger.info(f"✅ [MASTER] Intención '{intention_type}' validada para {specialist}")
+                    return intention
+
+            # Si no se encuentra, log de advertencia pero continuar
+            self.logger.warning(f"⚠️ [MASTER] Intención '{intention_type}' no encontrada en system_map")
+            return intention
+
+        except Exception as e:
+            self.logger.error(f"❌ Error validando intención: {e}")
+            return intention
+
+    def _delegate_to_specialist_with_context(self, context: InterpretationContext, intention, strategic_context: dict):
+        """🎯 DELEGAR AL ESPECIALISTA CON CONTEXTO COMPLETO"""
+        try:
+            # Agregar información de intención al contexto
+            context.intention_info = {
+                'intention_type': intention.intention_type,
+                'sub_intention': intention.sub_intention,
+                'confidence': intention.confidence,
+                'reasoning': intention.reasoning,
+                'detected_entities': intention.detected_entities
+            }
+
+            # 🎯 DEBUG ESTRATÉGICO: LO QUE MASTER ENVÍA A STUDENT
+            self.logger.info("=" * 60)
+            self.logger.info("🎯 [DEBUG] MASTER → STUDENT COMMUNICATION:")
+            self.logger.info("=" * 60)
+            self.logger.info(f"📤 CONSULTA ORIGINAL: '{context.user_message}'")
+            self.logger.info(f"📤 INTENCIÓN DETECTADA: {intention.intention_type}/{intention.sub_intention}")
+            self.logger.info(f"📤 CONFIANZA: {intention.confidence}")
+            self.logger.info(f"📤 ENTIDADES DETECTADAS: {len(intention.detected_entities)} elementos")
+            for key, value in intention.detected_entities.items():
+                self.logger.info(f"     ├── {key}: {value}")
+            self.logger.info(f"📤 RAZONAMIENTO MASTER: {intention.reasoning}")
+            self.logger.info("=" * 60)
+
+            # Dirigir según la intención
             if intention.intention_type == "consulta_alumnos":
                 self.logger.info(f"🎯 [MASTER] Dirigiendo a StudentQueryInterpreter")
                 self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
                 self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
 
-                # 🆕 AGREGAR INFORMACIÓN DE INTENCIÓN AL CONTEXTO
-                context.intention_info = {
-                    'intention_type': intention.intention_type,
-                    'sub_intention': intention.sub_intention,
-                    'confidence': intention.confidence,
-                    'reasoning': intention.reasoning,
-                    'detected_entities': intention.detected_entities
-                }
-
                 result = self.student_interpreter.interpret(context)
                 self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
                 return result
-
-
 
             elif intention.intention_type == "generar_constancia":
                 self.logger.info("🎯 [MASTER] Dirigiendo a StudentQueryInterpreter (constancia)")
                 self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
                 self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
-
-                # 🆕 AGREGAR INFORMACIÓN DE INTENCIÓN AL CONTEXTO
-                context.intention_info = {
-                    'intention_type': intention.intention_type,
-                    'sub_intention': intention.sub_intention,
-                    'confidence': intention.confidence,
-                    'reasoning': intention.reasoning,
-                    'detected_entities': intention.detected_entities
-                }
 
                 result = self.student_interpreter.interpret(context)
                 self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
@@ -110,63 +245,121 @@ class MasterInterpreter:
                 self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
                 self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
 
-                # 🆕 AGREGAR INFORMACIÓN DE INTENCIÓN AL CONTEXTO
-                context.intention_info = {
-                    'intention_type': intention.intention_type,
-                    'sub_intention': intention.sub_intention,
-                    'confidence': intention.confidence,
-                    'reasoning': intention.reasoning,
-                    'detected_entities': intention.detected_entities
-                }
-
-                self.logger.debug(f"🔄 Contexto enriquecido con intention_info: {context.intention_info}")
-                self.logger.debug(f"🔄 Tipo de contexto antes de enviar: {type(context)}")
-                self.logger.debug(f"🔄 Atributos del contexto: {[attr for attr in dir(context) if not attr.startswith('_')]}")
-
-                # Usar el StudentQueryInterpreter para manejar transformaciones
-                # ya que tiene la lógica para detectar parámetros de constancias
                 result = self.student_interpreter.interpret(context)
                 self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
                 return result
 
             elif intention.intention_type == "ayuda_sistema":
-                self.logger.debug("Dirigiendo a intérprete de ayuda")
+                self.logger.info("🎯 [MASTER] Dirigiendo a HelpInterpreter")
                 return self.help_interpreter.interpret(context)
-
-            elif intention.intention_type == "conversacion_general":
-                self.logger.debug("Dirigiendo a chat general")
-                # 🔧 ARREGLADO: No hay general_interpreter, usar respuesta directa
-                return InterpretationResult(
-                    action="conversacion_general",
-                    parameters={
-                        "mensaje": "Hola, soy tu asistente del sistema escolar. Estoy aquí para ayudarte con consultas sobre alumnos y gestión académica. ¿En qué puedo ayudarte?",
-                        "tipo_solicitado": "conversacion_general"
-                    },
-                    confidence=0.7
-                )
 
             else:
                 # Fallback a conversación general
-                self.logger.info("Intención no reconocida, usando fallback")
+                self.logger.info(f"🎯 [MASTER] Intención no reconocida: {intention.intention_type}")
                 return InterpretationResult(
                     action="conversacion_general",
                     parameters={
                         "mensaje": "No estoy seguro de cómo ayudarte con eso. Puedo ayudarte con consultas sobre alumnos, como buscar estudiantes o generar constancias. ¿Podrías reformular tu pregunta?",
                         "tipo_solicitado": "fallback"
                     },
-                    confidence=Config.INTERPRETATION['confidence_thresholds']['medium']
+                    confidence=0.3
                 )
 
         except Exception as e:
-            self.logger.error(f"Error en intérprete maestro: {e}")
-            return InterpretationResult(
-                action="error_sistema",
-                parameters={
-                    "mensaje": Config.RESPONSES['error_messages']['system_error'],
-                    "error": str(e)
-                },
-                confidence=Config.INTERPRETATION['confidence_thresholds']['fallback']
-            )
+            self.logger.error(f"❌ Error delegando al especialista: {e}")
+            return None
+
+    def _process_specialist_feedback(self, intention, result):
+        """🎯 PROCESAR RETROALIMENTACIÓN DEL ESPECIALISTA"""
+        try:
+            if result:
+                # Actualizar memoria de interacciones
+                self.interaction_memory.update({
+                    "last_specialist": self._get_specialist_for_intention(intention.intention_type),
+                    "last_result_summary": f"Acción: {result.action}",
+                    "conversation_flow": f"{intention.intention_type} → {result.action}",
+                    "specialist_feedback": "Completado exitosamente",
+                    "awaiting_continuation": getattr(result, 'awaiting_continuation', False),
+                    "continuation_type": getattr(result, 'continuation_type', None)
+                })
+
+                self.logger.info(f"🔄 [MASTER] Memoria actualizada:")
+                self.logger.info(f"   ├── Especialista: {self.interaction_memory['last_specialist']}")
+                self.logger.info(f"   ├── Resultado: {self.interaction_memory['last_result_summary']}")
+                self.logger.info(f"   └── Flujo: {self.interaction_memory['conversation_flow']}")
+            else:
+                self.logger.warning(f"⚠️ [MASTER] No se recibió resultado del especialista")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error procesando retroalimentación: {e}")
+
+    def _get_specialist_for_intention(self, intention_type: str) -> str:
+        """🎯 OBTENER ESPECIALISTA PARA INTENCIÓN"""
+        for specialist, config in self.system_map.items():
+            if intention_type in config["handles"]:
+                return specialist
+        return "Unknown"
+
+    def _log_detailed_strategic_context(self):
+        """🔍 MOSTRAR CONTEXTO ESTRATÉGICO COMPLETO EN LOGS"""
+        try:
+            self.logger.info("=" * 80)
+            self.logger.info("🔍 [MASTER] CONTEXTO ESTRATÉGICO DETALLADO:")
+            self.logger.info("=" * 80)
+
+            # 1. SYSTEM MAP COMPLETO
+            self.logger.info("📋 1. SYSTEM MAP (Especialistas y Capacidades):")
+            for specialist, config in self.system_map.items():
+                self.logger.info(f"   🎯 {specialist}:")
+                self.logger.info(f"      ├── Rol: {config.get('description', 'No definido')}")
+                self.logger.info(f"      ├── Maneja: {config.get('handles', [])}")
+                self.logger.info(f"      ├── Sub-intenciones: {config.get('sub_intentions', [])}")
+                self.logger.info(f"      └── Capacidades: {config.get('capabilities', 'No definidas')}")
+
+            # 2. MEMORIA DE INTERACCIONES
+            self.logger.info("")
+            self.logger.info("💭 2. MEMORIA DE INTERACCIONES:")
+            for key, value in self.interaction_memory.items():
+                self.logger.info(f"      ├── {key}: {value}")
+
+            # 3. CONTEXTO DEL SISTEMA ESCOLAR
+            sistema_context = {
+                "tipo": "Dirección de Escuela Primaria PROF. MAXIMO GAMIZ FERNANDEZ",
+                "estudiantes_total": 211,
+                "areas_disponibles": ["Consultas de Alumnos", "Ayuda Técnica"]
+            }
+            self.logger.info("")
+            self.logger.info("🏫 3. CONTEXTO DEL SISTEMA ESCOLAR:")
+            for key, value in sistema_context.items():
+                self.logger.info(f"      ├── {key}: {value}")
+
+            # 4. TIPOS DE CONSULTAS ESPERADAS
+            tipos_consultas = {
+                "busquedas": "buscar García, alumnos de 2do A, estudiantes matutinos",
+                "estadisticas": "cuántos alumnos hay, promedio general, distribuciones",
+                "documentos": "constancia para Juan, certificado de calificaciones",
+                "transformaciones": "convertir constancia, cambiar formato",
+                "ayuda": "qué puedes hacer, cómo buscar alumnos"
+            }
+            self.logger.info("")
+            self.logger.info("📝 4. TIPOS DE CONSULTAS ESPERADAS:")
+            for tipo, ejemplos in tipos_consultas.items():
+                self.logger.info(f"      ├── {tipo}: {ejemplos}")
+
+            # 5. ESTADO DE INICIALIZACIÓN (COMPONENTES BÁSICOS)
+            self.logger.info("")
+            self.logger.info("✅ 5. ESTADO DE INICIALIZACIÓN:")
+            self.logger.info(f"      ├── Gemini Client: {'✅ Conectado' if self.gemini_client else '❌ No disponible'}")
+            self.logger.info(f"      ├── Intention Detector: {'✅ Inicializado' if self.intention_detector else '❌ No disponible'}")
+            self.logger.info(f"      ├── Student Interpreter: ⏳ Se inicializará después")
+            self.logger.info(f"      └── Help Interpreter: ⏳ Se inicializará después")
+
+            self.logger.info("=" * 80)
+            self.logger.info("🎯 [MASTER] CONTEXTO ESTRATÉGICO CARGADO Y VERIFICADO")
+            self.logger.info("=" * 80)
+
+        except Exception as e:
+            self.logger.error(f"❌ Error mostrando contexto detallado: {e}")
 
     def _handle_expected_response(self, context: InterpretationContext, conversation_state: dict) -> Optional[InterpretationResult]:
         """

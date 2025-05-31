@@ -82,7 +82,7 @@ Para generar sistemas personalizados para otras escuelas:
 ## 💼 Valor Comercial
 
 - **Sistema Portable:** $199-299 USD
-- **Sistema Ejecutable:** $399-499 USD  
+- **Sistema Ejecutable:** $399-499 USD
 - **Sistema con Instalador:** $599-799 USD
 
 ## 🧪 Pruebas
@@ -95,14 +95,42 @@ python testing/unit/test_system_detector.py
 python testing/integration/test_launcher_fixes.py
 ```
 
+## 🎯 Sistema de Acciones de Alto Nivel
+
+### **Arquitectura Innovadora:**
+El sistema utiliza un **Sistema de Acciones de Alto Nivel** donde el LLM elige acciones predefinidas en lugar de generar código desde cero.
+
+### **Ventajas:**
+- ✅ **Predictibilidad:** LLM siempre usa acciones conocidas
+- ✅ **Confiabilidad:** SQL probado y funcional
+- ✅ **Escalabilidad:** Fácil agregar nuevas acciones
+- ✅ **Debugging:** Logs claros muestran qué acción se usó
+
+### **Flujo de Funcionamiento:**
+```
+Usuario: "buscar garcia"
+    ↓
+LLM elige: BUSCAR_COINCIDENCIAS_NOMBRE
+    ↓
+Código ejecuta: SQL confiable y probado
+    ↓
+Resultado: 10 alumnos encontrados
+```
+
 ## 📚 Documentación
 
-La documentación completa está en `docs/`:
-- **Arquitectura:** `docs/architecture/`
-- **Desarrollo:** `docs/development/`
-- **Comercial:** `docs/commercial/`
+### **Documentación Principal:**
+- **SISTEMA_ACCIONES_DOCUMENTACION.md** - Sistema de acciones implementado
+- **PLAN_PRUEBAS_EXHAUSTIVAS_SISTEMA.md** - Plan de testing completo
+- **docs/architecture/** - Documentación técnica detallada
+- **docs/commercial/** - Información comercial
+
+### **Documentación Técnica:**
+- `docs/architecture/` - Arquitectura del sistema
+- `docs/development/` - Guías de desarrollo
+- `docs/commercial/` - Información comercial
 
 ---
 
-**Sistema de Constancias Escolares v2.0**  
-*Desarrollado con arquitectura híbrida y IA integrada*
+**Sistema de Constancias Escolares v2.0**
+*Desarrollado con arquitectura híbrida, IA integrada y Sistema de Acciones de Alto Nivel*

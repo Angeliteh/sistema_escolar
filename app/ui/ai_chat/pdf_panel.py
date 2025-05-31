@@ -365,17 +365,58 @@ class PDFPanel(QWidget):
         header_layout = QHBoxLayout()
         header_layout.addWidget(self.preview_label, 1)  # 1 = stretch factor
 
-        # Crear un layout para los botones de acción
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)  # Aumentar el espacio entre botones
+        # 🆕 BOTÓN MEJORADO PARA ABRIR EN NAVEGADOR (CON INDICACIÓN DE IMPRESIÓN)
+        self.open_browser_btn = QPushButton("🌐 Abrir en Navegador / Imprimir")
+        self.open_browser_btn.setToolTip("Abrir el PDF en el navegador web donde puedes verlo e imprimirlo fácilmente (Ctrl+P)")
+        self.open_browser_btn.setCursor(Qt.PointingHandCursor)
+        self.open_browser_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27AE60;
+                color: white;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-size: 13px;
+                font-weight: bold;
+                margin-top: 5px;
+                margin-bottom: 5px;
+                min-width: 180px;
+                min-height: 35px;
+            }
+            QPushButton:hover {
+                background-color: #229954;
+            }
+            QPushButton:pressed {
+                background-color: #1E8449;
+            }
+        """)
+        self.open_browser_btn.clicked.connect(self._open_in_browser)
 
-        # Establecer un ancho mínimo para los botones para evitar que se compriman
+        # 🔧 LAYOUT SIMPLIFICADO DE BOTONES (2 FILAS)
+        button_layout = QVBoxLayout()
+        button_layout.setSpacing(5)
+
+        # Primera fila: botones principales
+        first_row_layout = QHBoxLayout()
+        first_row_layout.setSpacing(10)
+
+        # Segunda fila: botón de navegador/imprimir
+        second_row_layout = QHBoxLayout()
+        second_row_layout.setSpacing(10)
+
+        # Establecer anchos mínimos
         self.ver_datos_btn.setMinimumWidth(120)
         cancel_button.setMinimumWidth(120)
+        self.open_browser_btn.setMinimumWidth(180)
 
-        # Añadir los botones al layout de botones
-        button_layout.addWidget(self.ver_datos_btn)
-        button_layout.addWidget(cancel_button)
+        # Añadir botones a las filas
+        first_row_layout.addWidget(self.ver_datos_btn)
+        first_row_layout.addWidget(cancel_button)
+
+        second_row_layout.addWidget(self.open_browser_btn)
+
+        # Añadir las filas al layout principal
+        button_layout.addLayout(first_row_layout)
+        button_layout.addLayout(second_row_layout)
 
         # Crear un layout vertical para el encabezado y los botones
         top_layout = QVBoxLayout()
@@ -471,6 +512,31 @@ class PDFPanel(QWidget):
                 return pdf_path, True
 
         return None, False
+
+    def _open_in_browser(self):
+        """Abre el PDF actual en el navegador web"""
+        if not self.current_pdf:
+            QMessageBox.warning(self, "Sin PDF", "No hay ningún PDF cargado para abrir.")
+            return
+
+        try:
+            import webbrowser
+            import os
+
+            # Convertir a URL de archivo para el navegador
+            file_url = f"file:///{os.path.abspath(self.current_pdf).replace(os.sep, '/')}"
+            webbrowser.open(file_url)
+
+            # Mostrar mensaje de confirmación mejorado
+            QMessageBox.information(self, "PDF Abierto",
+                                  f"✅ El PDF se ha abierto en tu navegador web.\n\n"
+                                  f"📄 Archivo: {os.path.basename(self.current_pdf)}\n\n"
+                                  f"💡 Para imprimir: Usa Ctrl+P en el navegador")
+        except Exception as e:
+            QMessageBox.critical(self, "Error",
+                               f"No se pudo abrir el PDF en el navegador:\n{str(e)}")
+
+
 
     def clear_pdf(self):
         """Quita el PDF actual y restablece el panel"""

@@ -233,13 +233,35 @@ class ThemeManager:
         """
 
     def get_response_formatter_styles(self) -> Dict[str, str]:
-        """Obtiene estilos para el formateador de respuestas - SIN colores hardcodeados"""
+        """Obtiene estilos para el formateador de respuestas - CENTRALIZADOS Y CONFIGURABLES"""
         return {
             'help_border': f"border-left: 3px solid {self.colors['border']['subtle']};",
             'data_border': f"border-left: 3px solid {self.colors['border']['subtle']};",
             'error_border': f"border-left: 3px solid {self.colors['status']['error']};",
             'success_border': f"border-left: 3px solid {self.colors['status']['success']};",
             'number_highlight': f"border: 1px solid {self.colors['border']['subtle']}; padding: 2px 4px; border-radius: 3px;",
+
+            # 🎯 CONFIGURACIÓN CENTRALIZADA DE ESPACIADO
+            'enable_wrappers': False,  # CONTROLA SI SE USAN WRAPPERS HTML
+            'wrapper_margin': '0px 0',  # Margen de wrappers (cuando están habilitados)
+            'wrapper_padding': '0px',   # Padding de wrappers (cuando están habilitados)
+            'line_height': '1.4',       # Line-height estándar
+            'font_size': '15px',        # Tamaño de fuente estándar
+        }
+
+    def get_chat_bubble_layout_styles(self) -> Dict[str, any]:
+        """Obtiene configuración centralizada para layouts de burbujas de chat"""
+        return {
+            'bubble_margin_top': 8,      # Margen superior de burbuja
+            'bubble_margin_bottom': 8,   # Margen inferior de burbuja
+            'bubble_padding_left': 18,   # Padding izquierdo interno
+            'bubble_padding_right': 15,  # Padding derecho interno
+            'bubble_spacing': 2,         # Espaciado entre elementos
+            'content_margin': 0,         # Margen del contenido
+            'content_padding': 0,        # Padding del contenido
+            'border_radius': 12,         # Radio de bordes
+            'header_font_size': 12,      # Tamaño fuente header
+            'copy_button_size': (24, 12), # Tamaño botón copy
         }
 
 

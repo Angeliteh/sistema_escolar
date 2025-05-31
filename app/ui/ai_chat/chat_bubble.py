@@ -118,8 +118,8 @@ class ChatBubble(QWidget):
         bubble_container = QWidget()
         bubble_container.setObjectName("bubbleContainer")
         bubble_layout = QVBoxLayout(bubble_container)
-        bubble_layout.setContentsMargins(18, 10, 15, 18)  # left, top, right, bottom
-        bubble_layout.setSpacing(4)  # Pequeño espacio entre header y contenido
+        bubble_layout.setContentsMargins(18, 8, 15, 8)  # left, top, right, bottom - REDUCIDO
+        bubble_layout.setSpacing(2)  # Menos espacio entre header y contenido
 
         # Configurar políticas de tamaño para adaptarse al contenido
         bubble_container.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
@@ -156,6 +156,16 @@ class ChatBubble(QWidget):
         self.content_label = QLabel(self.text)
 
         # 🎯 HABILITAR SOPORTE HTML PARA FORMATEO MEJORADO
+        # Convertir saltos de línea a HTML para mejor renderizado
+        if '\n' in self.text:
+            # Convertir saltos de línea a <br> para HTML
+            html_text = self.text.replace('\n', '<br>')
+            self.content_label.setText(html_text)
+        else:
+            # Si no hay saltos de línea, usar el texto original
+            self.content_label.setText(self.text)
+
+        # Siempre usar RichText para consistencia
         self.content_label.setTextFormat(Qt.RichText)
 
         # Configurar la fuente ANTES de calcular el ancho
@@ -182,17 +192,17 @@ class ChatBubble(QWidget):
         # Hacer el texto seleccionable
         self.content_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
 
-        # Estilo SIMPLE pero legible
+        # Estilo SIMPLE sin espaciado extra
         self.content_label.setStyleSheet(f"""
             QLabel {{
                 color: {self.text_color.name()};
                 background-color: transparent;
                 margin: 0px;
-                padding: 3px 0px;  /* Padding vertical para evitar cortes */
+                padding: 0px;  /* SIN padding para evitar espacios extra */
                 border: none;
                 font-size: {self.FONT_SIZE}px;
-                line-height: 1.6;  /* Mejor line-height para mayor legibilidad */
-                letter-spacing: 0.3px;  /* Espaciado entre caracteres para mejor legibilidad */
+                line-height: 1.4;  /* Line-height normal */
+                letter-spacing: 0.3px;
                 font-family: '{self.FONT_FAMILY}', Arial, sans-serif;
             }}
         """)

@@ -56,10 +56,18 @@ class StudentIdentifier:
             return None
 
     def _extract_students_from_stack(self, conversation_stack: list) -> List[Dict[str, Any]]:
-        """Extrae y normaliza alumnos de la pila conversacional"""
+        """
+        Extrae y normaliza alumnos de la pila conversacional (MEJORADO)
+
+        🔧 CORRECCIÓN: Busca en TODOS los niveles para referencias "relativamente cercanas"
+        """
         from .data_normalizer import DataNormalizer
         normalizer = DataNormalizer()
 
+        # 🎯 ESTRATEGIA MEJORADA: Buscar en múltiples niveles con prioridad
+        all_candidates = []
+
+        # Revisar todos los niveles (más reciente primero)
         for i, level in enumerate(reversed(conversation_stack), 1):
             if level.get('data') and len(level.get('data', [])) > 0:
                 raw_data = level['data']
@@ -74,9 +82,33 @@ class StudentIdentifier:
 
                 if normalized_data:
                     self.logger.info(f"   - Datos normalizados: {len(normalized_data)} alumnos válidos")
-                    return normalized_data
 
-        return []
+                    # 🔧 NUEVA LÓGICA: Agregar candidatos con información de nivel
+                    level_info = {
+                        "data": normalized_data,
+                        "level": i,
+                        "query": level.get('query', ''),
+                        "count": len(normalized_data)
+                    }
+                    all_candidates.append(level_info)
+
+        # 🎯 SELECCIÓN INTELIGENTE DE CANDIDATOS
+        if not all_candidates:
+            self.logger.warning("❌ No hay candidatos en ningún nivel")
+            return []
+
+        # 1. PRIORIDAD: Nivel más reciente con múltiples elementos (listas)
+        for candidate in all_candidates:
+            if candidate["count"] > 1:
+                self.logger.info(f"✅ USANDO NIVEL {candidate['level']} (lista de {candidate['count']} elementos)")
+                self.logger.info(f"   📋 Query original: '{candidate['query']}'")
+                return candidate["data"]
+
+        # 2. FALLBACK: Nivel más reciente con al menos 1 elemento
+        first_candidate = all_candidates[0]
+        self.logger.info(f"✅ USANDO NIVEL {first_candidate['level']} (fallback - {first_candidate['count']} elemento)")
+        self.logger.info(f"   📋 Query original: '{first_candidate['query']}'")
+        return first_candidate["data"]
 
     def _identify_by_name(self, user_query: str, alumnos_disponibles: List[Dict]) -> Optional[Dict]:
         """Estrategia 1: Buscar por nombre exacto o parcial"""

@@ -155,8 +155,12 @@ class GeminiClient(QObject):
 
     def send_prompt(self, prompt):
         """Envía un prompt a Gemini"""
+        # 🔧 ARREGLAR: Usar model_instances en lugar de models
+        primary_api_key = list(self.api_keys.keys())[0] if self.api_keys else None
+        models = self.model_instances.get(primary_api_key, {}) if primary_api_key else {}
+
         # Crear y ejecutar el hilo para Gemini
-        self.gemini_thread = GeminiThread(self.models, prompt)
+        self.gemini_thread = GeminiThread(models, prompt)
         self.gemini_thread.response_ready.connect(self._handle_response)
         self.gemini_thread.error_occurred.connect(self._handle_error)
         self.gemini_thread.start()

@@ -80,6 +80,10 @@ class ChatWindow(QMainWindow):
         # 🎯 FORMATEADOR DE RESPUESTAS PARA MEJOR PRESENTACIÓN
         self.response_formatter = ResponseFormatter()
 
+        # 🎯 GESTOR CENTRALIZADO DE PRESENTACIÓN DE DATOS
+        # Se inicializa después de crear chat_list en setup_ui()
+        self.data_display_manager = None
+
         # 🆕 WORKER ASÍNCRONO PARA PROCESAMIENTO SIN BLOQUEO
         self.async_worker = AsyncChatWorker(self.chat_engine)
         self.async_worker.message_processed.connect(self._handle_async_response)
@@ -140,6 +144,10 @@ class ChatWindow(QMainWindow):
 
         # 🆕 INICIALIZAR INDICADOR DE ESCRITURA DESPUÉS DE CREAR CHAT_LIST
         self.typing_indicator = TypingIndicator(self.chat_list)
+
+        # 🎯 INICIALIZAR GESTOR CENTRALIZADO DE PRESENTACIÓN DE DATOS
+        from app.ui.ai_chat.data_display_manager import DataDisplayManager
+        self.data_display_manager = DataDisplayManager(self.chat_list, self.response_formatter)
 
         # Mensaje de bienvenida - todo en un solo mensaje para evitar espacios innecesarios
         mensaje_bienvenida = """¡Bienvenido al Asistente de Constancias con IA!
@@ -392,10 +400,11 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             # Estamos esperando confirmación sobre qué hacer con la constancia generada
             self._handle_constancia_confirmation_response(message_text)
             return
-        elif self.waiting_for_file_open_response and self.last_generated_file:
-            # Estamos esperando una respuesta sobre si abrir un archivo
-            self._handle_file_open_response(message_text)
-            return
+        # 🔧 ELIMINAR LÓGICA DE CONFIRMACIÓN PARA CONSTANCIAS
+        # elif self.waiting_for_file_open_response and self.last_generated_file:
+        #     # Estamos esperando una respuesta sobre si abrir un archivo
+        #     self._handle_file_open_response(message_text)
+        #     return
 
         # 🆕 USAR CHATENGINE CENTRALIZADO para mensajes normales
         self._process_message_with_chat_engine(message_text)
@@ -405,13 +414,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         try:
             import os
             if os.path.exists(file_path):
-                from datetime import datetime
-                current_time = datetime.now().strftime("%H:%M:%S")
-
-                self.chat_list.add_assistant_message(
-                    f"📁 Archivo generado: {os.path.basename(file_path)}",
-                    current_time
-                )
+                # 🔧 ELIMINAR MENSAJES DUPLICADOS - ChatEngine ya maneja el mensaje principal
 
                 # Cargar el PDF en el visor si es un PDF
                 if file_path.lower().endswith('.pdf'):
@@ -421,14 +424,11 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                     if not self.pdf_panel_expanded:
                         self.toggle_pdf_panel_visibility()
 
-                # Preguntar si abrir el archivo
-                self.chat_list.add_assistant_message(
-                    "¿Deseas abrir el archivo? Responde 'sí' o 'no'.",
-                    current_time
-                )
+                # 🔧 NO AGREGAR MENSAJES ADICIONALES - ChatEngine ya los maneja
+                # 🎯 NO ESTABLECER ESTADO DE ESPERA PARA CONSTANCIAS
 
                 self.last_generated_file = file_path
-                self.waiting_for_file_open_response = True
+                # 🔧 ELIMINAR: self.waiting_for_file_open_response = True
                 return True
             else:
                 self.logger.error(f"Archivo no encontrado: {file_path}")
@@ -457,7 +457,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
     def _process_message_with_chat_engine(self, message_text: str):
         """🆕 PROCESA MENSAJE DE FORMA ASÍNCRONA SIN BLOQUEAR UI"""
         try:
-            self.logger.info(f"🚀 Iniciando procesamiento asíncrono: {message_text}")
+            self.logger.info(f"🎯 [CHATWINDOW] Procesando: '{message_text}'")
 
             # 🆕 DESHABILITAR INPUT MIENTRAS SE PROCESA
             self.input_field.setEnabled(False)
@@ -476,7 +476,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
     def _handle_async_response(self, response: ChatResponse):
         """🆕 MANEJA RESPUESTA DEL WORKER ASÍNCRONO"""
         try:
-            self.logger.info("✅ Respuesta asíncrona recibida")
+            self.logger.info("✅ [CHATWINDOW] Respuesta recibida")
 
             # 🆕 SINCRONIZAR CONTEXTO DESPUÉS DEL PROCESAMIENTO ASÍNCRONO
             self._sync_context_from_async_worker()
@@ -514,6 +514,8 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                             main_processor.last_query_results = worker_processor.last_query_results
                             self.logger.debug("🔄 last_query_results sincronizado")
 
+                    # ✅ CONTEXTO SINCRONIZADO
+
             self.logger.debug("✅ Contexto sincronizado desde worker")
 
         except Exception as e:
@@ -521,13 +523,10 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 
     def _on_processing_started(self):
         """🆕 CALLBACK CUANDO INICIA EL PROCESAMIENTO"""
-        self.logger.info("🔄 Procesamiento iniciado")
         self.statusBar().showMessage("Procesando mensaje...")
 
     def _on_processing_finished(self):
         """🆕 CALLBACK CUANDO TERMINA EL PROCESAMIENTO"""
-        self.logger.info("✅ Procesamiento terminado")
-
         # 🆕 OCULTAR INDICADOR DE ESCRITURA
         self.typing_indicator.hide_typing()
 
@@ -561,15 +560,14 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         self.statusBar().showMessage("Error en procesamiento")
 
     def _handle_chat_engine_response(self, response: ChatResponse):
-        """Maneja respuesta de ChatEngine"""
+        """Maneja respuesta de ChatEngine con formateo automático mejorado"""
         from datetime import datetime
         current_time = datetime.now().strftime("%H:%M:%S")
 
-        # Mostrar texto principal con formato mejorado
-        if response.text:
-            # Aplicar formateo inteligente según el tipo de respuesta
-            response_type = self._determine_response_type(response)
-            formatted_text = self.response_formatter.format_response(response.text, response_type)
+        # 🎨 FORMATEO AUTOMÁTICO SOLO SI NO HAY DATOS ESTRUCTURADOS
+        if response.text and not (response.action == "show_data" and response.data):
+            # 🆕 USAR FORMATEO AUTOMÁTICO CON DETECCIÓN INTELIGENTE
+            formatted_text = self.response_formatter.format_response(response.text, "auto")
             self.chat_list.add_assistant_message(formatted_text, current_time)
 
         # 🆕 MANEJAR CONSTANCIAS GENERADAS
@@ -593,7 +591,21 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             self._display_structured_data(response.data)
 
     def _display_structured_data(self, data: dict):
-        """Muestra datos estructurados en el chat"""
+        """🎯 MUESTRA DATOS ESTRUCTURADOS USANDO GESTOR CENTRALIZADO"""
+        try:
+            # 🎯 USAR DATA DISPLAY MANAGER CENTRALIZADO
+            success = self.data_display_manager.display_data(data)
+
+            if not success:
+                self.logger.warning("DataDisplayManager no pudo mostrar los datos, usando fallback")
+                self._display_structured_data_fallback(data)
+
+        except Exception as e:
+            self.logger.error(f"Error en DataDisplayManager: {e}")
+            self._display_structured_data_fallback(data)
+
+    def _display_structured_data_fallback(self, data: dict):
+        """🔧 FALLBACK PARA MOSTRAR DATOS SI FALLA EL GESTOR CENTRALIZADO"""
         from datetime import datetime
         current_time = datetime.now().strftime("%H:%M:%S")
 
@@ -1440,63 +1452,99 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             self._mostrar_tabla_pequena(alumnos)
 
     def _mostrar_tabla_grande(self, alumnos):
-        """Muestra tabla optimizada para 50+ alumnos con paginación en texto plano"""
+        """Muestra tabla optimizada para 50+ alumnos con paginación mejorada"""
         total = len(alumnos)
-        limite_por_pagina = 50
+        limite_por_pagina = 25  # 🎯 REDUCIDO: Mejor legibilidad
 
-        # Crear texto plano
-        texto = f"📊 RESULTADOS DE BÚSQUEDA\n"
-        texto += "=" * 50 + "\n"
-        texto += f"Total encontrados: {total} alumnos\n"
-        texto += f"Mostrando: Primeros {min(limite_por_pagina, total)} resultados\n\n"
+        # 🎨 HEADER MEJORADO CON MEJOR FORMATO
+        texto = f"""
+📊 **RESULTADOS DE BÚSQUEDA**
+{'═' * 60}
+📈 **Total encontrados:** {total} alumnos
+📋 **Mostrando:** Primeros {min(limite_por_pagina, total)} resultados
 
-        # Mostrar solo los primeros resultados
+"""
+
+        # 🎯 FORMATO MEJORADO PARA CADA ALUMNO
         for i, alumno in enumerate(alumnos[:limite_por_pagina], 1):
             nombre = alumno.get('nombre', '').upper()
             grado = alumno.get('grado', '')
             grupo = alumno.get('grupo', '')
-            turno = alumno.get('turno', '')[:3] if alumno.get('turno') else ''  # MAT o VES
+            turno = alumno.get('turno', '')[:3] if alumno.get('turno') else ''
             curp = alumno.get('curp', '')
 
-            texto += f"{i:2d}. {nombre}\n"
-            texto += f"    🎓 {grado}° {grupo} - {turno}  |  📋 {curp}\n\n"
+            # 🎨 FORMATO VISUAL MEJORADO
+            texto += f"**{i:2d}.** {nombre}\n"
+            texto += f"     🎓 {grado}° {grupo} - {turno}  •  📋 {curp}\n\n"
 
-        # Mensaje de ayuda para ver más resultados
+        # 🎯 MENSAJE DE AYUDA MEJORADO
         if total > limite_por_pagina:
-            texto += "-" * 50 + "\n"
-            texto += f"💡 Se muestran solo los primeros {limite_por_pagina} resultados.\n"
-            texto += "Para ver un alumno específico: 'Detalles de [nombre completo]'\n"
-            texto += "Para filtrar más: 'Alumnos de [grado] grado grupo [grupo]'\n"
+            restantes = total - limite_por_pagina
+            texto += f"""{'─' * 60}
+💡 **Hay {restantes} alumnos más disponibles**
 
-        self.chat_list.add_assistant_message(texto, self._get_current_time())
+**Para ver más resultados:**
+• "Mostrar más alumnos" - Ver siguientes {min(25, restantes)}
+• "Buscar [nombre específico]" - Encontrar alumno exacto
+• "Alumnos de [grado]° [grupo]" - Filtrar por grado/grupo
+• "Detalles de [nombre completo]" - Ver información completa
+
+"""
+
+        # 🎨 APLICAR FORMATEO AUTOMÁTICO (ahora es necesario porque no se formatea en _handle_chat_engine_response)
+        formatted_texto = self.response_formatter.format_response(texto, "auto")
+        self.chat_list.add_assistant_message(formatted_texto, self._get_current_time())
 
     def _mostrar_tabla_mediana(self, alumnos):
-        """Muestra tabla estándar para 10-50 alumnos en texto plano"""
-        texto = f"🔍 ALUMNOS ENCONTRADOS: {len(alumnos)}\n"
-        texto += "=" * 40 + "\n\n"
+        """Muestra tabla estándar para 10-50 alumnos con formato mejorado"""
+        total = len(alumnos)
 
+        # 🎨 HEADER MEJORADO
+        texto = f"""
+🔍 **ALUMNOS ENCONTRADOS**
+{'═' * 45}
+📊 **Total:** {total} estudiantes
+
+"""
+
+        # 🎯 FORMATO MEJORADO PARA CADA ALUMNO
         for i, alumno in enumerate(alumnos, 1):
             nombre = alumno.get('nombre', '').upper()
             curp = alumno.get('curp', '')
             grado = alumno.get('grado', '')
             grupo = alumno.get('grupo', '')
-            turno = alumno.get('turno', '')
+            turno = alumno.get('turno', '')[:3] if alumno.get('turno') else ''
 
-            texto += f"{i:2d}. {nombre}\n"
-            texto += f"    📋 {curp}\n"
-            texto += f"    🎓 {grado}° {grupo} - {turno}\n\n"
+            # 🎨 FORMATO VISUAL MEJORADO
+            texto += f"**{i:2d}.** {nombre}\n"
+            texto += f"     🎓 {grado}° {grupo} - {turno}  •  📋 {curp}\n\n"
 
-        texto += "-" * 40 + "\n"
-        texto += "💡 Para ver detalles completos: 'Detalles de [nombre]'\n"
+        # 🎯 MENSAJE DE AYUDA PARA LISTAS MEDIANAS
+        texto += f"""{'─' * 45}
+💡 **Opciones disponibles:**
+• "Detalles de [nombre]" - Ver información completa
+• "Constancia para [nombre]" - Generar constancia
+• "Número [X]" - Seleccionar alumno por posición
 
-        self.chat_list.add_assistant_message(texto, self._get_current_time())
+"""
+
+        # 🎨 APLICAR FORMATEO AUTOMÁTICO (ahora es necesario porque no se formatea en _handle_chat_engine_response)
+        formatted_texto = self.response_formatter.format_response(texto, "auto")
+        self.chat_list.add_assistant_message(formatted_texto, self._get_current_time())
 
     def _mostrar_tabla_pequena(self, alumnos):
-        """Muestra tabla detallada para pocos alumnos (≤10) en texto plano"""
-        plural = 's' if len(alumnos) > 1 else ''
-        texto = f"👥 {len(alumnos)} ALUMNO{plural.upper()} ENCONTRADO{plural.upper()}\n"
-        texto += "=" * 35 + "\n\n"
+        """Muestra tabla detallada para pocos alumnos (≤10) con formato premium"""
+        total = len(alumnos)
+        plural = 's' if total > 1 else ''
 
+        # 🎨 HEADER PREMIUM PARA POCOS ALUMNOS
+        texto = f"""
+👥 **{total} ALUMNO{plural.upper()} ENCONTRADO{plural.upper()}**
+{'═' * 50}
+
+"""
+
+        # 🎯 FORMATO DETALLADO PARA CADA ALUMNO
         for i, alumno in enumerate(alumnos, 1):
             nombre = alumno.get('nombre', '').upper()
             curp = alumno.get('curp', '')
@@ -1505,12 +1553,24 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             turno = alumno.get('turno', '')
             matricula = alumno.get('matricula', '')
 
-            texto += f"{i}. {nombre}\n"
-            texto += f"   📋 CURP: {curp}\n"
-            texto += f"   🎓 Grado: {grado}° {grupo} - {turno}\n"
-            texto += f"   🆔 Matrícula: {matricula}\n\n"
+            # 🎨 FORMATO PREMIUM CON MEJOR ESPACIADO
+            texto += f"**{i}.** **{nombre}**\n"
+            texto += f"   📋 **CURP:** {curp}\n"
+            texto += f"   🎓 **Grado:** {grado}° {grupo} - {turno}\n"
+            texto += f"   🆔 **Matrícula:** {matricula}\n\n"
 
-        self.chat_list.add_assistant_message(texto, self._get_current_time())
+        # 🎯 MENSAJE DE AYUDA ESPECÍFICO PARA POCOS ALUMNOS
+        texto += f"""{'─' * 50}
+💡 **Acciones rápidas disponibles:**
+• "Detalles completos de [nombre]" - Ver toda la información
+• "Constancia de estudios para [nombre]" - Generar constancia
+• "Calificaciones de [nombre]" - Ver notas del alumno
+
+"""
+
+        # 🎨 APLICAR FORMATEO AUTOMÁTICO (ahora es necesario porque no se formatea en _handle_chat_engine_response)
+        formatted_texto = self.response_formatter.format_response(texto, "auto")
+        self.chat_list.add_assistant_message(formatted_texto, self._get_current_time())
 
     def mostrar_detalle_alumno(self, alumno):
         """Muestra los detalles completos de un solo alumno con calificaciones si las tiene"""

@@ -51,28 +51,17 @@ class AsyncChatWorker(QThread):
                 self.error_occurred.emit("No hay mensaje para procesar")
                 return
 
-            self.logger.info(f"🔄 Iniciando procesamiento asíncrono: {self.message_to_process}")
+            self.logger.info(f"🔄 [WORKER] Procesando: '{self.message_to_process}'")
             self.processing_started.emit()
 
-            # 🆕 CREAR CHATENGINE ESPECÍFICO PARA ESTE HILO
-            # Esto evita problemas de SQLite threading
-            thread_chat_engine = self._create_thread_chat_engine()
+            # 🧠 PREPARAR CHATENGINE PARA THREADING
+            self._prepare_main_engine_for_threading()
+            self.last_thread_engine = self.chat_engine
 
-            # 🆕 GUARDAR REFERENCIA PARA SINCRONIZACIÓN POSTERIOR
-            self.last_thread_engine = thread_chat_engine
+            # Procesar mensaje usando ChatEngine principal
+            response = self.chat_engine.process_message(self.message_to_process)
 
-            # 🆕 LOGGING DETALLADO ANTES DEL PROCESAMIENTO
-            self.logger.debug(f"🔄 Procesando mensaje en worker thread: '{self.message_to_process}'")
-            self.logger.debug(f"   - Thread ID: {threading.current_thread().ident}")
-            self.logger.debug(f"   - PDF Panel disponible: {thread_chat_engine.pdf_panel is not None}")
-
-            if thread_chat_engine.pdf_panel:
-                self.logger.debug(f"   - PDF cargado: {hasattr(thread_chat_engine.pdf_panel, 'original_pdf') and thread_chat_engine.pdf_panel.original_pdf}")
-
-            # Procesar mensaje usando ChatEngine del hilo
-            response = thread_chat_engine.process_message(self.message_to_process)
-
-            self.logger.info("✅ Procesamiento completado")
+            self.logger.info("✅ [WORKER] Procesamiento completado")
 
             # Emitir respuesta
             self.message_processed.emit(response)
@@ -129,6 +118,9 @@ class AsyncChatWorker(QThread):
             # 🆕 COPIAR CONTEXTO DEL CHAT ENGINE PRINCIPAL
             if hasattr(self.chat_engine, 'context'):
                 thread_engine.context = self.chat_engine.context.copy()
+
+            # 🧠 SINCRONIZAR SISTEMA DE MEMORIA AVANZADA
+            self._sync_memory_system(thread_engine)
 
             # 🆕 COPIAR HISTORIAL CONVERSACIONAL COMPLETO
             if hasattr(self.chat_engine, 'message_processor'):
@@ -205,6 +197,91 @@ class AsyncChatWorker(QThread):
 
         except Exception as e:
             self.logger.error(f"❌ Error forzando recreación de componentes SQL: {e}")
+
+    def _sync_memory_system(self, thread_engine):
+        """🧠 SINCRONIZAR SISTEMA DE MEMORIA AVANZADA ENTRE HILOS"""
+        try:
+            # Verificar si el chat engine principal tiene sistema de memoria
+            if not hasattr(self.chat_engine, 'message_processor'):
+                self.logger.debug("⚠️ Chat engine principal no tiene message_processor")
+                return
+
+            main_processor = self.chat_engine.message_processor
+            thread_processor = thread_engine.message_processor
+
+            # Verificar si el sistema de memoria está habilitado
+            if not hasattr(main_processor, '_memory_system_enabled') or not main_processor._memory_system_enabled:
+                self.logger.debug("⚠️ Sistema de memoria no habilitado en chat engine principal")
+                return
+
+            # Habilitar sistema de memoria en el thread processor
+            if hasattr(thread_processor, 'enable_advanced_memory_system'):
+                thread_processor.enable_advanced_memory_system(True)
+                self.logger.debug("✅ Sistema de memoria habilitado en thread processor")
+
+            # Sincronizar sistema de memoria si existe
+            if hasattr(main_processor, '_memory_system') and main_processor._memory_system:
+                main_memory_system = main_processor._memory_system
+
+                # Obtener estadísticas de memoria del sistema principal
+                try:
+                    memory_stats = main_memory_system.get_comprehensive_stats()
+                    self.logger.debug(f"🧠 Memoria principal: {memory_stats.get('total_interactions', 0)} interacciones")
+
+                    # Si hay memoria en el sistema principal, intentar sincronizarla
+                    if memory_stats.get('total_interactions', 0) > 0:
+                        # Forzar inicialización del sistema de memoria en el thread
+                        if hasattr(thread_processor, '_initialize_memory_system'):
+                            thread_memory_system = thread_processor._initialize_memory_system()
+
+                            if thread_memory_system:
+                                # Copiar memoria conversacional
+                                if hasattr(main_memory_system, 'processor') and hasattr(main_memory_system.processor, 'memory'):
+                                    main_memory = main_memory_system.processor.memory
+                                    thread_memory = thread_memory_system.processor.memory
+
+                                    # Copiar interacciones
+                                    if hasattr(main_memory, 'interactions') and hasattr(thread_memory, 'interactions'):
+                                        thread_memory.interactions = main_memory.interactions.copy()
+                                        self.logger.debug(f"✅ Copiadas {len(main_memory.interactions)} interacciones de memoria")
+
+                                # Asignar el sistema de memoria sincronizado
+                                thread_processor._memory_system = thread_memory_system
+                                self.logger.debug("✅ Sistema de memoria sincronizado en thread")
+
+                except Exception as e:
+                    self.logger.error(f"❌ Error sincronizando memoria: {e}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error en sincronización de sistema de memoria: {e}")
+
+    def _prepare_main_engine_for_threading(self):
+        """🧠 PREPARAR CHATENGINE PRINCIPAL PARA THREADING SIN PERDER MEMORIA"""
+        try:
+            # Forzar recreación solo de componentes SQL críticos
+            self._force_recreate_sql_components()
+
+            # Recrear solo el SQL executor en el message processor si es necesario
+            if hasattr(self.chat_engine, 'message_processor'):
+                processor = self.chat_engine.message_processor
+
+                # Verificar si el SQL executor necesita recreación para este hilo
+                if hasattr(processor, 'sql_executor'):
+                    try:
+                        # Probar la conexión SQL actual
+                        processor.sql_executor.execute_query("SELECT 1", [])
+                        self.logger.debug("✅ SQL executor actual funciona en este hilo")
+                    except Exception:
+                        # Recrear solo el SQL executor
+                        self.logger.debug("🔄 Recreando SQL executor para este hilo...")
+                        from app.core.ai.interpretation.sql_executor import get_sql_executor
+                        processor.sql_executor = get_sql_executor()
+                        self.logger.debug("✅ SQL executor recreado para threading")
+
+            self.logger.debug("✅ ChatEngine principal preparado para threading")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error preparando engine para threading: {e}")
 
 class LoadingIndicator(QObject):
     """

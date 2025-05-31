@@ -75,12 +75,41 @@ class IntentionDetector:
 
         except Exception as e:
             self.logger.error(f"Error en detección de intención: {e}")
+            self.logger.error(f"Tipo de error: {type(e)}")
+            self.logger.error(f"Args del error: {e.args}")
+            self.logger.error(f"Estado del gemini_client: {self.gemini_client is not None}")
+
+            # 🚨 PROBLEMA CRÍTICO: Manejar KeyError específico
+            if isinstance(e, KeyError) and e.args == (0,):
+                self.logger.error("🚨 KeyError con clave 0 - Problema en el cliente Gemini")
+                self.logger.error(f"Estado del gemini_client.models: {hasattr(self.gemini_client, 'models')}")
+                if hasattr(self.gemini_client, 'models'):
+                    self.logger.error(f"Modelos disponibles: {list(self.gemini_client.models.keys()) if self.gemini_client.models else 'None'}")
+
+                # Intentar reinicializar cliente
+                self.logger.warning("🔄 Reinicializando cliente Gemini por KeyError...")
+                try:
+                    from app.ui.ai_chat.gemini_client import GeminiClient
+                    self.gemini_client = GeminiClient()
+                    self.logger.info("✅ Cliente Gemini reinicializado")
+                except Exception as reinit_error:
+                    self.logger.error(f"❌ Error reinicializando cliente: {reinit_error}")
+
+            elif str(e) == "0" or not self.gemini_client:
+                self.logger.warning("🔄 Cliente Gemini corrupto, intentando reinicializar...")
+                try:
+                    from app.ui.ai_chat.gemini_client import GeminiClient
+                    self.gemini_client = GeminiClient()
+                    self.logger.info("✅ Cliente Gemini reinicializado")
+                except Exception as reinit_error:
+                    self.logger.error(f"❌ Error reinicializando cliente: {reinit_error}")
+
             # Fallback a conversación general
             return IntentionResult(
                 intention_type='conversacion_general',
-                sub_intention='chat_casual',  # ← NUEVO
+                sub_intention='chat_casual',
                 confidence=Config.INTERPRETATION['confidence_thresholds']['fallback'],
-                reasoning=f'Error en detección: {str(e)}',
+                reasoning=f'Error en detección: {str(e)} (tipo: {type(e).__name__})',
                 detected_entities={}
             )
 

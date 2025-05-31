@@ -296,10 +296,12 @@ REGLAS DE FILTRADO INTELIGENTE:
    - Si pidió estadísticas → mantener datos agregados
    - Si pidió lista → mantener formato de lista
 
-4. **LÍMITES INTELIGENTES:**
-   - Si hay más de 25 registros y no pidió "todos" → mostrar primeros 15 + resumen
-   - Si pidió "completa" → mostrar todos sin límite
-   - Si pidió cantidad específica → respetar exactamente
+4. **LÍMITES INTELIGENTES OPTIMIZADOS - REGLAS ESTRICTAS:**
+   - Si hay 1-25 registros → SIEMPRE mostrar TODOS (cantidad_final = número_total_registros)
+   - Si hay 26-50 registros → SIEMPRE mostrar TODOS con formato compacto (cantidad_final = número_total_registros)
+   - Si hay 51+ registros y no pidió "todos" → mostrar primeros 25 (cantidad_final = 25)
+   - Si pidió "completa", "todos", "lista completa" → SIEMPRE mostrar todos sin límite (cantidad_final = número_total_registros)
+   - Si pidió cantidad específica → respetar exactamente esa cantidad
 
 INSTRUCCIONES:
 1. ANALIZA la consulta original y determina qué necesita el usuario
@@ -319,11 +321,21 @@ RESPONDE ÚNICAMENTE con un JSON:
     "sugerencia_mejora": "Cómo mejorar la respuesta si es necesario"
 }}
 
-EJEMPLOS:
+EJEMPLOS ESPECÍFICOS PARA LÍMITES:
 - "dame toda la información de LUIS FERNANDO" → campos_incluir: "todos", cantidad_final: 1
-- "lista completa de 1ro A" → cantidad_final: todos_los_registros, campos_incluir: ["nombre", "curp", "grado", "grupo"]
+- "lista completa de 1ro A" → cantidad_final: todos_los_registros (ej: si hay 18, cantidad_final: 18)
+- "todos los alumnos de 2do A" → cantidad_final: todos_los_registros (ej: si hay 18, cantidad_final: 18)
+- "quienes son todos los alumnos de 2do A" → cantidad_final: todos_los_registros (ej: si hay 18, cantidad_final: 18)
 - "un alumno de 3er grado" → cantidad_final: 1, campos_incluir: ["nombre"]
 - "CURP de María García" → cantidad_final: 1, campos_incluir: ["curp"]
+
+CASOS ESPECÍFICOS DE LÍMITES:
+- Si hay 5 registros → cantidad_final: 5 (mostrar todos)
+- Si hay 18 registros → cantidad_final: 18 (mostrar todos)
+- Si hay 25 registros → cantidad_final: 25 (mostrar todos)
+- Si hay 30 registros → cantidad_final: 30 (mostrar todos con formato compacto)
+- Si hay 60 registros y no pidió "todos" → cantidad_final: 25 (mostrar primeros 25)
+- Si hay 60 registros y pidió "todos" → cantidad_final: 60 (mostrar todos)
 """
 
     def get_sql_continuation_prompt(self, user_query: str, previous_data: list,
@@ -486,9 +498,10 @@ Validar que los datos resuelven la consulta y generar una respuesta NATURAL y VA
 REGLAS PARA MOSTRAR DATOS REALES:
 - SIEMPRE muestra los datos reales obtenidos de la consulta
 - NO uses placeholders como "[Listado de alumnos aquí]"
-- NO inventes reglas sobre cuántos mostrar
-- PRESENTA los datos tal como están en los resultados
-- Si hay muchos datos, muestra los primeros y menciona que hay más disponibles
+- PRESENTA los datos tal como están en los resultados filtrados
+- Para listas de 25 elementos o menos: MUESTRA TODOS los elementos completos
+- Para listas de 26-50 elementos: MUESTRA TODOS con formato compacto
+- Para listas de 51+ elementos: MUESTRA primeros 25 + menciona cuántos más hay disponibles
 
 🧠 AUTO-REFLEXIÓN CONVERSACIONAL INTELIGENTE:
 Después de generar tu respuesta, reflexiona como un secretario escolar experto que entiende el FLUJO CONVERSACIONAL:
@@ -572,6 +585,90 @@ Ejemplo 5 - Lista corta con acción implícita (CONTEXTO + SELECCIÓN):
 "Mostré 3 alumnos de 2do grado. El usuario podría seleccionar uno específico ('el segundo', 'para María') o pedir acción general ('constancias para todos'). DEBO recordar la lista completa y sus posiciones para facilitar referencias contextuales."
 """
 
+    def get_specific_student_intention_prompt(self, user_query: str, conversation_context: str = "") -> str:
+        """
+        NUEVO PROMPT 1: Detecta QUÉ ESPECÍFICAMENTE quiere sobre alumnos
+
+        REEMPLAZA: get_student_query_intention_prompt (que era redundante)
+
+        PROPÓSITO:
+        - Master YA confirmó que es consulta de alumnos
+        - Ahora determino QUÉ ESPECÍFICAMENTE quiere
+        - Delego a flujos especializados según la categoría
+
+        CATEGORÍAS:
+        - busqueda: Buscar alumnos específicos
+        - estadistica: Conteos, promedios, análisis
+        - reporte: Listados completos organizados
+        - constancia: Generar documentos
+        - continuacion: Referencias a datos previos
+        """
+        context_section = f"""
+CONTEXTO CONVERSACIONAL DISPONIBLE:
+{conversation_context}
+
+🧠 ANÁLISIS DE CONTINUACIÓN:
+Si hay contexto conversacional, analiza si la consulta hace referencia a información anterior:
+- Referencias directas: "ese alumno", "el tercero", "para él", "número 5"
+- Confirmaciones: "sí", "ok", "correcto", "proceder"
+- Especificaciones: "de estudios", "con foto", "completa"
+
+""" if conversation_context.strip() else ""
+
+        return f"""
+Soy el EXPERTO EN ALUMNOS de la escuela "PROF. MAXIMO GAMIZ FERNANDEZ".
+El Master YA confirmó que es consulta sobre alumnos.
+
+{self.school_context}
+
+{context_section}
+
+CONSULTA DEL USUARIO: "{user_query}"
+
+🎯 MI TAREA: Determinar QUÉ ESPECÍFICAMENTE quiere sobre alumnos para delegar al flujo correcto.
+
+CATEGORÍAS ESPECÍFICAS:
+1. 🔍 BÚSQUEDA: Buscar alumnos específicos por nombre/criterio
+   - "buscar garcia", "mostrar luis", "información de maría"
+   - "dame un alumno de 3er grado", "cualquier estudiante"
+
+2. 📊 ESTADÍSTICA: Conteos, cálculos, análisis numéricos
+   - "cuántos alumnos hay", "promedio de edades", "total por grado"
+   - "qué porcentaje", "distribución", "estadísticas"
+
+3. 📋 REPORTE: Listados completos organizados
+   - "lista completa de 2do A", "todos los de turno matutino"
+   - "reporte de alumnos", "listado por grado"
+
+4. 📄 CONSTANCIA: Generar documentos oficiales
+   - "constancia para luis", "generar certificado", "documento"
+   - "constancia de estudios", "certificado de calificaciones"
+
+5. 🔄 TRANSFORMACIÓN: Convertir formatos de documentos
+   - "convertir PDF", "cambiar formato", "transformar constancia"
+
+6. 💬 CONTINUACIÓN: Referencias a datos/contexto previo
+   - "para el segundo", "constancia para él", "del tercero"
+   - "sí", "correcto", "proceder", "generar"
+
+RESPONDE ÚNICAMENTE con un JSON:
+{{
+    "categoria": "busqueda|estadistica|reporte|constancia|transformacion|continuacion",
+    "sub_tipo": "simple|complejo|listado|conteo|generacion|conversion|referencia|confirmacion",
+    "complejidad": "baja|media|alta",
+    "requiere_contexto": true|false,
+    "flujo_optimo": "sql_directo|analisis_datos|listado_completo|generacion_docs|procesamiento_contexto",
+    "razonamiento": "Explicación de por qué elegí esta categoría y flujo"
+}}
+
+EJEMPLOS ESPECÍFICOS:
+- "buscar garcia" → categoria: "busqueda", sub_tipo: "simple", flujo_optimo: "sql_directo"
+- "cuántos alumnos hay en 2do A" → categoria: "estadistica", sub_tipo: "conteo", flujo_optimo: "analisis_datos"
+- "lista completa de 3er grado" → categoria: "reporte", sub_tipo: "listado", flujo_optimo: "listado_completo"
+- "constancia para luis" → categoria: "constancia", sub_tipo: "generacion", flujo_optimo: "generacion_docs"
+- "para el segundo" → categoria: "continuacion", sub_tipo: "referencia", flujo_optimo: "procesamiento_contexto"
+"""
+
     def get_student_query_intention_prompt(self, user_query: str, conversation_context: str = "") -> str:
         """
         PROMPT 1 CENTRALIZADO: Detecta si la consulta es sobre alumnos/estudiantes
@@ -649,7 +746,139 @@ EJEMPLOS CONTEXTUALES MEJORADOS:
 - "ayuda del sistema" → es_consulta_alumnos: false, tipo: "otro", requiere_contexto: false
 """
 
-    def get_sql_generation_prompt(self, user_query: str) -> str:
+    def get_action_selection_prompt(self, user_query: str, categoria: str, conversation_context: str = "") -> str:
+        """
+        🆕 NUEVO PROMPT 2: Selección de acciones de alto nivel
+
+        REEMPLAZA: get_sql_generation_prompt() (que generaba SQL desde cero)
+
+        PROPÓSITO:
+        - LLM elige ACCIONES del catálogo en lugar de generar SQL
+        - Acciones son predecibles y combinables
+        - Abstrae complejidad técnica del LLM
+
+        VENTAJAS:
+        - Mayor fiabilidad y predictibilidad
+        - Posibilidad de combinar acciones creativamente
+        - Debugging más fácil
+        - Reutilización de estrategias probadas
+        """
+
+        # Importar catálogo de acciones
+        from app.core.ai.actions import ActionCatalog
+        catalog = ActionCatalog()
+
+        # Obtener acciones disponibles para la categoría
+        actions_formatted = catalog.format_actions_for_prompt(categoria)
+
+        context_section = f"""
+CONTEXTO CONVERSACIONAL DISPONIBLE:
+{conversation_context}
+
+🧠 ANÁLISIS DE CONTEXTO:
+Si hay contexto conversacional, considera si puedes usar datos previos o necesitas nueva información.
+
+🎯 REGLA CRÍTICA PARA CONTEXTO CON IDs:
+Si el contexto contiene IDs de alumnos y la consulta se refiere a "esos", "de ellos", "de los anteriores":
+- USA TODOS LOS IDs disponibles en el contexto, NO solo los primeros 5
+- Formato correcto: "valor": "[id1, id2, id3, ..., idN]" (TODOS los IDs)
+- Ejemplo: Si hay 49 IDs, usa los 49, no solo [2, 7, 8, 11, 16]
+
+""" if conversation_context.strip() else ""
+
+        # 🆕 OBTENER ESTRUCTURA DE BASE DE DATOS
+        database_context = self.get_database_context()
+
+        return f"""
+Soy el ESTRATEGA DE ACCIONES para consultas de alumnos de la escuela "PROF. MAXIMO GAMIZ FERNANDEZ".
+
+{self.school_context}
+
+ESTRUCTURA COMPLETA DE LA BASE DE DATOS:
+{database_context}
+
+{context_section}
+
+CONSULTA DEL USUARIO: "{user_query}"
+CATEGORÍA DETECTADA: {categoria}
+
+{actions_formatted}
+
+🎯 MI TAREA: Elegir la ACCIÓN más eficiente para resolver esta consulta.
+
+ESTRATEGIAS DISPONIBLES:
+1. 🎯 SIMPLE: Una sola acción resuelve todo
+2. 🔄 COMBINADA: Múltiples acciones trabajando juntas
+3. 📋 SECUENCIAL: Acciones en secuencia (resultado de una alimenta la siguiente)
+
+EJEMPLOS DE ESTRATEGIAS:
+
+SIMPLE - BÚSQUEDAS (USAR BUSCAR_UNIVERSAL PARA MÁXIMA FLEXIBILIDAD):
+- "buscar garcia" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "alumnos", "campo": "nombre", "operador": "LIKE", "valor": "garcia"}})
+- "alumnos de 2do grado" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "datos_escolares", "campo": "grado", "operador": "=", "valor": "2"}})
+- "estudiantes nacidos en 2014" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "alumnos", "campo": "fecha_nacimiento", "operador": "LIKE", "valor": "2014"}})
+- "alumnos del turno vespertino" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "datos_escolares", "campo": "turno", "operador": "=", "valor": "VESPERTINO"}})
+- "buscar por CURP" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "alumnos", "campo": "curp", "operador": "=", "valor": "CURP_EXACTA"}})
+
+SIMPLE - ESTADÍSTICAS Y CONTEOS:
+- "cuántos alumnos hay por grado" → CALCULAR_ESTADISTICA (tipo: conteo, agrupar_por: grado)
+- "distribución por turno" → CALCULAR_ESTADISTICA (tipo: distribucion, agrupar_por: turno)
+- "estadísticas generales" → CALCULAR_ESTADISTICA (tipo: conteo, agrupar_por: grado)
+- "cuántos alumnos del turno vespertino" → CALCULAR_ESTADISTICA (tipo: conteo, filtro: turno=vespertino)
+- "total de estudiantes" → CONTAR_ALUMNOS (sin filtros)
+
+REGLA CLAVE PARA ESTADÍSTICAS:
+- Si pide AGRUPACIÓN (por grado, por turno, por grupo) → CALCULAR_ESTADISTICA
+- Si pide DISTRIBUCIÓN o PORCENTAJES → CALCULAR_ESTADISTICA
+- Si pide CONTEO SIMPLE sin agrupación → CONTAR_ALUMNOS
+- Si pide ESTADÍSTICAS GENERALES → CALCULAR_ESTADISTICA
+
+COMBINADA - MÚLTIPLES CRITERIOS (USAR BUSCAR_UNIVERSAL CON FILTROS):
+- "garcia de 2do grado" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "alumnos", "campo": "nombre", "operador": "LIKE", "valor": "garcia"}}, filtros_adicionales: [{{"tabla": "datos_escolares", "campo": "grado", "operador": "=", "valor": "2"}}])
+- "alumnos del turno matutino nacidos en 2014" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "datos_escolares", "campo": "turno", "operador": "=", "valor": "MATUTINO"}}, filtros_adicionales: [{{"tabla": "alumnos", "campo": "fecha_nacimiento", "operador": "LIKE", "valor": "2014"}}])
+
+COMBINADA - CON CONTEXTO CONVERSACIONAL (USAR TODOS LOS IDs):
+- Contexto: 49 alumnos con IDs [2,7,8,11,16,...,205] + Query: "de esos dame los del turno matutino"
+  → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "datos_escolares", "campo": "turno", "operador": "=", "valor": "MATUTINO"}}, filtros_adicionales: [{{"tabla": "alumnos", "campo": "id", "operador": "IN", "valor": "[2,7,8,11,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205]"}}])
+
+- "constancia para luis" → PREPARAR_DATOS_CONSTANCIA + generar PDF
+
+SECUENCIAL:
+- "el alumno más joven" → LISTAR_POR_CRITERIO + CALCULAR_ESTADISTICA (MIN edad)
+- "promedio de calificaciones de 3er grado" → LISTAR_POR_CRITERIO + CALCULAR_ESTADISTICA
+
+RESPONDE ÚNICAMENTE con un JSON:
+{{
+    "estrategia": "simple|combinada|secuencial",
+    "accion_principal": "NOMBRE_ACCION",
+    "parametros": {{
+        "param1": "valor1",
+        "param2": "valor2"
+    }},
+    "acciones_adicionales": [
+        {{
+            "accion": "OTRA_ACCION",
+            "parametros": {{}},
+            "orden": 2,
+            "usa_resultado_anterior": true
+        }}
+    ],
+    "razonamiento": "Por qué elegí esta estrategia y estas acciones específicas"
+}}
+
+REGLAS IMPORTANTES:
+1. 🆕 PRIORIZAR BUSCAR_UNIVERSAL para todas las búsquedas (es más flexible y dinámico)
+2. Siempre elige la estrategia MÁS SIMPLE que resuelva la consulta
+3. Solo usa combinaciones cuando sea realmente necesario
+4. Asegúrate de que los parámetros sean específicos y completos
+5. El razonamiento debe explicar por qué esta estrategia es óptima
+6. Para búsquedas por cualquier campo, usa BUSCAR_UNIVERSAL con criterio_principal
+7. Para búsquedas con múltiples criterios, usa BUSCAR_UNIVERSAL con filtros_adicionales
+8. Para conteos y estadísticas, usa las acciones específicas de esa categoría
+9. 🎯 CRÍTICO: Si hay contexto con IDs, USA TODOS LOS IDs disponibles, NO solo los primeros 5
+"""
+
+    def get_sql_generation_prompt(self, user_query: str, conversation_context: str = "") -> str:
         """
         PROMPT 2 CENTRALIZADO: Genera estrategia + SQL en un solo paso
 
@@ -668,6 +897,23 @@ EJEMPLOS CONTEXTUALES MEJORADOS:
         """
         database_context = self.get_database_context()
 
+        # 🆕 AGREGAR CONTEXTO CONVERSACIONAL SI ESTÁ DISPONIBLE
+        context_section = ""
+        if conversation_context.strip():
+            context_section = f"""
+CONTEXTO CONVERSACIONAL DISPONIBLE:
+{conversation_context}
+
+IMPORTANTE: Si la consulta se refiere a elementos del contexto (ej: "de todos ellos", "de esos alumnos"),
+usa los IDs específicos del contexto como filtro en tu SQL.
+
+EJEMPLOS CON CONTEXTO:
+- Contexto: IDs [41, 42, 43] + Query: "de todos ellos quienes tienen calificaciones"
+  → SELECT a.nombre, 'Con Calificaciones' as estado FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE a.id IN (41, 42, 43) AND de.calificaciones IS NOT NULL
+- Contexto: IDs [41, 42, 43] + Query: "cuántos de ellos son de turno matutino"
+  → SELECT COUNT(*) as total FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE a.id IN (41, 42, 43) AND de.turno = 'MATUTINO'
+"""
+
         return f"""
 Eres un experto en SQL para un sistema escolar. Tu trabajo es analizar consultas de usuarios y generar SQL optimizado en un solo paso.
 
@@ -675,7 +921,7 @@ Eres un experto en SQL para un sistema escolar. Tu trabajo es analizar consultas
 
 ESTRUCTURA COMPLETA DE LA BASE DE DATOS:
 {database_context}
-
+{context_section}
 CONSULTA DEL USUARIO: "{user_query}"
 
 INSTRUCCIONES INTELIGENTES:
@@ -722,3 +968,30 @@ EJEMPLOS INTELIGENTES BASADOS EN LA ESTRUCTURA REAL:
 
 RESPONDE ÚNICAMENTE con la consulta SQL, sin explicaciones adicionales.
 """
+
+    def get_response_with_reflection_prompt(self, user_query: str, sql_query: str,
+                                          data: List[Dict], row_count: int) -> str:
+        """
+        PROMPT para generar respuesta con auto-reflexión
+
+        Método requerido por ResponseGenerator para compatibilidad
+        """
+        # Formatear datos para el prompt
+        data_summary = self._format_data_for_prompt(data, row_count)
+
+        # Usar el prompt de validación y respuesta existente
+        return self.get_validation_and_response_prompt(
+            user_query, sql_query, data_summary,
+            {"accion_requerida": "mantener", "resuelve_consulta": True},
+            row_count, row_count
+        )
+
+    def _format_data_for_prompt(self, data: List[Dict], row_count: int) -> str:
+        """Formatea datos para incluir en prompts"""
+        if not data or row_count == 0:
+            return "Sin datos disponibles"
+
+        if row_count <= 5:
+            return str(data)
+        else:
+            return f"Primeros 3 registros: {data[:3]}... (total: {row_count} registros)"

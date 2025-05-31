@@ -79,9 +79,13 @@ class ConstanciaService:
             if not datos.get("nombre"):
                 return False, "No se pudo extraer el nombre del alumno", None
 
-            # Manejar correctamente la opción de foto
-            if incluir_foto:
-                # Si se quiere incluir foto y hay una disponible
+            # 🎯 LÓGICA INTELIGENTE DE FOTO (DESDE PDF)
+            if incluir_foto is False:
+                # Usuario solicita explícitamente NO incluir foto
+                datos['has_photo'] = False
+                datos['show_placeholder'] = False
+            elif incluir_foto is True:
+                # Usuario solicita explícitamente incluir foto
                 if 'has_photo' in datos and datos['has_photo']:
                     datos['has_photo'] = True
                     datos['show_placeholder'] = True
@@ -90,9 +94,15 @@ class ConstanciaService:
                     datos['has_photo'] = False
                     datos['show_placeholder'] = True
             else:
-                # Si el usuario no quiere incluir foto, asegurarse de que no se muestre
-                datos['has_photo'] = False
-                datos['show_placeholder'] = False
+                # incluir_foto es None - COMPORTAMIENTO AUTOMÁTICO INTELIGENTE
+                # ✅ Si existe la foto en el PDF, mostrarla automáticamente
+                # ❌ Si no existe, no mostrar nada
+                if 'has_photo' in datos and datos['has_photo']:
+                    datos['has_photo'] = True
+                    datos['show_placeholder'] = True
+                else:
+                    datos['has_photo'] = False
+                    datos['show_placeholder'] = False
 
             # Buscar o crear alumno si se debe guardar (solo si no estamos en modo vista previa)
             alumno = None
@@ -279,8 +289,16 @@ class ConstanciaService:
             photos_dir = path_manager.get_photos_dir()
             foto_path = photos_dir / f"{alumno.curp}.jpg"
 
-            # Solo incluir foto si el usuario lo ha solicitado explícitamente
-            if incluir_foto:
+            # 🎯 LÓGICA INTELIGENTE DE FOTO
+            if incluir_foto is False:
+                # Usuario solicita explícitamente NO incluir foto
+                datos["has_photo"] = False
+                datos["show_placeholder"] = False
+                # No asignar foto_path para asegurar que no se muestre
+                if "foto_path" in datos:
+                    del datos["foto_path"]
+            elif incluir_foto is True:
+                # Usuario solicita explícitamente incluir foto
                 if foto_path.exists():
                     datos["has_photo"] = True
                     datos["foto_path"] = str(foto_path)
@@ -290,9 +308,16 @@ class ConstanciaService:
                     datos["has_photo"] = False
                     datos["show_placeholder"] = True
             else:
-                # Si el usuario no quiere incluir foto, asegurarse de que no se muestre
-                datos["has_photo"] = False
-                datos["show_placeholder"] = False
+                # incluir_foto es None - COMPORTAMIENTO AUTOMÁTICO INTELIGENTE
+                # ✅ Si existe la foto, mostrarla automáticamente
+                # ❌ Si no existe, no mostrar nada
+                if foto_path.exists():
+                    datos["has_photo"] = True
+                    datos["foto_path"] = str(foto_path)
+                    datos["show_placeholder"] = True
+                else:
+                    datos["has_photo"] = False
+                    datos["show_placeholder"] = False
 
             # Generar constancia
             if preview_mode:
