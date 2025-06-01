@@ -30,7 +30,13 @@ def main():
         print("🛑 DEBUG: Pausas de debug ACTIVADAS")
         print("   ├── El sistema se pausará en puntos críticos")
         print("   ├── Presiona ENTER en cada pausa para continuar")
-        print("   └── Útil para análisis detallado del flujo\n")
+        print("   ├── Útil para análisis detallado del flujo")
+        print("   └── PUNTOS CRÍTICOS MONITOREADOS:")
+        print("       ├── 🧠 Master: Razonamiento inicial completo")
+        print("       ├── 🎓 Student: Recibe información del Master")
+        print("       ├── 🔍 Master: Detección inteligente de continuación (LLM)")
+        print("       ├── 🗃️ Student: Mapeo de campos con contexto DB")
+        print("       └── 🔧 ActionExecutor: SQL final generado\n")
     elif args.no_debug_pauses:
         os.environ['DEBUG_PAUSES'] = 'false'
         print("⚡ DEBUG: Pausas de debug DESACTIVADAS")

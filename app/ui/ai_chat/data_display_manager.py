@@ -36,22 +36,23 @@ class DataDisplayManager:
             bool: True si se mostró correctamente
         """
         try:
-            # 🔍 DEBUG: Mostrar estructura de datos recibidos
-            self.logger.info(f"🔍 DEBUG - Datos recibidos: {list(data.keys())}")
+            # 🔧 ANÁLISIS DE DATOS RECIBIDOS
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [DATA] Analizando datos recibidos:")
+            debug_detailed(self.logger, f"   ├── Campos: {len(data.keys())} disponibles")
+
             if "data" in data:
                 data_content = data["data"]
                 if isinstance(data_content, list):
-                    self.logger.info(f"🔍 DEBUG - data es lista con {len(data_content)} elementos")
-                    if len(data_content) > 0:
-                        # 🔧 CORREGIDO: Verificar que el primer elemento sea un diccionario
-                        if isinstance(data_content[0], dict):
-                            self.logger.info(f"🔍 DEBUG - Primer elemento: {list(data_content[0].keys())}")
-                        else:
-                            self.logger.info(f"🔍 DEBUG - Primer elemento: {type(data_content[0])} - {data_content[0]}")
+                    debug_detailed(self.logger, f"   ├── Registros: {len(data_content)} elementos")
+                    if len(data_content) > 0 and isinstance(data_content[0], dict):
+                        debug_detailed(self.logger, f"   └── Estructura: {len(data_content[0].keys())} campos por registro")
+                    else:
+                        debug_detailed(self.logger, f"   └── Estructura: Datos simples ({type(data_content[0]).__name__})")
 
             # 1. DETECTAR TIPO DE DATOS
             data_type = self._detect_data_type(data)
-            self.logger.info(f"🔍 Tipo de datos detectado: {data_type}")
+            debug_detailed(self.logger, f"🔧 [DATA] Tipo detectado: {data_type} → Aplicando formato específico")
 
             # 2. DELEGAR A MÉTODO ESPECÍFICO
             if data_type == "student_list":
@@ -92,10 +93,8 @@ class DataDisplayManager:
                 if self._is_student_data(data_content):
                     # Si es solo 1 alumno, tratarlo como alumno individual
                     if len(data_content) == 1:
-                        self.logger.info(f"🔍 Detectado: single_student (1 elemento en data)")
                         return "single_student"
                     else:
-                        self.logger.info(f"🔍 Detectado: student_list ({len(data_content)} elementos en data)")
                         return "student_list"
 
         # 🎯 PRIORIDAD 2: Detectar lista de alumnos en clave "alumnos"
@@ -121,7 +120,7 @@ class DataDisplayManager:
                 if isinstance(first_item, dict):
                     # Detectar conteos (total_alumnos, count, etc.)
                     if any(key in first_item for key in ["total_alumnos", "count", "total", "cantidad"]):
-                        self.logger.info(f"🔍 Detectado: count_result (conteo)")
+                        # Detectado silenciosamente: count_result
                         return "count_result"
 
         # 🎯 PRIORIDAD 4.5: Detectar estadísticas específicas (promedios, etc.)
@@ -132,7 +131,6 @@ class DataDisplayManager:
                 if isinstance(first_item, dict):
                     # Detectar promedios y estadísticas específicas
                     if any(key in first_item for key in ["promedio_general", "promedio_edad", "promedio_calificaciones"]):
-                        self.logger.info(f"🔍 Detectado: statistics (promedio)")
                         return "statistics"
 
         # Detectar estadísticas tradicionales
@@ -161,27 +159,15 @@ class DataDisplayManager:
 
         first_item = data[0]
 
-        # 🔍 DEBUG CRÍTICO: Verificar exactamente qué tipo de dato recibimos
-        self.logger.info(f"🔍 DEBUG - _is_student_data recibió:")
-        self.logger.info(f"🔍 DEBUG - data type: {type(data)}")
-        self.logger.info(f"🔍 DEBUG - data length: {len(data)}")
-        self.logger.info(f"🔍 DEBUG - first_item type: {type(first_item)}")
-        self.logger.info(f"🔍 DEBUG - first_item content: {first_item}")
-
+        # 🔧 VALIDACIÓN SILENCIOSA DE ESTRUCTURA DE DATOS
         if not isinstance(first_item, dict):
-            self.logger.info(f"🔍 DEBUG - ❌ first_item NO es dict, es {type(first_item)}")
             return False
 
         # Campos típicos de alumnos (más flexibles)
         student_fields = ['nombre', 'curp', 'grado', 'grupo', 'turno', 'matricula', 'id']
         matching_fields = sum(1 for field in student_fields if field in first_item)
 
-        # 🔍 DEBUG: Mostrar qué campos coinciden
-        matching_field_names = [field for field in student_fields if field in first_item]
-        self.logger.info(f"🔍 DEBUG - Campos que coinciden: {matching_field_names} ({matching_fields}/{len(student_fields)})")
-
         is_student = matching_fields >= 2  # Reducido de 3 a 2 para ser más flexible
-        self.logger.info(f"🔍 DEBUG - ¿Es datos de alumno? {is_student}")
 
         return is_student
 
@@ -213,13 +199,24 @@ class DataDisplayManager:
 
         total_alumnos = len(alumnos)
 
-        # DECISIÓN CENTRALIZADA DE FORMATO SEGÚN CANTIDAD
+        # 🆕 EXTRAER CRITERIOS DE BÚSQUEDA PARA CAMPOS DINÁMICOS
+        search_criteria = full_data.get("search_criteria", {})
+        fields_to_show = search_criteria.get("fields_to_show", ['nombre', 'curp', 'turno'])
+        has_specific_criteria = search_criteria.get("has_specific_criteria", False)
+
+        self.logger.info(f"🎯 [DATA_DISPLAY] Criterios de búsqueda detectados:")
+        self.logger.info(f"   ├── Campos a mostrar: {fields_to_show}")
+        self.logger.info(f"   └── Tiene criterios específicos: {has_specific_criteria}")
+
+        # 🎯 DECISIÓN CENTRALIZADA DE FORMATO SEGÚN CANTIDAD (OPTIMIZADA)
         if total_alumnos > 50:
-            content = self._format_large_student_list(alumnos, full_data)
-        elif total_alumnos >= 10:  # ✅ CAMBIO: >= 10 para incluir exactamente 10
-            content = self._format_medium_student_list(alumnos, full_data)
-        else:
-            content = self._format_small_student_list(alumnos, full_data)
+            content = self._format_large_student_list(alumnos, full_data, fields_to_show)
+        elif total_alumnos > 25:  # 26-50: Lista mediana con primeros 20
+            content = self._format_medium_student_list(alumnos, full_data, fields_to_show)
+        else:  # ≤ 25: Lista completa detallada
+            content = self._format_small_student_list(alumnos, full_data, fields_to_show)
+
+        self.logger.info(f"🎯 [DATA_DISPLAY] Formato seleccionado para {total_alumnos} alumnos: {'large' if total_alumnos > 50 else 'medium' if total_alumnos > 25 else 'small'}")
 
         # APLICAR FORMATEO CENTRALIZADO
         formatted_content = self.response_formatter.format_response(content, "data")
@@ -227,7 +224,7 @@ class DataDisplayManager:
 
         return True
 
-    def _format_large_student_list(self, alumnos: List[Dict], full_data: Dict) -> str:
+    def _format_large_student_list(self, alumnos: List[Dict], full_data: Dict, fields_to_show: List[str] = None) -> str:
         """📊 FORMATO PARA LISTAS GRANDES (50+ alumnos)"""
         total = len(alumnos)
         limite = 25
@@ -240,60 +237,149 @@ class DataDisplayManager:
 
 """
 
+        # Usar campos por defecto si no se especifican
+        if not fields_to_show:
+            fields_to_show = ['nombre', 'curp', 'turno']
+
         for i, alumno in enumerate(alumnos[:limite], 1):
             nombre = alumno.get('nombre', '').upper()
+            content += f"**{i:2d}.** {nombre}\n"
+
+            # 🎯 MOSTRAR CAMPOS DINÁMICOS BASADOS EN CRITERIOS DE BÚSQUEDA
+            details = []
+
+            # Siempre mostrar grado y grupo si están disponibles
             grado = alumno.get('grado', '')
             grupo = alumno.get('grupo', '')
-            turno = alumno.get('turno', '')[:3] if alumno.get('turno') else ''
-            curp = alumno.get('curp', '')
+            if grado and grupo:
+                turno = alumno.get('turno', '')[:3] if alumno.get('turno') else ''
+                details.append(f"🎓 {grado}° {grupo} - {turno}")
 
-            content += f"**{i:2d}.** {nombre}\n"
-            content += f"     🎓 {grado}° {grupo} - {turno}  •  📋 {curp}\n\n"
+            # Agregar campos específicos según criterios de búsqueda
+            for field in fields_to_show:
+                if field == 'curp':
+                    curp = alumno.get('curp', '')
+                    if curp:
+                        details.append(f"📋 {curp}")
+                elif field == 'fecha_nacimiento':
+                    fecha = alumno.get('fecha_nacimiento', '')
+                    if fecha:
+                        details.append(f"📅 {fecha}")
+                elif field == 'matricula':
+                    matricula = alumno.get('matricula', '')
+                    if matricula:
+                        details.append(f"🆔 {matricula}")
+                elif field == 'calificaciones_status':
+                    # Verificar si tiene calificaciones
+                    calificaciones = alumno.get('calificaciones', '')
+                    if calificaciones and calificaciones not in ['', '[]']:
+                        details.append(f"📊 Con calificaciones")
+                    else:
+                        details.append(f"📊 Sin calificaciones")
+
+            # Mostrar detalles en una línea
+            if details:
+                content += f"     {' • '.join(details)}\n\n"
+            else:
+                content += "\n"
 
         if total > limite:
             restantes = total - limite
             content += f"""{'─' * 60}
-💡 **Hay {restantes} alumnos más disponibles**
+📊 **Y {restantes} alumnos más disponibles...**
+
+🔍 **CONTEXTO COMPLETO MANTENIDO:**
+• Todos los {total} alumnos están disponibles para consultas
+• "Alumno número [26-{total}]" - Acceder a cualquier posición
+• "Mostrar todos" - Ver lista completa (puede ser muy larga)
+• "Filtrar por [criterio]" - Refinar búsqueda
 
 **Para ver más resultados:**
 • "Mostrar más alumnos" - Ver siguientes {min(25, restantes)}
 • "Buscar [nombre específico]" - Encontrar alumno exacto
 • "Alumnos de [grado]° [grupo]" - Filtrar por grado/grupo
+• "Número [X]" - Ver alumno en posición específica (1-{total})
 """
 
         return content
 
-    def _format_medium_student_list(self, alumnos: List[Dict], full_data: Dict) -> str:
-        """📋 FORMATO PARA LISTAS MEDIANAS (10-50 alumnos)"""
+    def _format_medium_student_list(self, alumnos: List[Dict], full_data: Dict, fields_to_show: List[str] = None) -> str:
+        """📋 FORMATO PARA LISTAS MEDIANAS (26-50 alumnos) - CONTEXTO COMPLETO"""
         total = len(alumnos)
+        limite = 20  # Mostrar primeros 20
 
         content = f"""
 🔍 **ALUMNOS ENCONTRADOS**
 {'═' * 45}
-📊 **Total:** {total} estudiantes
+📊 **Total:** {total} estudiantes (mostrando primeros {limite})
 
 """
 
-        for i, alumno in enumerate(alumnos, 1):
+        # Usar campos por defecto si no se especifican
+        if not fields_to_show:
+            fields_to_show = ['nombre', 'curp', 'turno']
+
+        for i, alumno in enumerate(alumnos[:limite], 1):
             nombre = alumno.get('nombre', '').upper()
-            curp = alumno.get('curp', '')
+            content += f"**{i:2d}.** {nombre}\n"
+
+            # 🎯 MOSTRAR CAMPOS DINÁMICOS BASADOS EN CRITERIOS DE BÚSQUEDA
+            details = []
+
+            # Siempre mostrar grado y grupo si están disponibles
             grado = alumno.get('grado', '')
             grupo = alumno.get('grupo', '')
-            turno = alumno.get('turno', '')[:3] if alumno.get('turno') else ''
+            if grado and grupo:
+                turno = alumno.get('turno', '')[:3] if alumno.get('turno') else ''
+                details.append(f"🎓 {grado}° {grupo} - {turno}")
 
-            content += f"**{i:2d}.** {nombre}\n"
-            content += f"     🎓 {grado}° {grupo} - {turno}  •  📋 {curp}\n\n"
+            # Agregar campos específicos según criterios de búsqueda
+            for field in fields_to_show:
+                if field == 'curp':
+                    curp = alumno.get('curp', '')
+                    if curp:
+                        details.append(f"📋 {curp}")
+                elif field == 'fecha_nacimiento':
+                    fecha = alumno.get('fecha_nacimiento', '')
+                    if fecha:
+                        details.append(f"📅 {fecha}")
+                elif field == 'matricula':
+                    matricula = alumno.get('matricula', '')
+                    if matricula:
+                        details.append(f"🆔 {matricula}")
+                elif field == 'calificaciones_status':
+                    # Verificar si tiene calificaciones
+                    calificaciones = alumno.get('calificaciones', '')
+                    if calificaciones and calificaciones not in ['', '[]']:
+                        details.append(f"📊 Con calificaciones")
+                    else:
+                        details.append(f"📊 Sin calificaciones")
 
+            # Mostrar detalles en una línea
+            if details:
+                content += f"     {' • '.join(details)}\n\n"
+            else:
+                content += "\n"
+
+        restantes = total - limite
         content += f"""{'─' * 45}
+📊 **Y {restantes} alumnos más disponibles...**
+
+🔍 **CONTEXTO COMPLETO MANTENIDO:**
+• Todos los {total} alumnos están disponibles para consultas
+• "Alumno número [21-{total}]" - Acceder a cualquier posición
+• "Mostrar todos" - Ver lista completa
+• "Filtrar por [criterio]" - Refinar búsqueda
+
 💡 **Opciones disponibles:**
 • "Detalles de [nombre]" - Ver información completa
 • "Constancia para [nombre]" - Generar constancia
-• "Número [X]" - Seleccionar alumno por posición
+• "Número [X]" - Seleccionar alumno por posición (1-{total})
 """
 
         return content
 
-    def _format_small_student_list(self, alumnos: List[Dict], full_data: Dict) -> str:
+    def _format_small_student_list(self, alumnos: List[Dict], full_data: Dict, fields_to_show: List[str] = None) -> str:
         """👥 FORMATO PARA LISTAS PEQUEÑAS (≤10 alumnos)"""
         total = len(alumnos)
         plural = 's' if total > 1 else ''
@@ -304,18 +390,44 @@ class DataDisplayManager:
 
 """
 
+        # Usar campos por defecto si no se especifican
+        if not fields_to_show:
+            fields_to_show = ['nombre', 'curp', 'turno']
+
         for i, alumno in enumerate(alumnos, 1):
             nombre = alumno.get('nombre', '').upper()
-            curp = alumno.get('curp', '')
+            content += f"**{i}.** **{nombre}**\n"
+
+            # 🎯 MOSTRAR CAMPOS DINÁMICOS BASADOS EN CRITERIOS DE BÚSQUEDA
+            if 'curp' in fields_to_show:
+                curp = alumno.get('curp', '')
+                content += f"   📋 **CURP:** {curp}\n"
+
+            # Siempre mostrar grado y grupo si están disponibles
             grado = alumno.get('grado', '')
             grupo = alumno.get('grupo', '')
             turno = alumno.get('turno', '')
-            matricula = alumno.get('matricula', '')
+            if grado and grupo:
+                content += f"   🎓 **Grado:** {grado}° {grupo} - {turno}\n"
 
-            content += f"**{i}.** **{nombre}**\n"
-            content += f"   📋 **CURP:** {curp}\n"
-            content += f"   🎓 **Grado:** {grado}° {grupo} - {turno}\n"
-            content += f"   🆔 **Matrícula:** {matricula}\n\n"
+            if 'fecha_nacimiento' in fields_to_show:
+                fecha = alumno.get('fecha_nacimiento', '')
+                if fecha:
+                    content += f"   📅 **Nacimiento:** {fecha}\n"
+
+            if 'matricula' in fields_to_show:
+                matricula = alumno.get('matricula', '')
+                if matricula:
+                    content += f"   🆔 **Matrícula:** {matricula}\n"
+
+            if 'calificaciones_status' in fields_to_show:
+                calificaciones = alumno.get('calificaciones', '')
+                if calificaciones and calificaciones not in ['', '[]']:
+                    content += f"   📊 **Estado:** Con calificaciones\n"
+                else:
+                    content += f"   📊 **Estado:** Sin calificaciones\n"
+
+            content += "\n"
 
         content += f"""{'─' * 50}
 💡 **Acciones rápidas disponibles:**

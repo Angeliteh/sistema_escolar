@@ -11,10 +11,11 @@ RESPONSABILIDADES:
 - Retornar resultados estructurados
 """
 
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 import logging
 import os
-from .action_catalog import ActionCatalog, ActionDefinition
+from .action_catalog import ActionCatalog
+from .field_mapper import FieldMapper
 
 class ActionExecutor:
     """
@@ -31,11 +32,27 @@ class ActionExecutor:
         self.student_finder = student_finder
         # 🆕 OBTENER DB_PATH DEL SQL_EXECUTOR PARA VALIDACIÓN DINÁMICA
         self.db_path = getattr(sql_executor, 'db_path', 'resources/data/alumnos.db')
+        # 🎯 INICIALIZAR MAPEADOR CENTRALIZADO DE CAMPOS
+        self.field_mapper = FieldMapper(self.db_path)
 
     def _debug_pause_if_enabled(self, message: str):
         """🛑 PAUSA DE DEBUG CONTROLADA POR VARIABLE DE ENTORNO"""
         if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
             input(f"🛑 {message}")
+
+    def _debug_pause_sql_construction(self, action: str, criteria: list, sql_query: str):
+        """🛑 PAUSA ESPECÍFICA PARA CONSTRUCCIÓN DE SQL"""
+        if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
+            print(f"\n🛑 [ACTION_EXECUTOR] CONSTRUCCIÓN SQL:")
+            print(f"    ├── Action: {action}")
+            print(f"    ├── Criteria count: {len(criteria)}")
+            for i, criterion in enumerate(criteria[:3], 1):
+                print(f"    │   {i}. {criterion.get('campo', 'N/A')} {criterion.get('operador', '=')} {criterion.get('valor', 'N/A')}")
+            if len(criteria) > 3:
+                print(f"    │   ... y {len(criteria) - 3} más")
+            print(f"    ├── SQL generado: {sql_query[:100]}{'...' if len(sql_query) > 100 else ''}")
+            print(f"    └── Presiona ENTER para ejecutar SQL...")
+            input()
 
     def execute_action_request(self, action_request: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -60,6 +77,8 @@ class ActionExecutor:
             }
         """
         try:
+
+
             # 🔧 LIMPIAR NOMBRE DE ACCIÓN ANTES DE VALIDAR
             action_name_raw = action_request.get("accion_principal", "")
             if action_name_raw:
@@ -105,12 +124,14 @@ class ActionExecutor:
         self.logger.info(f"🎯 Ejecutando acción: {action_name}")
         self.logger.info(f"   Parámetros: {params}")
 
-        # Obtener definición de la acción
-        action_def = self.catalog.get_action_definition(action_name)
+        # Validar que la acción existe en el catálogo
+        self.catalog.get_action_definition(action_name)
 
         # Ejecutar según el tipo de acción
         if action_name == "BUSCAR_UNIVERSAL":
             return self._execute_buscar_universal(params)
+        elif action_name == "CONTAR_UNIVERSAL":
+            return self._execute_contar_universal(params)
         elif action_name == "BUSCAR_Y_FILTRAR":
             return self._execute_buscar_y_filtrar(params)
         elif action_name == "CONTAR_ALUMNOS":
@@ -123,8 +144,6 @@ class ActionExecutor:
             return self._execute_preparar_constancia(params)
         elif action_name == "GENERAR_CONSTANCIA_COMPLETA":
             return self._execute_generar_constancia_completa(params)
-        elif action_name == "CALCULAR_ESTADISTICA":
-            return self._execute_calcular_estadistica(params)
         elif action_name == "FILTRAR_POR_CALIFICACIONES":
             return self._execute_filtrar_por_calificaciones(params)
         else:
@@ -163,15 +182,9 @@ class ActionExecutor:
             self.logger.info(f"   - Filtros adicionales ({len(filtros_adicionales)}): {filtros_adicionales}")
             self.logger.info(f"   - Join logic: {join_logic}")
 
-            # 🛑 PAUSA CRÍTICA 3: ANÁLISIS DE FILTROS DE PROMEDIO
-            self.logger.info("🛑 PAUSA CRÍTICA 3: ANÁLISIS DE FILTROS")
+            # 🔍 ANÁLISIS DE FILTROS DE PROMEDIO (SIN PAUSA)
+            self.logger.info("🔍 Analizando filtros adicionales...")
             self.logger.info(f"   ├── Filtros adicionales recibidos: {len(filtros_adicionales)}")
-            for i, filtro in enumerate(filtros_adicionales):
-                self.logger.info(f"   ├── Filtro {i+1}: {filtro}")
-                campo = filtro.get("campo", "")
-                self.logger.info(f"   │   ├── Campo: '{campo}'")
-                self.logger.info(f"   │   └── ¿Contiene 'promedio'? {'SÍ' if 'promedio' in campo.lower() else 'NO'}")
-            self._debug_pause_if_enabled("PAUSA 3: Presiona ENTER para continuar con filtrado de promedio...")
 
             # 🔧 FILTRAR CRITERIOS DE PROMEDIO ANTES DE GENERAR SQL
             filtros_sql = []
@@ -207,35 +220,51 @@ class ActionExecutor:
             if not criterio_principal:
                 return self._error_result("criterio_principal es requerido")
 
-            tabla_principal = criterio_principal.get("tabla", "alumnos")
-            campo_principal = criterio_principal.get("campo", "")
-            operador_principal = criterio_principal.get("operador", "=")
-            valor_principal = criterio_principal.get("valor", "")
+            # 🎯 VALIDACIÓN Y MAPEO CENTRALIZADO DE CRITERIO PRINCIPAL
+            criterio_principal_mapeado = self._validate_and_map_criterion(criterio_principal)
+            if not criterio_principal_mapeado:
+                return self._error_result(f"No se pudo mapear criterio principal: {criterio_principal}")
 
-            if not campo_principal or not valor_principal:
-                return self._error_result("campo y valor son requeridos en criterio_principal")
+            # Usar criterio mapeado
+            criterio_principal = criterio_principal_mapeado
 
-            # 🔒 VALIDAR CAMPOS DINÁMICAMENTE
-            if not self._validate_field_dynamically(tabla_principal, campo_principal):
-                return self._error_result(f"Campo '{campo_principal}' no válido para tabla '{tabla_principal}'")
+            # 🎯 VALIDACIÓN Y MAPEO CENTRALIZADO DE FILTROS ADICIONALES
+            filtros_adicionales_mapeados = []
+            for filtro in filtros_adicionales:
+                filtro_mapeado = self._validate_and_map_criterion(filtro)
+                if filtro_mapeado:
+                    filtros_adicionales_mapeados.append(filtro_mapeado)
+                else:
+                    self.logger.warning(f"⚠️ Filtro ignorado (no se pudo mapear): {filtro}")
+
+            # Usar filtros mapeados
+            filtros_adicionales = filtros_adicionales_mapeados
 
             # 🔧 CONSTRUIR SQL DINÁMICAMENTE
             sql = self._build_dynamic_sql(criterio_principal, filtros_adicionales, join_logic, limit)
 
-            # 🛑 PAUSA CRÍTICA 4: SQL GENERADO
-            self.logger.info("🛑 PAUSA CRÍTICA 4: SQL FINAL GENERADO")
-            self.logger.info(f"   ├── Criterios SQL finales: {len(filtros_adicionales)}")
-            self.logger.info(f"   ├── Criterios promedio filtrados: {len(filtros_promedio)}")
-            self.logger.info(f"   └── SQL generado:")
-            for line in sql.split('\n'):
-                if line.strip():
-                    self.logger.info(f"       {line.strip()}")
-            self._debug_pause_if_enabled("PAUSA 4: Presiona ENTER para ejecutar SQL...")
-
             self.logger.info(f"🔧 SQL generado: {sql}")
 
-            # 🚀 EJECUTAR CONSULTA
-            result = self.sql_executor.execute_query(sql)
+            # 🛑 PAUSA ESTRATÉGICA #5: ACTIONEXECUTOR SQL FINAL GENERADO
+            import os
+            if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
+                print(f"\n🛑 [ACTIONEXECUTOR] SQL FINAL GENERADO:")
+                print(f"    ├── 🎯 Acción: BUSCAR_UNIVERSAL")
+                print(f"    ├── 📊 Criterio principal: {criterio_principal}")
+                print(f"    ├── 🔍 Filtros adicionales: {len(filtros_adicionales)}")
+                print(f"    ├── 🗃️ SQL generado:")
+                for line in sql.split('\n'):
+                    if line.strip():
+                        print(f"    │   {line.strip()}")
+                print(f"    └── Presiona ENTER para ejecutar consulta en base de datos...")
+                input()
+
+            # 🚀 EJECUTAR CONSULTA CON LÍMITE APROPIADO
+            # Para BUSCAR_UNIVERSAL, usar límite alto o el especificado en parámetros
+            query_limit = limit if limit else 1000  # Límite alto por defecto para búsquedas
+            result = self.sql_executor.execute_query(sql, query_limit)
+
+
 
             if result.success:
                 self.logger.info(f"✅ Búsqueda universal completada: {result.row_count} resultado(s)")
@@ -244,7 +273,8 @@ class ActionExecutor:
                     "data": result.data,
                     "row_count": result.row_count,
                     "action_used": "BUSCAR_UNIVERSAL",
-                    "message": f"Búsqueda universal completada: {result.row_count} resultado(s)"
+                    "message": f"Búsqueda universal completada: {result.row_count} resultado(s)",
+                    "sql_executed": sql  # 🆕 AGREGAR SQL PARA ANÁLISIS DINÁMICO
                 }
             else:
                 return self._error_result(f"Error en búsqueda universal: {result.message}")
@@ -252,6 +282,173 @@ class ActionExecutor:
         except Exception as e:
             self.logger.error(f"Error en búsqueda universal: {e}")
             return self._error_result(f"Error interno: {str(e)}")
+
+    def _execute_contar_universal(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        🎯 CONTAR_UNIVERSAL: Conteo flexible con múltiples criterios
+
+        Usa la MISMA lógica que BUSCAR_UNIVERSAL pero devuelve COUNT en lugar de datos.
+        Acepta los mismos parámetros que BUSCAR_UNIVERSAL.
+        """
+        try:
+            self.logger.info("🎯 Ejecutando CONTAR_UNIVERSAL")
+            self.logger.info(f"   Parámetros: {params}")
+
+            # Usar la misma lógica de construcción SQL que BUSCAR_UNIVERSAL
+            criterio_principal = params.get("criterio_principal", {})
+            filtros_adicionales = params.get("filtros_adicionales", [])
+            join_logic = params.get("join_logic", "LEFT")
+
+            if not criterio_principal:
+                return self._error_result("Se requiere al menos un criterio_principal para contar")
+
+            tabla_principal = criterio_principal.get("tabla", "alumnos")
+            campo_principal = criterio_principal.get("campo", "")
+            valor_principal = criterio_principal.get("valor", "")
+
+            if not campo_principal or not valor_principal:
+                return self._error_result(f"criterio_principal incompleto: {criterio_principal}")
+
+            # 🎯 CONSTRUIR SQL DE CONTEO (MISMA LÓGICA QUE BUSCAR_UNIVERSAL)
+            sql = f"""
+            SELECT COUNT(*) as total
+            FROM alumnos a
+            {join_logic} JOIN datos_escolares de ON a.id = de.alumno_id
+            WHERE 1=1
+            """
+
+            # Agregar criterio principal con operadores avanzados
+            sql += self._build_where_condition(tabla_principal, campo_principal, criterio_principal.get("operador", "="), valor_principal)
+
+            # Agregar filtros adicionales con operadores avanzados
+            for filtro in filtros_adicionales:
+                tabla_filtro = filtro.get("tabla", "datos_escolares")
+                campo_filtro = filtro.get("campo", "")
+                valor_filtro = filtro.get("valor", "")
+                operador_filtro = filtro.get("operador", "=")
+
+                if campo_filtro and valor_filtro:
+                    sql += self._build_where_condition(tabla_filtro, campo_filtro, operador_filtro, valor_filtro)
+
+            self.logger.info(f"🔧 SQL de conteo generado: {sql}")
+
+            # 🚀 EJECUTAR CONSULTA DE CONTEO
+            result = self.sql_executor.execute_query(sql)
+
+            if result.success:
+                total = result.data[0]['total'] if result.data else 0
+                self.logger.info(f"✅ Conteo universal completado: {total} resultado(s)")
+                return {
+                    "success": True,
+                    "data": [{"total": total}],
+                    "row_count": 1,
+                    "action_used": "CONTAR_UNIVERSAL",
+                    "message": f"Conteo universal completado: {total} resultado(s)",
+                    "sql_executed": sql
+                }
+            else:
+                return self._error_result(f"Error en conteo universal: {result.message}")
+
+        except Exception as e:
+            self.logger.error(f"Error en conteo universal: {e}")
+            return self._error_result(f"Error interno: {str(e)}")
+
+    def _build_where_condition(self, tabla: str, campo: str, operador: str, valor: str) -> str:
+        """
+        🎯 CONSTRUYE CONDICIONES WHERE CON OPERADORES AVANZADOS
+
+        Soporta: =, LIKE, >, <, >=, <=, BETWEEN, IS_NULL, IS_NOT_NULL,
+                STARTS_WITH, ENDS_WITH, NOT_IN, IN
+        """
+        try:
+            # Determinar prefijo de tabla
+            tabla_prefix = "a" if tabla == "alumnos" else "de"
+
+            # Limpiar valores para evitar inyección SQL
+            valor_limpio = str(valor).replace("'", "''") if valor else ""
+
+            # Construir condición según operador
+            if operador.upper() == "=":
+                # Manejo especial para calificaciones
+                if campo == "calificaciones" and valor_limpio == "[]":
+                    # SIN CALIFICACIONES
+                    return f" AND ({tabla_prefix}.{campo} IS NULL OR {tabla_prefix}.{campo} = '' OR {tabla_prefix}.{campo} = '[]')"
+                else:
+                    return f" AND {tabla_prefix}.{campo} = '{valor_limpio}'"
+
+            elif operador.upper() == "LIKE":
+                return f" AND {tabla_prefix}.{campo} LIKE '%{valor_limpio}%'"
+
+            elif operador.upper() == "STARTS_WITH":
+                return f" AND {tabla_prefix}.{campo} LIKE '{valor_limpio}%'"
+
+            elif operador.upper() == "ENDS_WITH":
+                return f" AND {tabla_prefix}.{campo} LIKE '%{valor_limpio}'"
+
+            elif operador.upper() in [">", "<", ">=", "<="]:
+                return f" AND {tabla_prefix}.{campo} {operador} '{valor_limpio}'"
+
+            elif operador.upper() == "BETWEEN":
+                # Valor debe ser "valor1,valor2"
+                if "," in valor_limpio:
+                    valor1, valor2 = valor_limpio.split(",", 1)
+                    return f" AND {tabla_prefix}.{campo} BETWEEN '{valor1.strip()}' AND '{valor2.strip()}'"
+                else:
+                    self.logger.warning(f"BETWEEN requiere formato 'valor1,valor2', recibido: {valor}")
+                    return f" AND {tabla_prefix}.{campo} = '{valor_limpio}'"
+
+            elif operador.upper() == "IS_NULL":
+                return f" AND {tabla_prefix}.{campo} IS NULL"
+
+            elif operador.upper() == "IS_NOT_NULL":
+                return f" AND {tabla_prefix}.{campo} IS NOT NULL"
+
+            elif operador.upper() == "IN":
+                # Valor debe ser "valor1,valor2,valor3" o "[valor1,valor2,valor3]"
+                if valor_limpio.startswith("[") and valor_limpio.endswith("]"):
+                    # Formato lista JSON
+                    valores = valor_limpio[1:-1].split(",")
+                else:
+                    # Formato separado por comas
+                    valores = valor_limpio.split(",")
+
+                valores_formateados = [f"'{v.strip()}'" for v in valores if v.strip()]
+                if valores_formateados:
+                    return f" AND {tabla_prefix}.{campo} IN ({','.join(valores_formateados)})"
+                else:
+                    return f" AND {tabla_prefix}.{campo} = '{valor_limpio}'"
+
+            elif operador.upper() == "NOT_IN":
+                # Similar a IN pero con NOT
+                if valor_limpio.startswith("[") and valor_limpio.endswith("]"):
+                    valores = valor_limpio[1:-1].split(",")
+                else:
+                    valores = valor_limpio.split(",")
+
+                valores_formateados = [f"'{v.strip()}'" for v in valores if v.strip()]
+                if valores_formateados:
+                    return f" AND {tabla_prefix}.{campo} NOT IN ({','.join(valores_formateados)})"
+                else:
+                    return f" AND {tabla_prefix}.{campo} != '{valor_limpio}'"
+
+            elif operador.upper() == "!=":
+                # Manejo especial para calificaciones
+                if campo == "calificaciones" and valor_limpio == "[]":
+                    # CON CALIFICACIONES
+                    return f" AND {tabla_prefix}.{campo} IS NOT NULL AND {tabla_prefix}.{campo} != '' AND {tabla_prefix}.{campo} != '[]'"
+                else:
+                    return f" AND {tabla_prefix}.{campo} != '{valor_limpio}'"
+
+            else:
+                # Operador no reconocido, usar = por defecto
+                self.logger.warning(f"Operador no reconocido: {operador}, usando = por defecto")
+                return f" AND {tabla_prefix}.{campo} = '{valor_limpio}'"
+
+        except Exception as e:
+            self.logger.error(f"Error construyendo condición WHERE: {e}")
+            # Fallback seguro
+            tabla_prefix = "a" if tabla == "alumnos" else "de"
+            return f" AND {tabla_prefix}.{campo} = '{valor}'"
 
     def _execute_buscar_y_filtrar(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -328,6 +525,47 @@ class ActionExecutor:
             self.logger.error(f"Error en BUSCAR_Y_FILTRAR: {e}")
             return self._error_result(f"Error interno: {str(e)}")
 
+    def _validate_and_map_criterion(self, criterion: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        🎯 VALIDACIÓN Y MAPEO CENTRALIZADO DE CRITERIOS
+
+        Usa FieldMapper para validar y mapear campos antes de cualquier consulta SQL.
+        Este método se ejecuta SIEMPRE antes de construir SQL.
+
+        Args:
+            criterion: Criterio con formato {"tabla": "...", "campo": "...", "operador": "...", "valor": "..."}
+
+        Returns:
+            Criterio validado y mapeado, o None si no se puede mapear
+        """
+        try:
+            self.logger.info(f"🎯 [FIELD_MAPPER] Validando criterio: {criterion}")
+
+            # 🔍 VALIDACIÓN DE CRITERIO (Student ya hizo el mapeo)
+            self.logger.info(f"🔍 Validando criterio ya mapeado por Student: {criterion}")
+
+            # Usar FieldMapper centralizado para validar y mapear
+            mapped_criterion = self.field_mapper.validate_and_map_criterion(criterion)
+
+            if mapped_criterion:
+                self.logger.info(f"✅ [FIELD_MAPPER] Criterio mapeado exitosamente: {mapped_criterion}")
+                return mapped_criterion
+            else:
+                self.logger.warning(f"❌ [FIELD_MAPPER] No se pudo mapear criterio: {criterion}")
+
+                # Proporcionar sugerencias útiles
+                campo = criterion.get("campo", "")
+                tabla = criterion.get("tabla", "alumnos")
+                suggestions = self.field_mapper.suggest_fields(campo, tabla)
+                if suggestions:
+                    self.logger.info(f"💡 [FIELD_MAPPER] Campos sugeridos para '{campo}': {suggestions}")
+
+                return None
+
+        except Exception as e:
+            self.logger.error(f"Error en validación y mapeo de criterio: {e}")
+            return None
+
     def _validate_field_dynamically(self, tabla: str, campo: str) -> bool:
         """
         🔒 VALIDAR CAMPO DINÁMICAMENTE CONTRA ESTRUCTURA DE BD
@@ -369,19 +607,16 @@ class ActionExecutor:
         WHERE 1=1
         """
 
-        # 🎯 AGREGAR CRITERIO PRINCIPAL
+        # 🎯 AGREGAR CRITERIO PRINCIPAL CON OPERADORES AVANZADOS
         tabla_principal = criterio_principal.get("tabla", "alumnos")
         campo_principal = criterio_principal.get("campo")
         operador_principal = criterio_principal.get("operador", "=")
         valor_principal = criterio_principal.get("valor")
 
-        tabla_prefix = "a" if tabla_principal == "alumnos" else "de"
-
-        # Manejar operadores especiales
-        if operador_principal.upper() == "LIKE":
-            sql += f" AND {tabla_prefix}.{campo_principal} LIKE '%{valor_principal}%'"
-        elif operador_principal.upper() == "JSON_PROMEDIO":
+        # Manejar operadores especiales JSON primero
+        if operador_principal.upper() == "JSON_PROMEDIO":
             # Filtrar por promedio general de calificaciones (promedio de todos los promedios)
+            tabla_prefix = "a" if tabla_principal == "alumnos" else "de"
             promedio_minimo = float(valor_principal)
             sql += f"""
             AND (
@@ -392,6 +627,7 @@ class ActionExecutor:
             ) > {promedio_minimo}"""
         elif operador_principal.upper() == "JSON_MATERIA":
             # Filtrar por promedio de materia específica (formato: "MATEMATICAS:8.0")
+            tabla_prefix = "a" if tabla_principal == "alumnos" else "de"
             materia, promedio = valor_principal.split(":")
             promedio_minimo = float(promedio)
             sql += f"""
@@ -400,16 +636,11 @@ class ActionExecutor:
                 WHERE json_extract(value, '$.nombre') = '{materia.upper()}'
                 AND json_extract(value, '$.promedio') > {promedio_minimo}
             )"""
-        elif campo_principal == "calificaciones" and operador_principal == "!=":
-            # 🔧 MANEJO ESPECIAL PARA CALIFICACIONES != "[]" (CON CALIFICACIONES)
-            sql += f" AND {tabla_prefix}.{campo_principal} IS NOT NULL AND {tabla_prefix}.{campo_principal} != '' AND {tabla_prefix}.{campo_principal} != '[]'"
-        elif campo_principal == "calificaciones" and operador_principal == "=":
-            # 🔧 MANEJO ESPECIAL PARA CALIFICACIONES = "[]" (SIN CALIFICACIONES)
-            sql += f" AND ({tabla_prefix}.{campo_principal} IS NULL OR {tabla_prefix}.{campo_principal} = '' OR {tabla_prefix}.{campo_principal} = '[]')"
         else:
-            sql += f" AND {tabla_prefix}.{campo_principal} {operador_principal} '{valor_principal}'"
+            # Usar el nuevo método para operadores estándar y avanzados
+            sql += self._build_where_condition(tabla_principal, campo_principal, operador_principal, valor_principal)
 
-        # 🎯 AGREGAR FILTROS ADICIONALES
+        # 🎯 AGREGAR FILTROS ADICIONALES CON OPERADORES AVANZADOS
         for filtro in filtros_adicionales:
             tabla_filtro = filtro.get("tabla", "alumnos")
             campo_filtro = filtro.get("campo")
@@ -419,30 +650,13 @@ class ActionExecutor:
             if not campo_filtro or not valor_filtro:
                 continue
 
-            tabla_prefix = "a" if tabla_filtro == "alumnos" else "de"
-
-            # Manejar operadores especiales
+            # Manejar operadores especiales JSON primero
             if operador_filtro.upper() == "JSON_CONTAINS":
+                tabla_prefix = "a" if tabla_filtro == "alumnos" else "de"
                 sql += f" AND {tabla_prefix}.{campo_filtro} LIKE '%{valor_filtro}%'"
-            elif operador_filtro.upper() == "LIKE":
-                sql += f" AND {tabla_prefix}.{campo_filtro} LIKE '%{valor_filtro}%'"
-            elif operador_filtro.upper() == "IN":
-                # 🔧 MANEJO ESPECIAL PARA OPERADOR IN - SIN COMILLAS ALREDEDOR DEL VALOR
-                # Convertir '[2, 7, 8, 11, 16]' a '(2, 7, 8, 11, 16)'
-                if isinstance(valor_filtro, str) and valor_filtro.startswith('[') and valor_filtro.endswith(']'):
-                    # Convertir formato de lista string a formato SQL IN
-                    valor_sql = valor_filtro.replace('[', '(').replace(']', ')')
-                    sql += f" AND {tabla_prefix}.{campo_filtro} {operador_filtro} {valor_sql}"
-                else:
-                    sql += f" AND {tabla_prefix}.{campo_filtro} {operador_filtro} {valor_filtro}"
-            elif campo_filtro == "calificaciones" and operador_filtro == "!=":
-                # 🔧 MANEJO ESPECIAL PARA CALIFICACIONES != "[]" (CON CALIFICACIONES)
-                sql += f" AND {tabla_prefix}.{campo_filtro} IS NOT NULL AND {tabla_prefix}.{campo_filtro} != '' AND {tabla_prefix}.{campo_filtro} != '[]'"
-            elif campo_filtro == "calificaciones" and operador_filtro == "=":
-                # 🔧 MANEJO ESPECIAL PARA CALIFICACIONES = "[]" (SIN CALIFICACIONES)
-                sql += f" AND ({tabla_prefix}.{campo_filtro} IS NULL OR {tabla_prefix}.{campo_filtro} = '' OR {tabla_prefix}.{campo_filtro} = '[]')"
             else:
-                sql += f" AND {tabla_prefix}.{campo_filtro} {operador_filtro} '{valor_filtro}'"
+                # Usar el nuevo método para operadores estándar y avanzados
+                sql += self._build_where_condition(tabla_filtro, campo_filtro, operador_filtro, valor_filtro)
 
         # 🎯 AGREGAR LÍMITE SI SE ESPECIFICA
         if limit:
@@ -512,10 +726,10 @@ class ActionExecutor:
 
     def _extract_criteria_from_context(self, conversation_stack: list) -> Dict[str, Any]:
         """
-        🧠 EXTRAER CRITERIOS DEL CONTEXTO CONVERSACIONAL (CORREGIDO)
-        Para construir BUSCAR_UNIVERSAL con filtros de consultas anteriores
+        🧠 EXTRAER CRITERIOS DEL CONTEXTO CONVERSACIONAL (SIMPLIFICADO)
+        SOLO usa criterios básicos de nombres - el resto debe venir del Master
 
-        🔧 CORRECCIÓN: Ahora extrae criterios de TODAS las consultas anteriores
+        🔧 SIMPLIFICACIÓN: Eliminado código hardcodeado, dependemos del Master
         """
         try:
             if not conversation_stack:
@@ -524,7 +738,7 @@ class ActionExecutor:
 
             self.logger.info(f"🔍 Analizando pila conversacional con {len(conversation_stack)} niveles")
 
-            # 🎯 EXTRAER CRITERIOS DE TODAS LAS CONSULTAS ANTERIORES
+            # 🎯 SOLO EXTRAER CRITERIOS BÁSICOS DE NOMBRES (LO MÍNIMO NECESARIO)
             all_criterios = []
 
             for i, context in enumerate(conversation_stack):
@@ -536,120 +750,22 @@ class ActionExecutor:
 
                 level_criterios = []
 
-                # FECHA DE NACIMIENTO
-                for year in ['2013', '2014', '2015', '2016', '2017', '2018', '2019']:
-                    if year in query:
+                # SOLO NOMBRES (lo básico para mantener contexto de búsqueda)
+                nombres_comunes = ['garcia', 'martinez', 'lopez', 'hernandez', 'franco', 'natalia', 'mario']
+                for name in nombres_comunes:
+                    if name in query:
                         criterio = {
                             "tabla": "alumnos",
-                            "campo": "fecha_nacimiento",
+                            "campo": "nombre",
                             "operador": "LIKE",
-                            "valor": year
+                            "valor": name.upper()
                         }
                         level_criterios.append(criterio)
-                        self.logger.info(f"   ✅ Detectado criterio fecha: {criterio}")
+                        self.logger.info(f"   ✅ Detectado criterio nombre: {criterio}")
                         break
 
-                # GRADO (CORREGIDO - AGREGADOS PATRONES EN ESPAÑOL)
-                grado_patterns = {
-                    '1': ['primer', 'primero', '1er', '1°', 'grado 1', 'primer grado', 'primero grado'],
-                    '2': ['segundo', '2do', '2°', 'grado 2', 'segundo grado'],
-                    '3': ['tercer', 'tercero', '3er', '3°', 'grado 3', 'tercer grado', 'tercero grado'],
-                    '4': ['cuarto', '4to', '4°', 'grado 4', 'cuarto grado'],
-                    '5': ['quinto', '5to', '5°', 'grado 5', 'quinto grado'],
-                    '6': ['sexto', '6to', '6°', 'grado 6', 'sexto grado']
-                }
-
-                for grado_num, patterns in grado_patterns.items():
-                    if any(pattern in query for pattern in patterns):
-                        criterio = {
-                            "tabla": "datos_escolares",
-                            "campo": "grado",
-                            "operador": "=",
-                            "valor": grado_num
-                        }
-                        level_criterios.append(criterio)
-                        self.logger.info(f"   ✅ Detectado criterio grado: {criterio} (patrón: {[p for p in patterns if p in query]})")
-                        break
-
-                # TURNO
-                if 'matutino' in query:
-                    criterio = {
-                        "tabla": "datos_escolares",
-                        "campo": "turno",
-                        "operador": "=",
-                        "valor": "MATUTINO"
-                    }
-                    level_criterios.append(criterio)
-                    self.logger.info(f"   ✅ Detectado criterio turno: {criterio}")
-                elif 'vespertino' in query:
-                    criterio = {
-                        "tabla": "datos_escolares",
-                        "campo": "turno",
-                        "operador": "=",
-                        "valor": "VESPERTINO"
-                    }
-                    level_criterios.append(criterio)
-                    self.logger.info(f"   ✅ Detectado criterio turno: {criterio}")
-
-                # GRUPO
-                for grupo in ['A', 'B', 'C']:
-                    if f'grupo {grupo.lower()}' in query or f'grupo {grupo}' in query or f'{grupo}' in query:
-                        criterio = {
-                            "tabla": "datos_escolares",
-                            "campo": "grupo",
-                            "operador": "=",
-                            "valor": grupo
-                        }
-                        level_criterios.append(criterio)
-                        self.logger.info(f"   ✅ Detectado criterio grupo: {criterio}")
-                        break
-
-                # SIN CALIFICACIONES (PRIORIDAD ALTA - DETECTAR PRIMERO)
-                sin_calificaciones_patterns = [
-                    'sin calificaciones', 'no tengan calificaciones', 'sin calificacion',
-                    'que no tienen calificaciones', 'no tienen calificaciones'
-                ]
-
-                if any(pattern in query for pattern in sin_calificaciones_patterns):
-                    criterio = {
-                        "tabla": "datos_escolares",
-                        "campo": "calificaciones",
-                        "operador": "=",
-                        "valor": "[]"
-                    }
-                    level_criterios.append(criterio)
-                    self.logger.info(f"   ✅ Detectado criterio SIN calificaciones: {criterio}")
-                else:
-                    # CALIFICACIONES (SOLO SI NO SE DETECTÓ "SIN CALIFICACIONES")
-                    calificaciones_patterns = [
-                        'con calificaciones', 'tengan calificaciones',
-                        'que tengan calificaciones', 'solo los que tengan calificaciones',
-                        'con calificacion', 'que tienen calificaciones'
-                    ]
-
-                    if any(pattern in query for pattern in calificaciones_patterns):
-                        criterio = {
-                            "tabla": "datos_escolares",
-                            "campo": "calificaciones",
-                            "operador": "!=",
-                            "valor": "[]"
-                        }
-                        level_criterios.append(criterio)
-                        self.logger.info(f"   ✅ Detectado criterio CON calificaciones: {criterio}")
-
-                # NOMBRE (búsquedas por nombre)
-                if any(name in query for name in ['garcia', 'martinez', 'lopez', 'hernandez', 'franco', 'natalia', 'mario']):
-                    for name in ['garcia', 'martinez', 'lopez', 'hernandez', 'franco', 'natalia', 'mario']:
-                        if name in query:
-                            criterio = {
-                                "tabla": "alumnos",
-                                "campo": "nombre",
-                                "operador": "LIKE",
-                                "valor": name.upper()
-                            }
-                            level_criterios.append(criterio)
-                            self.logger.info(f"   ✅ Detectado criterio nombre: {criterio}")
-                            break
+                # 🚫 TODO EL RESTO DEBE VENIR DEL MASTER - NO MÁS CÓDIGO HARDCODEADO
+                # El Master debe detectar grado, grupo, turno, calificaciones, etc.
 
                 # Agregar criterios de este nivel
                 all_criterios.extend(level_criterios)
@@ -685,127 +801,63 @@ class ActionExecutor:
 
     def _extract_criteria_from_query(self, query: str) -> Dict[str, Any]:
         """
-        🧠 EXTRAER CRITERIOS DE LA CONSULTA ACTUAL (CORREGIDO)
-        Para agregar como filtros adicionales
+        🧠 EXTRAER CRITERIOS DE LA CONSULTA ACTUAL (MEJORADO)
+        PRIORIDAD 1: Usar filtros del Master (LLM inteligente)
+        PRIORIDAD 2: Detección hardcodeada como fallback
 
-        🔧 CORRECCIÓN: Agregada detección de calificaciones y mejor logging
+        🔧 MEJORA: Usa información del Master antes que regex
         """
         try:
-            query_lower = query.lower()
             criterios = []
 
             self.logger.info(f"🔍 Analizando consulta actual: '{query}'")
 
-            # TURNO
-            if 'vespertino' in query_lower:
-                criterio = {
-                    "tabla": "datos_escolares",
-                    "campo": "turno",
-                    "operador": "=",
-                    "valor": "VESPERTINO"
-                }
-                criterios.append(criterio)
-                self.logger.info(f"   ✅ Detectado criterio turno: {criterio}")
-            elif 'matutino' in query_lower:
-                criterio = {
-                    "tabla": "datos_escolares",
-                    "campo": "turno",
-                    "operador": "=",
-                    "valor": "MATUTINO"
-                }
-                criterios.append(criterio)
-                self.logger.info(f"   ✅ Detectado criterio turno: {criterio}")
+            # 🧠 PRIORIDAD 1: USAR FILTROS DEL MASTER (LLM INTELIGENTE)
+            master_filters = self._get_master_filters()
+            if master_filters:
+                self.logger.info(f"🧠 Usando filtros del Master (LLM): {master_filters}")
+                for filtro in master_filters:
+                    if ':' in filtro:
+                        campo, valor = filtro.split(':', 1)
+                        campo = campo.strip().lower()
+                        valor = valor.strip()
 
-            # GRADO (CORREGIDO - AGREGADOS PATRONES EN ESPAÑOL)
-            grado_patterns = {
-                '1': ['primer', 'primero', '1er', '1°', 'grado 1', 'primer grado', 'primero grado'],
-                '2': ['segundo', '2do', '2°', 'grado 2', 'segundo grado'],
-                '3': ['tercer', 'tercero', '3er', '3°', 'grado 3', 'tercer grado', 'tercero grado'],
-                '4': ['cuarto', '4to', '4°', 'grado 4', 'cuarto grado'],
-                '5': ['quinto', '5to', '5°', 'grado 5', 'quinto grado'],
-                '6': ['sexto', '6to', '6°', 'grado 6', 'sexto grado']
-            }
+                        if campo == 'grado':
+                            criterio = {
+                                "tabla": "datos_escolares",
+                                "campo": "grado",
+                                "operador": "=",
+                                "valor": valor
+                            }
+                            criterios.append(criterio)
+                            self.logger.info(f"   ✅ Criterio del Master - grado: {criterio}")
+                        elif campo == 'grupo':
+                            criterio = {
+                                "tabla": "datos_escolares",
+                                "campo": "grupo",
+                                "operador": "=",
+                                "valor": valor.upper()
+                            }
+                            criterios.append(criterio)
+                            self.logger.info(f"   ✅ Criterio del Master - grupo: {criterio}")
+                        elif campo == 'turno':
+                            criterio = {
+                                "tabla": "datos_escolares",
+                                "campo": "turno",
+                                "operador": "=",
+                                "valor": valor.upper()
+                            }
+                            criterios.append(criterio)
+                            self.logger.info(f"   ✅ Criterio del Master - turno: {criterio}")
 
-            for grado_num, patterns in grado_patterns.items():
-                if any(pattern in query_lower for pattern in patterns):
-                    criterio = {
-                        "tabla": "datos_escolares",
-                        "campo": "grado",
-                        "operador": "=",
-                        "valor": grado_num
-                    }
-                    criterios.append(criterio)
-                    self.logger.info(f"   ✅ Detectado criterio grado: {criterio} (patrón: {[p for p in patterns if p in query_lower]})")
-                    break
+                # Si el Master proporcionó filtros, usar solo esos
+                if criterios:
+                    self.logger.info(f"🧠 Usando {len(criterios)} criterios del Master (LLM inteligente)")
+                    return criterios
 
-            # GRUPO
-            for grupo in ['A', 'B', 'C']:
-                if (f'grupo {grupo.lower()}' in query_lower or f'grupo {grupo}' in query_lower or
-                    f' {grupo.lower()} ' in query_lower):
-                    criterio = {
-                        "tabla": "datos_escolares",
-                        "campo": "grupo",
-                        "operador": "=",
-                        "valor": grupo
-                    }
-                    criterios.append(criterio)
-                    self.logger.info(f"   ✅ Detectado criterio grupo: {criterio}")
-                    break
-
-            # SIN CALIFICACIONES (PRIORIDAD ALTA - DETECTAR PRIMERO)
-            sin_calificaciones_patterns = [
-                'sin calificaciones', 'no tengan calificaciones', 'sin calificacion',
-                'que no tienen calificaciones', 'no tienen calificaciones'
-            ]
-
-            if any(pattern in query_lower for pattern in sin_calificaciones_patterns):
-                criterio = {
-                    "tabla": "datos_escolares",
-                    "campo": "calificaciones",
-                    "operador": "=",
-                    "valor": "[]"
-                }
-                criterios.append(criterio)
-                self.logger.info(f"   ✅ Detectado criterio SIN calificaciones: {criterio}")
-            else:
-                # CALIFICACIONES (SOLO SI NO SE DETECTÓ "SIN CALIFICACIONES")
-                calificaciones_patterns = [
-                    'con calificaciones', 'tengan calificaciones',
-                    'que tengan calificaciones', 'solo los que tengan calificaciones',
-                    'con calificacion', 'que tienen calificaciones'
-                ]
-
-                if any(pattern in query_lower for pattern in calificaciones_patterns):
-                    criterio = {
-                        "tabla": "datos_escolares",
-                        "campo": "calificaciones",
-                        "operador": "!=",
-                        "valor": "[]"
-                    }
-                    criterios.append(criterio)
-                    self.logger.info(f"   ✅ Detectado criterio CON calificaciones: {criterio}")
-
-            # PROMEDIO (CORREGIDO - NO AGREGAR A BUSCAR_UNIVERSAL)
-            if 'promedio' in query_lower:
-                # Los criterios de promedio se manejan en filtros dinámicos, no en SQL
-                self.logger.info(f"   🧠 Criterio de promedio detectado - se manejará en filtros dinámicos LLM")
-                # NO agregar a criterios SQL porque 'promedio_general' no existe en la base de datos
-
-            # NOMBRE (búsquedas por nombre)
-            nombres_comunes = ['garcia', 'martinez', 'lopez', 'hernandez', 'franco', 'natalia', 'mario', 'alexander']
-            for name in nombres_comunes:
-                if name in query_lower:
-                    criterio = {
-                        "tabla": "alumnos",
-                        "campo": "nombre",
-                        "operador": "LIKE",
-                        "valor": name.upper()
-                    }
-                    criterios.append(criterio)
-                    self.logger.info(f"   ✅ Detectado criterio nombre: {criterio}")
-                    break
-
-            self.logger.info(f"🧠 Total criterios extraídos de la consulta: {len(criterios)}")
+            # 🚫 SIN FILTROS DEL MASTER: Error - el sistema debe depender del Master
+            self.logger.warning("⚠️ No se encontraron filtros del Master - el sistema debe depender del LLM")
+            self.logger.info(f"🧠 Total criterios extraídos: {len(criterios)} (solo del Master)")
             for i, criterio in enumerate(criterios):
                 self.logger.info(f"   {i+1}. {criterio}")
 
@@ -814,6 +866,206 @@ class ActionExecutor:
         except Exception as e:
             self.logger.error(f"Error extrayendo criterios de la consulta: {e}")
             return []
+
+    def _get_master_filters(self) -> list:
+        """
+        🧠 OBTENER FILTROS DEL MASTER
+        Accede a la información que el Master ya detectó con LLM
+        """
+        try:
+            # Acceder al Student que nos creó
+            if hasattr(self, 'student_interpreter') and self.student_interpreter:
+                master_intention = getattr(self.student_interpreter, 'master_intention', {})
+                if master_intention:
+                    detected_entities = master_intention.get('detected_entities', {})
+                    filtros = detected_entities.get('filtros', [])
+                    if filtros:
+                        self.logger.info(f"🧠 Filtros del Master encontrados: {filtros}")
+                        return filtros
+
+            self.logger.info("🔍 No se encontraron filtros del Master, usando detección hardcodeada")
+            return []
+
+        except Exception as e:
+            self.logger.error(f"Error obteniendo filtros del Master: {e}")
+            return []
+
+    def build_buscar_universal_with_master_filters(self, query: str, conversation_stack: list = None, master_filters: list = None) -> Dict[str, Any]:
+        """
+        🧠 CONSTRUIR PARÁMETROS PARA BUSCAR_UNIVERSAL USANDO FILTROS DEL MASTER
+        Usa directamente los filtros que el Master ya detectó con LLM
+        """
+        try:
+            self.logger.info(f"🧠 Construyendo parámetros con filtros del Master")
+            self.logger.info(f"   📝 Query: '{query}'")
+            self.logger.info(f"   🧠 Master filters: {master_filters}")
+            self.logger.info(f"   📚 Stack size: {len(conversation_stack or [])}")
+
+            # 🎯 USAR FILTROS DEL MASTER DIRECTAMENTE
+            all_criterios = []
+
+            # 1. AGREGAR CRITERIOS DEL CONTEXTO (solo nombres básicos)
+            context_criteria = self._extract_criteria_from_context(conversation_stack or [])
+            if context_criteria:
+                all_criterios.append(context_criteria["criterio_principal"])
+                all_criterios.extend(context_criteria.get("filtros_adicionales", []))
+                self.logger.info(f"   ✅ Agregados {1 + len(context_criteria.get('filtros_adicionales', []))} criterios del contexto")
+
+            # 2. AGREGAR FILTROS DEL MASTER (LLM inteligente con contexto estructural)
+            if master_filters:
+                for filtro in master_filters:
+                    if ':' in filtro:
+                        campo, valor = filtro.split(':', 1)
+                        campo = campo.strip()
+                        valor = valor.strip()
+
+                        # 🎯 USAR CRITERIO DIRECTAMENTE - STUDENT YA HIZO EL MAPEO
+                        criterio = {
+                            "tabla": "alumnos",  # Default, Student debería especificar
+                            "campo": campo,
+                            "operador": "LIKE" if campo.lower() in ['nombre', 'apellido'] else "=",
+                            "valor": valor
+                        }
+                        all_criterios.append(criterio)
+                        self.logger.info(f"   ✅ Filtro del Master procesado: {filtro} → {criterio}")
+
+            # 3. ELIMINAR DUPLICADOS
+            unique_criterios = []
+            seen = set()
+            for criterio in all_criterios:
+                key = f"{criterio['tabla']}.{criterio['campo']}.{criterio['operador']}.{criterio['valor']}"
+                if key not in seen:
+                    unique_criterios.append(criterio)
+                    seen.add(key)
+
+            self.logger.info(f"   📊 Total criterios únicos: {len(unique_criterios)}")
+
+            if unique_criterios:
+                params = {
+                    "criterio_principal": unique_criterios[0],
+                    "filtros_adicionales": unique_criterios[1:] if len(unique_criterios) > 1 else []
+                }
+
+                self.logger.info(f"🎯 PARÁMETROS FINALES CONSTRUIDOS:")
+                self.logger.info(f"   🎯 Criterio principal: {params['criterio_principal']}")
+                self.logger.info(f"   🔧 Filtros adicionales ({len(params['filtros_adicionales'])}):")
+                for i, filtro in enumerate(params['filtros_adicionales']):
+                    self.logger.info(f"      {i+1}. {filtro}")
+
+                return params
+            else:
+                # FALLBACK: búsqueda genérica
+                self.logger.warning("⚠️ No se encontraron criterios, usando fallback")
+                params = {
+                    "criterio_principal": {
+                        "tabla": "alumnos",
+                        "campo": "nombre",
+                        "operador": "LIKE",
+                        "valor": ""
+                    }
+                }
+                self.logger.info(f"🎯 Parámetros fallback: {params}")
+                return params
+
+        except Exception as e:
+            self.logger.error(f"❌ Error construyendo parámetros con filtros del Master: {e}")
+            return {
+                "criterio_principal": {
+                    "tabla": "alumnos",
+                    "campo": "nombre",
+                    "operador": "LIKE",
+                    "valor": ""
+                }
+            }
+
+    def _map_field_with_database_context(self, campo: str, valor: str, filtro_original: str) -> Optional[Dict[str, Any]]:
+        """
+        🧠 MAPEO INTELIGENTE DE CAMPOS USANDO CONTEXTO ESTRUCTURAL COMPLETO
+
+        Usa LLM con acceso completo a la estructura de la base de datos para mapear
+        campos del usuario a campos reales de la DB.
+
+        Args:
+            campo: Campo del usuario (ej: "apellido", "nombre")
+            valor: Valor a buscar (ej: "Martinez")
+            filtro_original: Filtro original completo para contexto
+
+        Returns:
+            Criterio mapeado o None si no se puede mapear
+        """
+        try:
+            # 🧠 USAR LLM PARA MAPEO INTELIGENTE
+            mapping_prompt = f"""
+TAREA: Mapear campo del usuario a estructura real de base de datos.
+
+ESTRUCTURA DE BASE DE DATOS:
+- Tabla 'alumnos': id, curp, nombre, matricula, fecha_nacimiento
+- Tabla 'datos_escolares': alumno_id, grado, grupo, turno, ciclo_escolar, calificaciones
+
+EJEMPLOS DE DATOS:
+- alumnos.nombre: "JUAN GARCIA LOPEZ" (nombre completo con apellidos)
+- datos_escolares.grado: 1, 2, 3, 4, 5, 6
+- datos_escolares.grupo: "A", "B", "C"
+- datos_escolares.turno: "MATUTINO", "VESPERTINO"
+
+FILTRO DEL USUARIO: "{filtro_original}"
+- Campo: "{campo}"
+- Valor: "{valor}"
+
+INSTRUCCIONES:
+1. Analiza dónde está la información que busca el usuario
+2. Si busca "apellido", la info está en alumnos.nombre (nombre completo)
+3. Si busca "grado", está en datos_escolares.grado
+4. Determina tabla, campo, operador y valor correctos
+
+RESPONDE SOLO EN FORMATO JSON:
+{{
+    "tabla": "nombre_tabla",
+    "campo": "nombre_campo",
+    "operador": "LIKE|=|>|<",
+    "valor": "valor_procesado",
+    "razonamiento": "explicación breve"
+}}
+"""
+
+            # Llamar al LLM
+            from app.core.ai.llm_client import LLMClient
+            llm_client = LLMClient()
+
+            response = llm_client.generate_response(mapping_prompt)
+
+            # Parsear respuesta JSON
+            import json
+            try:
+                mapping_result = json.loads(response.strip())
+
+                # Validar que tiene los campos requeridos
+                required_fields = ['tabla', 'campo', 'operador', 'valor']
+                if all(field in mapping_result for field in required_fields):
+                    self.logger.info(f"🧠 Mapeo LLM exitoso: {campo} → {mapping_result}")
+                    return mapping_result
+                else:
+                    self.logger.warning(f"⚠️ Respuesta LLM incompleta: {mapping_result}")
+                    return self._fallback_mapping(campo, valor)
+
+            except json.JSONDecodeError as e:
+                self.logger.warning(f"⚠️ Error parseando respuesta LLM: {e}")
+                return self._fallback_mapping(campo, valor)
+
+        except Exception as e:
+            self.logger.error(f"❌ Error en mapeo inteligente: {e}")
+            return self._fallback_mapping(campo, valor)
+
+    def _fallback_mapping(self, campo: str, valor: str) -> Optional[Dict[str, Any]]:
+        """
+        🔧 FALLBACK MÍNIMO CUANDO LLM FALLA COMPLETAMENTE
+        Solo devuelve None para forzar el uso del LLM
+        """
+        self.logger.error(f"❌ FALLBACK ACTIVADO: LLM falló mapeando '{campo}': '{valor}'")
+        self.logger.error(f"❌ ESTO NO DEBERÍA PASAR - REVISAR CONFIGURACIÓN LLM")
+
+        # 🚫 NO HARDCODEAR NADA - FORZAR USO DE LLM
+        return None
 
     def build_buscar_universal_with_context(self, query: str, conversation_stack: list = None) -> Dict[str, Any]:
         """
@@ -900,60 +1152,67 @@ class ActionExecutor:
             }
 
     def _execute_contar_alumnos(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Ejecuta conteo de alumnos"""
+        """
+        🔄 EJECUTA CONTAR_ALUMNOS REDIRIGIENDO A CONTAR_UNIVERSAL
+        Convierte parámetros de CONTAR_ALUMNOS al formato de CONTAR_UNIVERSAL
+        """
+        try:
+            self.logger.info("🔄 Ejecutando CONTAR_ALUMNOS → CONTAR_UNIVERSAL")
+            self.logger.info(f"🔍 Parámetros recibidos: {params}")
 
-        criterio_campo = params.get("criterio_campo")
-        criterio_valor = params.get("criterio_valor")
-        agrupar_por = params.get("agrupar_por")
+            criterio_campo = params.get("criterio_campo")
+            criterio_valor = params.get("criterio_valor")
 
-        if agrupar_por:
-            # Conteo agrupado
-            sql = f"""
-            SELECT de.{agrupar_por}, COUNT(*) as total
-            FROM alumnos a
-            JOIN datos_escolares de ON a.id = de.alumno_id
-            """
+            # Convertir a formato CONTAR_UNIVERSAL
             if criterio_campo and criterio_valor:
-                # 🔧 MANEJAR VALORES ESPECIALES PARA CALIFICACIONES (AGRUPADO)
+                # Manejar valores especiales para calificaciones
                 if criterio_campo.lower() == "calificaciones":
                     if criterio_valor.upper() == "NOT NULL":
-                        sql += f" WHERE de.{criterio_campo} IS NOT NULL AND de.{criterio_campo} != '' AND de.{criterio_campo} != '[]'"
+                        operador = "!="
+                        valor = "[]"
                     elif criterio_valor.upper() == "NULL":
-                        sql += f" WHERE (de.{criterio_campo} IS NULL OR de.{criterio_campo} = '' OR de.{criterio_campo} = '[]')"
+                        operador = "="
+                        valor = "[]"
                     else:
-                        sql += f" WHERE de.{criterio_campo} = '{criterio_valor.upper()}'"
+                        operador = "="
+                        valor = criterio_valor.upper()
                 else:
-                    sql += f" WHERE de.{criterio_campo} = '{criterio_valor.upper()}'"
-            sql += f" GROUP BY de.{agrupar_por} ORDER BY de.{agrupar_por}"
-        else:
-            # Conteo simple
-            sql = "SELECT COUNT(*) as total FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id"
-            if criterio_campo and criterio_valor:
-                # 🔧 MANEJAR VALORES ESPECIALES PARA CALIFICACIONES
-                if criterio_campo.lower() == "calificaciones":
-                    if criterio_valor.upper() == "NOT NULL":
-                        sql += f" WHERE de.{criterio_campo} IS NOT NULL AND de.{criterio_campo} != '' AND de.{criterio_campo} != '[]'"
-                    elif criterio_valor.upper() == "NULL":
-                        sql += f" WHERE (de.{criterio_campo} IS NULL OR de.{criterio_campo} = '' OR de.{criterio_campo} = '[]')"
-                    else:
-                        sql += f" WHERE de.{criterio_campo} = '{criterio_valor.upper()}'"
-                else:
-                    # Para otros campos, usar comparación normal
-                    sql += f" WHERE de.{criterio_campo} = '{criterio_valor.upper()}'"
+                    operador = "="
+                    valor = criterio_valor.upper()
 
-        result = self.sql_executor.execute_query(sql)
+                universal_params = {
+                    "criterio_principal": {
+                        "tabla": "datos_escolares",
+                        "campo": criterio_campo,
+                        "operador": operador,
+                        "valor": valor
+                    }
+                }
+            else:
+                # Conteo sin criterios específicos - contar todos
+                universal_params = {
+                    "criterio_principal": {
+                        "tabla": "alumnos",
+                        "campo": "id",
+                        "operador": ">",
+                        "valor": "0"
+                    }
+                }
 
-        if result.success:
-            return {
-                "success": True,
-                "data": result.data,
-                "row_count": result.row_count,
-                "action_used": "CONTAR_ALUMNOS",
-                "message": f"Conteo completado: {result.row_count} resultado(s)",
-                "sql_executed": result.query_executed
-            }
-        else:
-            return self._error_result(f"Error en conteo: {result.message}")
+            self.logger.info(f"🎯 Parámetros convertidos para CONTAR_UNIVERSAL: {universal_params}")
+
+            # Ejecutar CONTAR_UNIVERSAL con parámetros convertidos
+            result = self._execute_contar_universal(universal_params)
+
+            # Cambiar el action_used para mantener compatibilidad
+            if result.get("success"):
+                result["action_used"] = "CONTAR_ALUMNOS"
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error en CONTAR_ALUMNOS: {e}")
+            return self._error_result(f"Error interno: {str(e)}")
 
     def _execute_calcular_estadistica(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Ejecuta cálculo estadístico"""
@@ -1388,7 +1647,6 @@ class ActionExecutor:
 
         alumno_identificador = params.get("alumno_identificador", "")
         tipo_constancia = params.get("tipo_constancia", "estudio")
-        incluir_calificaciones = params.get("incluir_calificaciones", False)
 
         try:
             # 🎯 USAR SISTEMA EXISTENTE DE CONSTANCIAS
@@ -1417,7 +1675,7 @@ class ActionExecutor:
                 LIMIT 1
                 """
 
-                result = self.sql_executor.execute_query(sql)
+                result = self.sql_executor.execute_query(sql, 10)  # Límite bajo para búsqueda individual
                 if not result.success or result.row_count == 0:
                     return self._error_result(f"No se encontró alumno: {alumno_identificador}")
 
@@ -1497,13 +1755,15 @@ class ActionExecutor:
             )
 
             if result and result.action == "constancia_preview":
+                # 🎯 PRESERVAR LA ACCIÓN ORIGINAL PARA QUE LLEGUE AL UI
                 return {
                     "success": True,
                     "data": [result.parameters],  # Lista para compatibilidad
                     "row_count": 1,
-                    "action_used": "GENERAR_CONSTANCIA_COMPLETA",
+                    "action_used": "constancia_preview",  # ← PRESERVAR ACCIÓN ORIGINAL
                     "message": f"Constancia de {tipo_constancia} generada para {alumno_dict.get('nombre', 'N/A')}",
                     "sql_executed": f"Generación completa de constancia",
+                    "original_action": "GENERAR_CONSTANCIA_COMPLETA",  # ← ACCIÓN TÉCNICA
                     "constancia_result": result  # Resultado completo para procesamiento posterior
                 }
             else:
@@ -1513,26 +1773,16 @@ class ActionExecutor:
             self.logger.error(f"Error generando constancia completa: {e}")
             return self._error_result(f"Error interno: {str(e)}")
 
-    def _execute_combined_actions(self, action_request: Dict[str, Any]) -> Dict[str, Any]:
-        """Ejecuta acciones combinadas"""
-        # TODO: Implementar combinación de acciones
-        return self._error_result("Acciones combinadas no implementadas aún")
 
-    def _execute_sequential_actions(self, action_request: Dict[str, Any]) -> Dict[str, Any]:
-        """Ejecuta acciones secuenciales"""
-        # TODO: Implementar acciones secuenciales
-        return self._error_result("Acciones secuenciales no implementadas aún")
 
     def _execute_filtrar_por_calificaciones(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Ejecuta filtrado por calificaciones"""
 
         tiene_calificaciones = params.get("tiene_calificaciones", "true")
-        incluir_conteo = params.get("incluir_conteo", "false")
         mostrar_detalles = params.get("mostrar_detalles", "true")
 
         # Convertir strings a boolean
         tiene_cal_bool = str(tiene_calificaciones).lower() in ['true', '1', 'yes', 'sí']
-        incluir_conteo_bool = str(incluir_conteo).lower() in ['true', '1', 'yes', 'sí']
         mostrar_detalles_bool = str(mostrar_detalles).lower() in ['true', '1', 'yes', 'sí']
 
         try:
@@ -1585,7 +1835,9 @@ class ActionExecutor:
                     """
                     mensaje = "Conteo de alumnos sin calificaciones"
 
-            result = self.sql_executor.execute_query(sql)
+            # 🚀 USAR LÍMITE ALTO PARA OBTENER TODOS LOS RESULTADOS
+            query_limit = 1000  # Mismo límite que BUSCAR_UNIVERSAL
+            result = self.sql_executor.execute_query(sql, query_limit)
 
             if result.success:
                 return {
@@ -1594,7 +1846,7 @@ class ActionExecutor:
                     "row_count": result.row_count,
                     "action_used": "FILTRAR_POR_CALIFICACIONES",
                     "message": f"{mensaje}: {result.row_count} resultado(s)",
-                    "sql_executed": result.query_executed,
+                    "sql_executed": sql,  # 🆕 AGREGAR SQL PARA ANÁLISIS DINÁMICO
                     "filtro_aplicado": "con_calificaciones" if tiene_cal_bool else "sin_calificaciones"
                 }
             else:
@@ -1605,44 +1857,12 @@ class ActionExecutor:
             return self._error_result(f"Error interno: {str(e)}")
 
     def _execute_sequential_actions(self, action_request: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        🔄 EJECUTA ACCIONES SECUENCIALES
-        El resultado de una acción alimenta la siguiente
-        """
-        try:
-            # Por ahora, simplificar a estrategia simple
-            # TODO: Implementar lógica secuencial completa en el futuro
-            self.logger.warning("⚠️ Estrategia secuencial simplificada a 'simple'")
-
-            # Cambiar estrategia a simple y ejecutar
-            action_request_simple = action_request.copy()
-            action_request_simple["estrategia"] = "simple"
-
-            return self._execute_single_action(action_request_simple)
-
-        except Exception as e:
-            self.logger.error(f"Error en acciones secuenciales: {e}")
-            return self._error_result(f"Error en estrategia secuencial: {str(e)}")
+        """Estrategia secuencial no implementada - usar estrategia simple"""
+        return self._error_result("Estrategia secuencial no implementada. Use estrategia 'simple'.")
 
     def _execute_combined_actions(self, action_request: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        🔄 EJECUTA ACCIONES COMBINADAS
-        Múltiples acciones trabajando juntas
-        """
-        try:
-            # Por ahora, simplificar a estrategia simple
-            # TODO: Implementar lógica combinada completa en el futuro
-            self.logger.warning("⚠️ Estrategia combinada simplificada a 'simple'")
-
-            # Cambiar estrategia a simple y ejecutar
-            action_request_simple = action_request.copy()
-            action_request_simple["estrategia"] = "simple"
-
-            return self._execute_single_action(action_request_simple)
-
-        except Exception as e:
-            self.logger.error(f"Error en acciones combinadas: {e}")
-            return self._error_result(f"Error en estrategia combinada: {str(e)}")
+        """Estrategia combinada no implementada - usar estrategia simple"""
+        return self._error_result("Estrategia combinada no implementada. Use estrategia 'simple'.")
 
     def _error_result(self, message: str) -> Dict[str, Any]:
         """Genera resultado de error estándar"""

@@ -159,38 +159,13 @@ class Config:
         }
     }
 
-    # 🆕 CONFIGURACIÓN DE CONTINUACIONES CONVERSACIONALES
-    CONVERSATION = {
-        'continuation_patterns': {
-            'selection': [
-                r'\b(del|de la|número|#)\s*(\d+|primero|segundo|tercero|cuarto|quinto)',
-                r'\b(ese|esa|el|la)\s*(alumno|estudiante|niño|niña)',
-                r'\bpara\s*(él|ella|ese|esa)'
-            ],
-            'action': [
-                r'\b(constancia|certificado|documento)\s+para',
-                r'\b(curp|nombre|datos|información)\s+(de|del)',
-                r'\b(generar|crear|hacer)\s+(constancia|certificado)'
-            ],
-            'confirmation': [
-                r'\b(sí|si|yes|ok|dale|perfecto|adelante|correcto)\b',
-                r'\b(está\s+bien|me\s+parece\s+bien|hazla|proceder)\b'
-            ],
-            'specification': [
-                r'\b(de\s+qué\s+tipo|qué\s+tipo|con\s+foto|sin\s+foto)',
-                r'\b(más\s+detalles|información\s+adicional|específico)'
-            ]
-        },
-        'max_stack_levels': 5,
-        'stack_timeout_minutes': 15,
-        'auto_cleanup_enabled': True
-    }
+
 
     # Configuración de base de datos
     DATABASE = {
         'connection_timeout': 30,
         'max_connections': 10,
-        'query_limit_default': 100,
+        'query_limit_default': 300,
         'backup_on_startup': True
     }
 

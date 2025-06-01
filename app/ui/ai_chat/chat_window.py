@@ -564,16 +564,38 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         from datetime import datetime
         current_time = datetime.now().strftime("%H:%M:%S")
 
-        # 🎨 FORMATEO AUTOMÁTICO SOLO SI NO HAY DATOS ESTRUCTURADOS
-        if response.text and not (response.action == "show_data" and response.data):
+        # 🔧 LOGS INFORMATIVOS - RESPUESTA RECIBIDA EN UI
+        from app.core.logging import debug_detailed
+        debug_detailed(self.logger, f"🔧 [UI] Respuesta recibida del ChatEngine:")
+        debug_detailed(self.logger, f"   ├── Acción: {response.action}")
+        debug_detailed(self.logger, f"   ├── Estado: {'✅ Exitosa' if response.success else '❌ Error'}")
+        debug_detailed(self.logger, f"   ├── Contenido: {len(response.text)} caracteres")
+        debug_detailed(self.logger, f"   └── Datos: {len(response.data.keys()) if response.data else 0} campos → Procesando para mostrar")
+
+        # 🎨 FORMATEO AUTOMÁTICO - SIEMPRE MOSTRAR RESPUESTA DEL MASTER
+        should_show_text = (
+            response.text and (
+                # ✅ SIEMPRE mostrar texto del Master cuando existe
+                True or
+                # SIEMPRE mostrar texto para constancias y transformaciones
+                response.action in ["constancia_preview", "transformation_preview", "pdf_transformation"]
+            )
+        )
+
+        if should_show_text:
             # 🆕 USAR FORMATEO AUTOMÁTICO CON DETECCIÓN INTELIGENTE
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [UI] Mostrando texto formateado ({len(response.text)} chars)")
             formatted_text = self.response_formatter.format_response(response.text, "auto")
             self.chat_list.add_assistant_message(formatted_text, current_time)
+        else:
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [UI] Texto omitido → Priorizando datos estructurados")
 
         # 🆕 MANEJAR CONSTANCIAS GENERADAS
         if response.action == "constancia_preview" and response.data:
             self._handle_constancia_preview_from_engine(response.data, response.files)
-        elif response.action == "pdf_transformation" and response.data:
+        elif response.action in ["pdf_transformation", "transformation_preview"] and response.data:
             self._handle_transformation_preview_from_engine(response.data, response.files)
         # 🔧 MANEJAR ARCHIVOS SOLO SI CHATENGINE NO LOS PROCESÓ
         elif response.files and response.action != "open_file":
@@ -687,7 +709,7 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                 return "data"
             elif action and "error" in action.lower():
                 return "error"
-            elif action in ["constancia_preview", "pdf_transformation"]:
+            elif action in ["constancia_preview", "pdf_transformation", "transformation_preview"]:
                 return "success"
             else:
                 # Determinar por contenido del texto
@@ -759,8 +781,8 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
                     if not self.pdf_panel_expanded:
                         self.toggle_pdf_panel_visibility()
 
-                    # Mostrar opciones de transformación
-                    self._show_transformation_options()
+                    # 🔧 NO MOSTRAR OPCIONES - EL MASTER YA GENERÓ EL MENSAJE COMPLETO
+                    # self._show_transformation_options()  # ← COMENTADO
                 else:
                     self.logger.error(f"Error cargando vista previa de transformación: {transformed_file}")
 
@@ -1173,46 +1195,39 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
         self._show_constancia_preview_options()
 
     def _show_constancia_preview_options(self):
-        """Muestra las opciones disponibles después de generar vista previa de constancia"""
-        options_message = """<div style="background-color: #2C3E50; border: 2px solid #27AE60; border-radius: 8px; padding: 15px; margin: 10px 0; color: #FFFFFF;">
-<h3 style="color: #27AE60; margin-top: 0;">📄 Vista Previa de Constancia Generada</h3>
-<p style="color: #FFFFFF; margin-bottom: 15px;">
-    Puedes revisar la constancia en el panel de la derecha. ¿Qué deseas hacer?
-</p>
-<div style="background-color: #34495E; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-    <p style="color: #7FB3D5; margin: 0;"><b>Opciones disponibles:</b></p>
-    <p style="color: #FFFFFF; margin: 5px 0;">• <b>"Confirmar"</b> - Guardar la constancia definitivamente</p>
-    <p style="color: #FFFFFF; margin: 5px 0;">• <b>"Abrir en navegador"</b> - Ver/imprimir sin guardar</p>
-    <p style="color: #FFFFFF; margin: 5px 0;">• <b>"Cancelar"</b> - Descartar la constancia</p>
-</div>
-<p style="color: #27AE60; margin: 0;"><b>¿Qué deseas hacer?</b></p>
-</div>"""
+        """
+        🗑️ FUNCIÓN DESHABILITADA: Las opciones ya están en el panel derecho
 
-        self.chat_list.add_assistant_message(
-            options_message,
-            self._get_current_time()
-        )
+        Anteriormente mostraba opciones duplicadas:
+        - "Confirmar" - Guardar la constancia definitivamente
+        - "Abrir en navegador" - Ver/imprimir sin guardar
+        - "Cancelar" - Descartar la constancia
 
-        # Marcar que estamos esperando confirmación de constancia
+        Ahora solo usamos la respuesta humanizada del Student que menciona el panel.
+        """
+        # 🎯 SOLO MARCAR QUE ESTAMOS ESPERANDO CONFIRMACIÓN
+        # No mostrar mensaje adicional - el Student ya generó respuesta humanizada
         self.waiting_for_constancia_confirmation = True
 
-    def _show_transformation_options(self):
-        """Muestra las opciones disponibles después de transformar una constancia"""
-        options_message = """<div style="background-color: #2C3E50; border: 1px solid #34495E; border-radius: 8px; padding: 15px; margin-bottom: 10px; color: #FFFFFF;">
-<h3 style="color: #7FB3D5; margin-top: 0; margin-bottom: 10px;">¿Qué deseas hacer con esta constancia?</h3>
-<div style="margin-top: 5px; margin-bottom: 5px;">
-<p><b style="color: #88CCFF;">1. Guardar archivo</b>: Guardar la constancia como PDF permanente</p>
-<p><b style="color: #88CCFF;">2. Abrir/Imprimir</b>: Abrir en navegador para ver o imprimir (sin guardar)</p>
-<p><b style="color: #88CCFF;">3. Guardar datos</b>: Registrar los datos extraídos del PDF original en la base de datos</p>
-<p><b style="color: #88CCFF;">4. Nada</b>: Solo ver la vista previa (se eliminará al cerrar la aplicación)</p>
-</div>
-<p style="margin-top: 10px;">Responde con el número (1-4) o el nombre de la opción.</p>
-<p style="margin-top: 5px; font-size: 12px; color: #7FB3D5;">Nota: Para ver los datos extraídos del PDF original, usa el botón "📋 Ver Datos" en el panel.</p>
-</div>"""
-        self.chat_list.add_assistant_message(options_message, self._get_current_time())
+        self.logger.info("🎯 [CONSTANCIA] Esperando confirmación del usuario (sin mensaje adicional)")
 
-        # Establecer el estado de espera de confirmación
+    def _show_transformation_options(self):
+        """
+        🗑️ FUNCIÓN DESHABILITADA: Las opciones ya están en el panel derecho
+
+        Anteriormente mostraba opciones duplicadas:
+        - "Guardar archivo" - Guardar la constancia como PDF permanente
+        - "Abrir/Imprimir" - Abrir en navegador para ver o imprimir
+        - "Guardar datos" - Registrar los datos extraídos del PDF original
+        - "Nada" - Solo ver la vista previa
+
+        Ahora solo usamos la respuesta humanizada del Student que menciona el panel.
+        """
+        # 🎯 SOLO MARCAR QUE ESTAMOS ESPERANDO CONFIRMACIÓN
+        # No mostrar mensaje adicional - el Student ya generó respuesta humanizada
         self.waiting_for_save_confirmation = True
+
+        self.logger.info("🎯 [TRANSFORMACIÓN] Esperando confirmación del usuario (sin mensaje adicional)")
 
     def _handle_failed_transformation(self, message):
         """Maneja una transformación fallida"""

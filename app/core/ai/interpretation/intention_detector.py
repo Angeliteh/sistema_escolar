@@ -3,20 +3,25 @@ Detector de intención maestro - Clasifica consultas para dirigir a diferentes i
 """
 import json
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from dataclasses import dataclass
 from app.core.logging import get_logger
-from app.core.config import Config
 from app.core.ai.prompts.master_prompt_manager import MasterPromptManager
 
 @dataclass
 class IntentionResult:
-    """Resultado de la detección de intención POTENCIADO"""
+    """Resultado de la detección de intención CONSOLIDADO"""
     intention_type: str  # "consulta_alumnos", "ayuda_sistema", "conversacion_general"
     sub_intention: str   # "busqueda_simple", "generar_constancia", "transformar_pdf", "consulta_avanzada", etc.
     confidence: float
     reasoning: str
     detected_entities: Dict[str, Any]
+    # 🆕 CATEGORIZACIÓN ESPECÍFICA (del Student Prompt 1 eliminado)
+    categoria: str = ""           # busqueda|estadistica|reporte|constancia|transformacion|continuacion
+    sub_tipo: str = ""            # simple|complejo|listado|conteo|generacion|conversion|referencia|confirmacion
+    complejidad: str = ""         # baja|media|alta
+    requiere_contexto: bool = False
+    flujo_optimo: str = ""        # sql_directo|analisis_datos|listado_completo|generacion_docs|procesamiento_contexto
 
 class IntentionDetector:
     """Detector maestro de intenciones para el sistema escolar"""
@@ -30,122 +35,65 @@ class IntentionDetector:
 
     def detect_intention(self, user_query: str, conversation_stack: list = None) -> IntentionResult:
         """
-        PROMPT MAESTRO POTENCIADO: Detecta intención + sub-intención + contexto completo
+        PROMPT MAESTRO CONSOLIDADO: Detección de intenciones + categorización específica
+        🧹 SIN FALLBACKS - Una sola implementación limpia
         """
-        try:
-            # 🆕 USAR PROMPT MANAGER CENTRALIZADO
-            conversation_context = self.prompt_manager.format_conversation_context(conversation_stack)
-            master_prompt = self.prompt_manager.get_intention_detection_prompt(user_query, conversation_context)
+        # 🆕 USAR PROMPT MANAGER CENTRALIZADO
+        conversation_context = self.prompt_manager.format_conversation_context(conversation_stack)
+        master_prompt = self.prompt_manager.get_intention_detection_prompt(user_query, conversation_context)
 
-            # Enviar al LLM
-            response = self.gemini_client.send_prompt_sync(master_prompt)
+        # Enviar al LLM
+        response = self.gemini_client.send_prompt_sync(master_prompt)
 
-            if response:
-                print(f"🎯 Respuesta detección maestro: {response}")
+        self.logger.info(f"🎯 [INTENTION_DETECTOR] Respuesta del LLM: {response}")
 
-                # Parsear respuesta
-                intention_data = self._parse_intention_response(response)
+        # Parsear respuesta (sin fallbacks)
+        intention_data = self._parse_intention_response(response)
 
-                if intention_data:
-                    return IntentionResult(
-                        intention_type=intention_data.get('intention_type', 'conversacion_general'),
-                        sub_intention=intention_data.get('sub_intention', 'chat_casual'),  # ← NUEVO
-                        confidence=intention_data.get('confidence', 0.5),
-                        reasoning=intention_data.get('reasoning', ''),
-                        detected_entities=intention_data.get('detected_entities', {})
-                    )
-                else:
-                    # Fallback a conversación general
-                    return IntentionResult(
-                        intention_type='conversacion_general',
-                        sub_intention='chat_casual',  # ← NUEVO
-                        confidence=Config.INTERPRETATION['confidence_thresholds']['low'],
-                        reasoning='No se pudo parsear la respuesta del detector',
-                        detected_entities={}
-                    )
-            else:
-                # Fallback a conversación general
-                return IntentionResult(
-                    intention_type='conversacion_general',
-                    sub_intention='chat_casual',  # ← NUEVO
-                    confidence=Config.INTERPRETATION['confidence_thresholds']['low'],
-                    reasoning='No se recibió respuesta del detector',
-                    detected_entities={}
-                )
+        # 🆕 EXTRAER CATEGORIZACIÓN ESPECÍFICA
+        student_cat = intention_data.get('student_categorization', {})
 
-        except Exception as e:
-            self.logger.error(f"Error en detección de intención: {e}")
-            self.logger.error(f"Tipo de error: {type(e)}")
-            self.logger.error(f"Args del error: {e.args}")
-            self.logger.error(f"Estado del gemini_client: {self.gemini_client is not None}")
+        return IntentionResult(
+            intention_type=intention_data.get('intention_type'),
+            sub_intention=intention_data.get('sub_intention'),
+            confidence=intention_data.get('confidence'),
+            reasoning=intention_data.get('reasoning'),
+            detected_entities=intention_data.get('detected_entities', {}),
+            # 🆕 CATEGORIZACIÓN ESPECÍFICA CONSOLIDADA
+            categoria=student_cat.get('categoria'),
+            sub_tipo=student_cat.get('sub_tipo'),
+            complejidad=student_cat.get('complejidad'),
+            requiere_contexto=student_cat.get('requiere_contexto', False),
+            flujo_optimo=student_cat.get('flujo_optimo')
+        )
 
-            # 🚨 PROBLEMA CRÍTICO: Manejar KeyError específico
-            if isinstance(e, KeyError) and e.args == (0,):
-                self.logger.error("🚨 KeyError con clave 0 - Problema en el cliente Gemini")
-                self.logger.error(f"Estado del gemini_client.models: {hasattr(self.gemini_client, 'models')}")
-                if hasattr(self.gemini_client, 'models'):
-                    self.logger.error(f"Modelos disponibles: {list(self.gemini_client.models.keys()) if self.gemini_client.models else 'None'}")
+    def _parse_intention_response(self, response: str) -> Dict[str, Any]:
+        """
+        Parsea la respuesta JSON del detector de intención
+        🧹 SIN FALLBACKS - Si falla, que falle claramente para debugging
+        """
+        # Limpiar la respuesta
+        clean_response = response.strip()
 
-                # Intentar reinicializar cliente
-                self.logger.warning("🔄 Reinicializando cliente Gemini por KeyError...")
-                try:
-                    from app.ui.ai_chat.gemini_client import GeminiClient
-                    self.gemini_client = GeminiClient()
-                    self.logger.info("✅ Cliente Gemini reinicializado")
-                except Exception as reinit_error:
-                    self.logger.error(f"❌ Error reinicializando cliente: {reinit_error}")
+        # Buscar JSON en la respuesta con patrones
+        json_patterns = [
+            r'```json\s*(.*?)\s*```',
+            r'```\s*(.*?)\s*```',
+            r'(\{.*?\})'
+        ]
 
-            elif str(e) == "0" or not self.gemini_client:
-                self.logger.warning("🔄 Cliente Gemini corrupto, intentando reinicializar...")
-                try:
-                    from app.ui.ai_chat.gemini_client import GeminiClient
-                    self.gemini_client = GeminiClient()
-                    self.logger.info("✅ Cliente Gemini reinicializado")
-                except Exception as reinit_error:
-                    self.logger.error(f"❌ Error reinicializando cliente: {reinit_error}")
-
-            # Fallback a conversación general
-            return IntentionResult(
-                intention_type='conversacion_general',
-                sub_intention='chat_casual',
-                confidence=Config.INTERPRETATION['confidence_thresholds']['fallback'],
-                reasoning=f'Error en detección: {str(e)} (tipo: {type(e).__name__})',
-                detected_entities={}
-            )
-
-    def _parse_intention_response(self, response: str) -> Optional[Dict[str, Any]]:
-        """Parsea la respuesta JSON del detector de intención"""
-        try:
-            # Limpiar la respuesta
-            clean_response = response.strip()
-
-            # Buscar JSON en la respuesta
-            json_patterns = [
-                r'```json\s*(.*?)\s*```',
-                r'```\s*(.*?)\s*```',
-                r'(\{.*?\})'
-            ]
-
-            for pattern in json_patterns:
-                matches = re.findall(pattern, clean_response, re.DOTALL)
-                if matches:
-                    try:
-                        intention_data = json.loads(matches[0])
-                        print(f"✅ Intención parseada: {intention_data}")
-                        return intention_data
-                    except json.JSONDecodeError:
-                        continue
-
-            # Si no encuentra JSON, intentar parsear directamente
-            try:
-                intention_data = json.loads(clean_response)
+        for pattern in json_patterns:
+            matches = re.findall(pattern, clean_response, re.DOTALL)
+            if matches:
+                self.logger.info(f"🔍 [PARSE] Patrón encontrado: {pattern}")
+                intention_data = json.loads(matches[0])
+                self.logger.info(f"✅ [PARSE] Intención parseada: {intention_data}")
                 return intention_data
-            except json.JSONDecodeError:
-                print(f"❌ No se pudo parsear JSON de intención: {clean_response}")
-                return None
 
-        except Exception as e:
-            print(f"Error parseando intención: {e}")
-            return None
+        # Si no encuentra patrones, intentar parsear directamente
+        self.logger.info(f"🔍 [PARSE] Intentando parseo directo")
+        intention_data = json.loads(clean_response)
+        self.logger.info(f"✅ [PARSE] Parseo directo exitoso: {intention_data}")
+        return intention_data
 
 

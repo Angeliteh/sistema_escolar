@@ -146,8 +146,28 @@ class ChatEngine:
                 self.context  # conversation_context
             )
 
+            # 🔧 LOGS INFORMATIVOS - SIN CONTENIDO REPETITIVO
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [CHATENGINE] Respuesta del Master recibida:")
+            debug_detailed(self.logger, f"   ├── Estado: {'✅ Exitosa' if success else '❌ Error'}")
+            debug_detailed(self.logger, f"   ├── Datos: {len(data.keys()) if data else 0} campos")
+            if data and 'human_response' in data:
+                response_length = len(data['human_response']) if data['human_response'] else 0
+                debug_detailed(self.logger, f"   └── Respuesta: {response_length} caracteres preparados")
+            else:
+                debug_detailed(self.logger, f"   └── Respuesta: Usando fallback ({len(response_text)} chars)")
+
             # 5. Analizar respuesta para determinar acciones
-            return self._analyze_ai_response(response_text, data, success)
+            chat_response = self._analyze_ai_response(response_text, data, success)
+
+            # 🔧 LOGS INFORMATIVOS - RESPUESTA FINAL PREPARADA
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [CHATENGINE] Respuesta final preparada:")
+            debug_detailed(self.logger, f"   ├── Acción: {chat_response.action}")
+            debug_detailed(self.logger, f"   ├── Estado: {'✅ Lista' if chat_response.success else '❌ Error'}")
+            debug_detailed(self.logger, f"   └── Contenido: {len(chat_response.text)} caracteres → Enviando a UI")
+
+            return chat_response
 
         except Exception as e:
             self.logger.error(f"Error en procesamiento IA: {str(e)}")
@@ -231,11 +251,12 @@ class ChatEngine:
                             generated_files.append(file_path)
                             action = "open_file"
 
-        # 🎯 DETECCIÓN INTELIGENTE DE PDF - SOLO PARA CONSTANCIAS GENERADAS
-        # Solo buscar archivos PDF si command_data indica que se generó una constancia
+        # 🎯 DETECCIÓN INTELIGENTE DE PDF - PARA CONSTANCIAS Y TRANSFORMACIONES
+        # Solo buscar archivos PDF si command_data indica que se generó una constancia o transformación
         if (command_data and isinstance(command_data, dict) and
-            (command_data.get('action') == 'constancia_preview' or
+            (command_data.get('action') in ['constancia_preview', 'transformation_preview'] or
              'constancia' in str(command_data.get('message', '')).lower() or
+             'transformación' in str(command_data.get('message', '')).lower() or
              'ruta_archivo' in command_data)):
 
             import tempfile
@@ -275,10 +296,13 @@ class ChatEngine:
 
                         # 🎯 DETECTAR TIPO DE ACCIÓN SEGÚN CONTEXTO
                         if "constancia" in file_path.lower() or "constancia" in ai_response.lower():
-                            if "alumno" in command_data:
+                            # Detectar si es transformación o constancia nueva
+                            if command_data.get('action') == 'transformation_preview':
+                                action = "transformation_preview"  # Vista previa de transformación
+                            elif "alumno" in command_data:
                                 action = "constancia_preview"  # Vista previa de constancia generada
                             else:
-                                action = "pdf_transformation"  # Transformación de PDF
+                                action = "pdf_transformation"  # Transformación de PDF (fallback)
                         else:
                             action = "open_file"
 
@@ -292,21 +316,49 @@ class ChatEngine:
 
         # 🔧 PRIORIZAR ACTION DE COMMAND_DATA (configurado por MessageProcessor)
         if command_data and isinstance(command_data, dict) and "action" in command_data:
-            action = action or command_data["action"]
-            self.logger.info(f"🔧 Usando action de command_data: {action}")
+            # 🎯 PRIORIDAD ABSOLUTA: command_data["action"] sobrescribe cualquier detección automática
+            action = command_data["action"]  # ← USAR DIRECTAMENTE, NO "or"
+            self.logger.info(f"🔧 [CHATENGINE] Usando action de command_data: {action}")
+            # 🔍 DEBUG: Verificar datos recibidos
+            self.logger.info(f"🔍 [DEBUG] CHATENGINE - command_data keys: {list(command_data.keys())}")
+            self.logger.info(f"🔍 [DEBUG] CHATENGINE - action detectada: {command_data.get('action')}")
+        else:
+            self.logger.info(f"🔍 [DEBUG] CHATENGINE - No hay action en command_data o command_data es None")
+
+        # 🎯 DETECTAR DATOS ESTRUCTURADOS AUTOMÁTICAMENTE
+        if command_data and isinstance(command_data, dict):
+            # Si hay datos de alumnos, configurar show_data
+            if ("data" in command_data and command_data["data"] and
+                isinstance(command_data["data"], list) and len(command_data["data"]) > 0):
+                if not action:  # Solo si no hay action ya configurada
+                    action = "show_data"
+                    from app.core.logging import debug_detailed
+                    debug_detailed(self.logger, f"🔧 [CHATENGINE] Auto-detectado: show_data ({len(command_data['data'])} registros)")
 
         # Fallback: detectar por contenido de respuesta
         if not action and ("📊" in ai_response or "📋" in ai_response):
             action = "show_data"
 
-        # 🔧 MENSAJE CONSOLIDADO Y LIMPIO para archivos generados
-        final_text = ai_response
+        # 🔧 MENSAJE CONSOLIDADO Y LIMPIO - PRIORIZAR HUMAN_RESPONSE
+        # 🎯 SOLUCIÓN: Usar human_response de data si está disponible
+        if command_data and isinstance(command_data, dict) and 'human_response' in command_data:
+            final_text = command_data['human_response']
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [CHATENGINE] Fuente: human_response ({len(final_text)} chars)")
+        else:
+            final_text = ai_response
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [CHATENGINE] Fuente: ai_response fallback ({len(final_text)} chars)")
+
+        # Para archivos generados, ajustar mensaje si es necesario
         if generated_files:
-            # Usar el mensaje del ConstanciaProcessor si está disponible
-            if hasattr(data, 'get') and data.get('message'):
-                final_text = data['message']
-            else:
-                final_text = f"✅ Constancia generada exitosamente. La vista previa está disponible en el panel derecho."
+            # 🎯 NO SOBRESCRIBIR SI YA HAY UN MENSAJE DEL MASTER
+            if not final_text or final_text == ai_response:
+                # Solo usar mensaje del ConstanciaProcessor si no hay mensaje del Master
+                if hasattr(data, 'get') and data.get('message'):
+                    final_text = data['message']
+                else:
+                    final_text = f"✅ Constancia generada exitosamente. La vista previa está disponible en el panel derecho."
 
             if not command_success:
                 # Si el comando falló pero encontramos archivos, es éxito
@@ -315,7 +367,9 @@ class ChatEngine:
         # 🎯 CONSTANCIAS COMO ACCIONES COMPLETAS (NO REQUIEREN CONFIRMACIÓN)
         if generated_files and any(f.lower().endswith('.pdf') for f in generated_files):
             requires_confirmation = False  # Las constancias no requieren confirmación
-            action = "constancia_generated"  # Acción específica para constancias
+            # 🔧 PRESERVAR ACCIONES ESPECÍFICAS - NO SOBRESCRIBIR
+            if action not in ["constancia_preview", "transformation_preview"]:
+                action = "constancia_generated"  # Solo usar fallback si no hay acción específica
 
         return ChatResponse(
             text=final_text,

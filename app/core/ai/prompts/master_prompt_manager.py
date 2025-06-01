@@ -24,9 +24,11 @@ class MasterPromptManager(BasePromptManager):
     - Patrones de comunicación entre prompts
     """
 
-    def __init__(self):
+    def __init__(self, database_analyzer=None):
         super().__init__()  # Inicializar BasePromptManager
+        self.database_analyzer = database_analyzer
         self._school_context_cache = None
+        self._database_context_cache = None
 
     @property
     def school_context(self) -> str:
@@ -69,25 +71,30 @@ ESTRUCTURA DISPONIBLE:
 
     def get_intention_detection_prompt(self, user_query: str, conversation_context: str) -> str:
         """
-        PROMPT MAESTRO CENTRALIZADO para detección de intenciones
+        PROMPT MAESTRO CONSOLIDADO para detección de intenciones + categorización específica
+
+        🆕 CONSOLIDADO: Incluye funcionalidad del Student Prompt 1 eliminado
 
         REEMPLAZA:
         - IntentionDetector.detect_intention() (prompt hardcodeado)
+        - StudentQueryPromptManager.get_specific_student_intention_prompt() (ELIMINADO)
 
         PROPÓSITO:
         - Detectar intención principal + sub-intención
+        - 🆕 CATEGORIZACIÓN ESPECÍFICA para consultas de alumnos
         - Usar contexto conversacional para continuaciones
         - Extraer entidades relevantes
         - Dirigir al intérprete correcto
 
         VENTAJAS:
+        - Elimina redundancia entre Master y Student Prompt 1
         - Contexto escolar consistente
         - Mantenimiento centralizado
         - Fácil optimización
         - Testing unificado
         """
         # Usar identidad unificada del BasePromptManager
-        unified_header = self.get_unified_prompt_header("detector de intenciones maestro")
+        unified_header = self.get_unified_prompt_header("detector de intenciones maestro consolidado")
 
         # El conversation_context ya viene formateado como string, no como lista
         conversation_context_formatted = conversation_context if conversation_context else "\n💭 CONTEXTO CONVERSACIONAL: Esta es una nueva conversación.\n"
@@ -113,12 +120,25 @@ TIPOS DE INTENCIÓN DISPONIBLES:
      * **generar_constancia**: Generación de documentos oficiales PDF
      * **transformacion_pdf**: Transformación de constancias entre formatos
 
-   🎯 **CRITERIOS DE CLASIFICACIÓN**:
+   🎯 **CRITERIOS DE CLASIFICACIÓN CONSOLIDADOS**:
+
+   **INTENCIONES PRINCIPALES:**
+   - **consulta_alumnos**: Búsquedas, estadísticas, reportes, constancias de estudiantes
+   - **ayuda_sistema**: Explicaciones de funcionalidad del sistema
+   - **transformacion_pdf**: Conversión de formatos de documentos
+   - **conversacion_general**: Charla casual, saludos
+
+   **SUB-INTENCIONES (si es consulta_alumnos):**
    - **busqueda_simple**: 1-2 criterios básicos (nombre, grado, grupo, turno)
    - **busqueda_compleja**: 3+ criterios combinados O campos especiales (promedio)
    - **estadisticas**: Solicita números, conteos, promedios ("cuántos", "total")
    - **generar_constancia**: Solicita documentos ("constancia", "certificado")
-   - **transformacion_pdf**: Conversión de formatos ("convertir", "transformar")
+
+   🆕 **CATEGORIZACIÓN ESPECÍFICA (si es consulta_alumnos):**
+   - **categoria**: busqueda|estadistica|reporte|constancia|transformacion|continuacion
+   - **sub_tipo**: simple|complejo|listado|conteo|generacion|conversion|referencia|confirmacion
+   - **complejidad**: baja|media|alta
+   - **flujo_optimo**: sql_directo|analisis_datos|listado_completo|generacion_docs|procesamiento_contexto
 
    📋 **EJEMPLOS POR SUB-INTENCIÓN**:
    - **busqueda_simple**: "buscar García", "alumnos de 2do A", "turno matutino"
@@ -126,6 +146,12 @@ TIPOS DE INTENCIÓN DISPONIBLES:
    - **estadisticas**: "cuántos alumnos hay", "total por grado", "distribución de estudiantes"
    - **generar_constancia**: "constancia para Juan Pérez", "certificado de María García"
    - **transformacion_pdf**: "convertir PDF", "cambiar formato de constancia"
+
+   🎯 **FORMATO ESPECÍFICO DE FILTROS**:
+   - "cuántos hay en 3° A" → filtros: ["grado: 3", "grupo: A"]
+   - "alumnos de 2do B" → filtros: ["grado: 2", "grupo: B"]
+   - "estudiantes del turno matutino" → filtros: ["turno: MATUTINO"]
+   - "niños de 1° grado turno vespertino" → filtros: ["grado: 1", "turno: VESPERTINO"]
 
 2. **transformacion_pdf**: Procesar PDFs de constancias en el panel integrado
    - Sub-intenciones: cargar_pdf, transformar_formato, comparar_formatos
@@ -208,7 +234,7 @@ DETECCIÓN DE FOTO:
 
 {self.get_unified_json_instructions({
     "intention_type": "consulta_alumnos|transformacion_pdf|ayuda_sistema|conversacion_general",
-    "sub_intention": "sub_categoria_especifica",
+    "sub_intention": "busqueda_simple|busqueda_compleja|estadisticas|generar_constancia|transformacion_pdf|pregunta_capacidades|chat_casual",
     "confidence": "0.0-1.0",
     "reasoning": "Explicación detallada de la decisión manteniendo mi personalidad",
     "detected_entities": {
@@ -217,9 +243,16 @@ DETECCIÓN DE FOTO:
         "accion_principal": "buscar|generar|contar|listar|transformar|ayudar",
         "fuente_datos": "base_datos|conversacion_previa|pdf_cargado|sistema",
         "contexto_especifico": "información adicional relevante",
-        "filtros": ["criterios de filtrado"],
+        "filtros": ["formato: campo: valor (ej: grado: 3, grupo: A, turno: MATUTINO)"],
         "incluir_foto": "true|false",
         "parametros_extra": "cualquier parámetro adicional relevante"
+    },
+    "student_categorization": {
+        "categoria": "busqueda|estadistica|reporte|constancia|transformacion|continuacion",
+        "sub_tipo": "simple|complejo|listado|conteo|generacion|conversion|referencia|confirmacion",
+        "complejidad": "baja|media|alta",
+        "requiere_contexto": "true|false",
+        "flujo_optimo": "sql_directo|analisis_datos|listado_completo|generacion_docs|procesamiento_contexto"
     }
 })}
 """

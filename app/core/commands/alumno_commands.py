@@ -178,7 +178,7 @@ class DetallesAlumnoCommand(Command):
 class BuscarAlumnosPorCriterioCommand(Command):
     """Comando para buscar alumnos por criterios específicos como grado, grupo, etc."""
 
-    def __init__(self, criterio: str, valor: Any, limit: int = 100):
+    def __init__(self, criterio: str, valor: Any, limit: int = 1000):
         """
         Inicializa el comando
 

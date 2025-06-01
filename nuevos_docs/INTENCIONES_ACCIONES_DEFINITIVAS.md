@@ -1,9 +1,10 @@
 # 🎯 INTENCIONES Y ACCIONES DEFINITIVAS DEL SISTEMA
 ## DOCUMENTACIÓN OFICIAL - ARQUITECTURA ÚNICA
 
-**Fecha:** Diciembre 2024  
-**Estado:** DEFINITIVO - Base para implementación  
+**Fecha:** Enero 2025
+**Estado:** DEFINITIVO - Base para implementación
 **Propósito:** Definir claramente todas las intenciones, sub-intenciones y acciones del sistema
+**Actualización:** Acciones BUSCAR_UNIVERSAL y CONTAR_UNIVERSAL implementadas y validadas
 
 ---
 
@@ -44,7 +45,7 @@
 - "alumnos del grupo B"
 
 **ACCIONES DISPONIBLES:**
-- **`BUSCAR_ALUMNOS_POR_CRITERIO`** - Búsqueda con criterios básicos
+- **`BUSCAR_UNIVERSAL`** - Búsqueda universal con criterios múltiples ✅ IMPLEMENTADA
 - **`OBTENER_ALUMNO_EXACTO`** - Cuando se busca una persona específica (CURP, matrícula)
 
 **PLANTILLAS SQL:**
@@ -92,6 +93,7 @@
 - "estadísticas del turno vespertino"
 
 **ACCIONES DISPONIBLES:**
+- **`CONTAR_UNIVERSAL`** - Conteos universales con criterios múltiples ✅ IMPLEMENTADA
 - **`CALCULAR_ESTADISTICA`** - Promedios y análisis numéricos
 - **`CONTAR_ALUMNOS_CON_FILTRO`** - Conteos específicos con filtros
 
@@ -202,9 +204,9 @@
 
 ```
 consulta_alumnos → StudentQueryInterpreter
-├── busqueda_simple → BUSCAR_ALUMNOS_POR_CRITERIO, OBTENER_ALUMNO_EXACTO
-├── busqueda_compleja → BUSCAR_UNIVERSAL, FILTRAR_RESULTADOS_EXISTENTES  
-├── estadisticas → CALCULAR_ESTADISTICA, CONTAR_ALUMNOS_CON_FILTRO
+├── busqueda_simple → BUSCAR_UNIVERSAL ✅, OBTENER_ALUMNO_EXACTO
+├── busqueda_compleja → BUSCAR_UNIVERSAL ✅, FILTRAR_RESULTADOS_EXISTENTES
+├── estadisticas → CONTAR_UNIVERSAL ✅, CALCULAR_ESTADISTICA
 ├── generar_constancia → GENERAR_CONSTANCIA_COMPLETA
 └── transformacion_pdf → GENERAR_CONSTANCIA_COMPLETA
 
@@ -222,12 +224,12 @@ conversacion_general → MasterInterpreter (directo)
 ## 📊 **RESUMEN DE ACCIONES PRINCIPALES**
 
 ### **ACCIONES DE BÚSQUEDA:**
-- **`BUSCAR_ALUMNOS_POR_CRITERIO`** - Búsqueda básica con criterios simples
+- **`BUSCAR_UNIVERSAL`** - Búsqueda universal con múltiples criterios ✅ IMPLEMENTADA
 - **`OBTENER_ALUMNO_EXACTO`** - Búsqueda de alumno específico
-- **`BUSCAR_UNIVERSAL`** - Búsqueda compleja con múltiples criterios
 - **`FILTRAR_RESULTADOS_EXISTENTES`** - Filtros adicionales
 
 ### **ACCIONES DE ANÁLISIS:**
+- **`CONTAR_UNIVERSAL`** - Conteos universales con criterios múltiples ✅ IMPLEMENTADA
 - **`CALCULAR_ESTADISTICA`** - Cálculos y promedios
 - **`CONTAR_ALUMNOS_CON_FILTRO`** - Conteos específicos
 

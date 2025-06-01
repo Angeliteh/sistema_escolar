@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Agregar el directorio raíz al path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.core.sql_templates.template_executor import TemplateExecutor
+from future_implementations.sql_templates.template_executor import TemplateExecutor
 
 def test_all_templates():
     """Prueba todas las plantillas con datos de ejemplo"""

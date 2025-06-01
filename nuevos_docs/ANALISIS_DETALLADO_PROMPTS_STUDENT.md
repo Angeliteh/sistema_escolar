@@ -2,19 +2,19 @@
 
 ## 📊 **FLUJO ACTUAL COMPLETO IDENTIFICADO**
 
-### **🎯 TOTAL DE PROMPTS: 5 (1 Master + 4 Student)**
+### **🎯 TOTAL DE PROMPTS: 4 (1 Master + 3 Student) - ACTUALIZADO ENERO 2025**
 
 ```mermaid
 graph TD
     A[👤 Usuario] --> B[🧠 Master Interpreter]
-    B --> C[PROMPT MASTER: Detección de Intenciones]
+    B --> C[PROMPT MASTER: Detección de Intenciones + Categorización]
     C --> D[📊 Student Interpreter]
-    D --> E[PROMPT 1: Intención Específica]
-    E --> F[PROMPT 2: Selección de Acciones]
-    F --> G[EJECUCIÓN: ActionExecutor]
-    G --> H[PROMPT 4: Validación + Respuesta + Auto-reflexión]
+    D --> E[PROMPT 1: Selección de Acciones]
+    E --> F[EJECUCIÓN: ActionExecutor]
+    F --> G[PROMPT 2: Validación + Respuesta]
+    G --> H[🧠 Master: Respuesta Final con Criterios Dinámicos]
     H --> I[MessageProcessor]
-    I --> J[👤 Usuario ve respuesta]
+    I --> J[👤 Usuario ve respuesta específica]
 ```
 
 ## 🔍 **ANÁLISIS DETALLADO DE CADA PROMPT**
@@ -39,7 +39,7 @@ graph TD
 # }
 ```
 
-### **📊 STUDENT INTERPRETER - 4 PROMPTS**
+### **📊 STUDENT INTERPRETER - 3 PROMPTS (ACTUALIZADO)**
 
 #### **PROMPT 1: Intención Específica**
 - **Archivo:** `app/core/ai/prompts/student_query_prompt_manager.py`
@@ -491,6 +491,52 @@ def process_query(user_query, conversation_stack):
     ↓
 👤 Ve respuesta mejorada con datos + pregunta inteligente
 ```
+
+---
+
+## ✅ **ESTADO ACTUAL IMPLEMENTADO - ENERO 2025**
+
+### **🎯 FLUJO CONSOLIDADO FUNCIONANDO:**
+
+#### **MASTER INTERPRETER - 1 PROMPT EXPANDIDO:**
+- **Detección de intenciones** ✅
+- **Categorización específica** ✅ (incluye información del antiguo PROMPT 1)
+- **Entidades detectadas** ✅
+- **Delegación inteligente** ✅
+
+#### **STUDENT INTERPRETER - 2 PROMPTS PRINCIPALES:**
+- **PROMPT 1: Selección de acciones** ✅ (antiguo PROMPT 2)
+- **PROMPT 2: Validación + respuesta** ✅ (antiguo PROMPT 4)
+- **ActionExecutor entre prompts** ✅
+
+#### **MASTER RESPUESTA FINAL:**
+- **Análisis dinámico de SQL** ✅
+- **Extracción de criterios específicos** ✅
+- **Respuestas con criterios mencionados** ✅
+- **Centralización de respuestas** ✅
+
+### **🔧 OPTIMIZACIONES IMPLEMENTADAS:**
+
+1. **ELIMINADO PROMPT 1 REDUNDANTE** ✅
+   - Master ahora incluye categorización específica
+   - Información consolidada en un solo lugar
+
+2. **RESPUESTAS DINÁMICAS** ✅
+   - Análisis automático del SQL ejecutado
+   - Extracción de criterios de búsqueda
+   - Respuestas específicas: "12 alumnos de 1° grado turno VESPERTINO"
+
+3. **CONTEXTO CONVERSACIONAL DESACTIVADO** ✅
+   - Procesamiento individual por consulta
+   - Sin auto-reflexión conversacional
+   - Enfoque en robustez de consultas individuales
+
+### **📊 ACCIONES UNIVERSALES IMPLEMENTADAS:**
+- **BUSCAR_UNIVERSAL** ✅ - Búsqueda con criterios múltiples
+- **CONTAR_UNIVERSAL** ✅ - Conteos con criterios múltiples
+- **Análisis dinámico de criterios** ✅ - Para todas las consultas
+
+---
 
 ## 📋 **CADA PROMPT EXPLICADO EN DETALLE**
 

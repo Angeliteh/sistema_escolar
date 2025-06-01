@@ -178,16 +178,71 @@ class LoggerManager:
 def get_logger(name: str) -> logging.Logger:
     """
     Función de conveniencia para obtener un logger
-    
+
     Args:
         name: Nombre del módulo (usar __name__)
-        
+
     Returns:
         Logger configurado
-        
+
     Example:
         from app.core.logging import get_logger
         logger = get_logger(__name__)
         logger.info("Mensaje")
     """
     return LoggerManager().get_logger(name)
+
+
+# 🔍 FUNCIONES HELPER PARA DEBUG CONDICIONAL
+def is_detailed_debug_enabled() -> bool:
+    """
+    Verifica si el modo de debug detallado está activado
+
+    Returns:
+        True si DEBUG_PAUSES está activado, False en caso contrario
+    """
+    return os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true'
+
+
+def debug_detailed(logger: logging.Logger, message: str, *args, **kwargs):
+    """
+    Log detallado que solo aparece cuando DEBUG_PAUSES está activado
+
+    Args:
+        logger: Logger a usar
+        message: Mensaje a loggear
+        *args, **kwargs: Argumentos adicionales para el logger
+    """
+    if is_detailed_debug_enabled():
+        logger.info(message, *args, **kwargs)
+    # 🚫 Si DEBUG_PAUSES no está activado, NO hacer nada (no loggear)
+
+
+def debug_separator(logger: logging.Logger, title: str = "", length: int = 80):
+    """
+    Separador visual que solo aparece en modo debug detallado
+
+    Args:
+        logger: Logger a usar
+        title: Título opcional para el separador
+        length: Longitud del separador
+    """
+    if is_detailed_debug_enabled():
+        if title:
+            logger.info(f"{'=' * length}")
+            logger.info(f"🔍 {title}")
+            logger.info(f"{'=' * length}")
+        else:
+            logger.info(f"{'=' * length}")
+    # 🚫 Si DEBUG_PAUSES no está activado, NO hacer nada (no loggear)
+
+
+def debug_pause_if_enabled(message: str):
+    """
+    Pausa solo si DEBUG_PAUSES está activado
+
+    Args:
+        message: Mensaje a mostrar en la pausa
+    """
+    if is_detailed_debug_enabled():
+        input(f"🛑 {message}")

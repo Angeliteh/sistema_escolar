@@ -158,11 +158,24 @@ class ChatBubble(QWidget):
         # 🎯 HABILITAR SOPORTE HTML PARA FORMATEO MEJORADO
         # Convertir saltos de línea a HTML para mejor renderizado
         if '\n' in self.text:
+            # 🔍 DEBUG: Ver texto original
+            print(f"🔍 [DEBUG] CHATBUBBLE - Texto con \\n detectado:")
+            print(f"    ├── Longitud: {len(self.text)} chars")
+            print(f"    ├── Primeros 100 chars: '{self.text[:100]}...'")
+            print(f"    └── Cantidad de \\n: {self.text.count(chr(10))}")
+
             # Convertir saltos de línea a <br> para HTML
             html_text = self.text.replace('\n', '<br>')
+            print(f"🔍 [DEBUG] CHATBUBBLE - Después de conversión:")
+            print(f"    ├── Primeros 100 chars: '{html_text[:100]}...'")
+            print(f"    └── Cantidad de <br>: {html_text.count('<br>')}")
+
             self.content_label.setText(html_text)
         else:
             # Si no hay saltos de línea, usar el texto original
+            print(f"🔍 [DEBUG] CHATBUBBLE - SIN saltos de línea:")
+            print(f"    ├── Longitud: {len(self.text)} chars")
+            print(f"    └── Texto: '{self.text[:100]}...'")
             self.content_label.setText(self.text)
 
         # Siempre usar RichText para consistencia

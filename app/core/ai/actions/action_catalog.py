@@ -56,17 +56,31 @@ class ActionCatalog:
         # 🆕 ACCIÓN UNIVERSAL DE BÚSQUEDA (REEMPLAZA MÚLTIPLES ACCIONES)
         actions["BUSCAR_UNIVERSAL"] = ActionDefinition(
             name="BUSCAR_UNIVERSAL",
-            description="Búsqueda universal dinámica por cualquier campo con múltiples criterios opcionales",
+            description="Búsqueda universal dinámica por cualquier campo con múltiples criterios y operadores avanzados",
             category="busqueda",
             input_params={
-                "criterio_principal": "Criterio principal: {'tabla': 'alumnos|datos_escolares', 'campo': 'campo_dinamico', 'operador': '=|LIKE|>|<', 'valor': 'valor_buscar'}",
+                "criterio_principal": "Criterio principal: {'tabla': 'alumnos|datos_escolares', 'campo': 'campo_dinamico', 'operador': '=|LIKE|>|<|>=|<=|BETWEEN|IS_NULL|IS_NOT_NULL|STARTS_WITH|ENDS_WITH|IN|NOT_IN', 'valor': 'valor_buscar'}",
                 "filtros_adicionales": "Lista opcional de filtros extra con misma estructura que criterio_principal",
                 "join_logic": "Tipo de JOIN (INNER|LEFT) - opcional, por defecto LEFT",
                 "limit": "Límite de resultados - opcional"
             },
             output_type="alumno_o_lista_alumnos",
-            usage_example="Para cualquier búsqueda: nombres, CURP, fechas, grados, turnos, criterios múltiples, etc.",
+            usage_example="Para cualquier búsqueda: nombres, CURP, fechas, grados, turnos, rangos, criterios múltiples, etc.",
             sql_template="Generado dinámicamente basado en criterios y estructura de BD"
+        )
+
+        # 🎯 ACCIÓN UNIVERSAL DE CONTEO (NUEVA)
+        actions["CONTAR_UNIVERSAL"] = ActionDefinition(
+            name="CONTAR_UNIVERSAL",
+            description="Conteo universal con múltiples criterios y operadores avanzados - usa la misma flexibilidad que BUSCAR_UNIVERSAL pero devuelve solo el número",
+            category="estadistica",
+            input_params={
+                "criterio_principal": "Criterio principal: {'tabla': 'alumnos|datos_escolares', 'campo': 'campo_dinamico', 'operador': '=|LIKE|>|<|>=|<=|BETWEEN|IS_NULL|IS_NOT_NULL|STARTS_WITH|ENDS_WITH|IN|NOT_IN', 'valor': 'valor_buscar'}",
+                "filtros_adicionales": "Lista opcional de filtros extra con misma estructura que criterio_principal",
+                "join_logic": "Tipo de JOIN (INNER|LEFT) - opcional, por defecto LEFT"
+            },
+            output_type="numero_total",
+            usage_example="Para conteos con múltiples criterios: 'cuántos hay en 3° A', 'cuántos alumnos nacidos entre 2015-2018', 'cuántos nombres que empiecen con MAR'"
         )
 
         # 📊 ACCIONES DE ESTADÍSTICA

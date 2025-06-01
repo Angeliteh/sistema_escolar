@@ -52,7 +52,7 @@ class ContinuationDetector:
             return {"es_continuacion": False, "tipo_continuacion": "none"}
 
     def _format_conversation_stack(self, conversation_stack: list) -> str:
-        """Formatea la pila conversacional para el LLM"""
+        """Formatea la pila conversacional para el LLM incluyendo nota estratégica"""
         if not conversation_stack:
             return "PILA VACÍA"
 
@@ -65,6 +65,12 @@ NIVEL {i}:
 - Esperando: {level.get('awaiting', 'N/A')}
 - Timestamp: {level.get('timestamp', 'N/A')}
 """
+            # 🎯 INCLUIR NOTA ESTRATÉGICA DE STUDENT
+            auto_reflexion = level.get('auto_reflexion', {})
+            nota_para_master = auto_reflexion.get('nota_para_master', '')
+            if nota_para_master:
+                context += f"- NOTA ESTRATÉGICA: {nota_para_master}\n"
+
             # Mostrar algunos datos de ejemplo si hay
             if level.get('data') and len(level.get('data', [])) > 0:
                 context += f"- Primeros elementos: {level['data'][:3]}\n"
@@ -72,29 +78,47 @@ NIVEL {i}:
         return context
 
     def _build_continuation_prompt(self, user_query: str, stack_context: str) -> str:
-        """Construye el prompt para detección de continuación"""
-        return f"""
-Eres un analizador conversacional inteligente para un sistema escolar.
+        """Construye el prompt para detección inteligente de continuación usando nota estratégica"""
 
-PILA CONVERSACIONAL ACTUAL:
+        # Extraer nota estratégica del último nivel si existe
+        nota_estrategica = "No hay nota estratégica disponible"
+        if stack_context and "NOTA ESTRATÉGICA:" in stack_context:
+            try:
+                lines = stack_context.split('\n')
+                for line in lines:
+                    if "NOTA ESTRATÉGICA:" in line:
+                        nota_estrategica = line.split("NOTA ESTRATÉGICA:", 1)[1].strip()
+                        break
+            except:
+                pass
+
+        return f"""
+Eres un detector inteligente de continuaciones conversacionales para un sistema escolar.
+
+CONTEXTO CONVERSACIONAL ANTERIOR:
 {stack_context}
+
+NOTA ESTRATÉGICA DE STUDENT (Predicciones de continuación):
+{nota_estrategica}
 
 NUEVA CONSULTA DEL USUARIO: "{user_query}"
 
-INSTRUCCIONES CRÍTICAS:
-Analiza si la nueva consulta se refiere ESPECÍFICAMENTE a algún elemento de la pila conversacional.
+INSTRUCCIONES PARA DETECCIÓN INTELIGENTE:
+Analiza si la nueva consulta se refiere al contexto anterior usando la nota estratégica como guía principal.
 
-PATRONES DE CONTINUACIÓN VERDADERA (REFERENCIAS DIRECTAS A UN ELEMENTO):
-1. SELECCIÓN: "del primero", "número 5", "el quinto", "para él", "ese alumno", "del tercero"
-2. ACCIÓN: "constancia para él", "CURP de ese", "información del tercero", "datos de ese"
-3. CONFIRMACIÓN: "sí", "correcto", "está bien", "proceder", "adelante", "continúa"
-4. ESPECIFICACIÓN: "de qué tipo", "con foto", "sin foto", "más detalles"
+TIPOS DE CONTINUACIÓN INTELIGENTE (Basados en nota estratégica):
+1. POSICIÓN: "del primero", "el último", "del cuarto" → se refiere a posición en lista anterior
+2. FILTRO: "de esos los de segundo", "del turno matutino" → filtrar datos anteriores
+3. ACCIÓN: "constancia para él", "información del tercero" → acción sobre elemento específico
+4. CONTEO: "cuántos son de [criterio]" → contar con filtro sobre datos anteriores
+5. ESTADÍSTICAS: "distribución", "estadísticas de ese grupo" → análisis de datos anteriores
+6. CONFIRMACIÓN: "sí", "correcto", "proceder" → confirmar acción sugerida
 
-CONSULTAS CON CONTEXTO (SÍ son continuación - usan datos del contexto):
-- ANÁLISIS/ESTADÍSTICAS: "de todos ellos quienes tienen...", "cuántos de ellos...", "qué porcentaje..."
-- FILTROS SOBRE CONTEXTO: "de esos alumnos los que son...", "entre ellos cuáles..."
-- COMPARACIONES: "cuál de ellos tiene mejor...", "quién de ellos..."
-- CÁLCULOS: "promedio de ellos", "suma de...", "total de..."
+REFERENCIAS NATURALES QUE INDICAN CONTINUACIÓN:
+- "de esos", "de ellos", "del grupo anterior", "de la lista"
+- "ese alumno", "esa estudiante", "del que muestras"
+- "ahora dame", "necesito de", "quiero del"
+- "cuántos son", "estadísticas de", "distribución de"
 
 CONSULTAS COMPLETAMENTE NUEVAS (Sin contexto):
 - Consultas específicas nuevas: "alumnos de tercer grado", "buscar García", "nombre de un alumno"

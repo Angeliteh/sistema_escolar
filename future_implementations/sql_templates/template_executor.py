@@ -279,8 +279,9 @@ class TemplateExecutor:
                     parameters_used=params
                 )
 
-            # Ejecutar SQL
-            result = self.sql_executor.execute_query(sql_query)
+            # Ejecutar SQL con límite alto para evitar restricciones
+            query_limit = 1000  # Límite alto para plantillas
+            result = self.sql_executor.execute_query(sql_query, query_limit)
 
             if result.success:
                 self.logger.info(f"✅ Plantilla '{template_name}' ejecutada: {result.row_count} resultados")

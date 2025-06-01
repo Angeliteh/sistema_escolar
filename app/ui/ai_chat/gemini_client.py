@@ -39,7 +39,7 @@ class GeminiThread(QThread):
                     # Si falla, intentar con el modelo de respaldo
                     pass
 
-            # Intentar con modelo de respaldo
+            # 🔄 FALLBACK CRÍTICO: Intentar con modelo de respaldo (VITAL PARA CUOTAS API)
             if fallback_model and self.models.get(fallback_model):
                 try:
                     response = self.models[fallback_model].generate_content(self.prompt)
@@ -212,17 +212,20 @@ class GeminiClient(QObject):
             except Exception as e:
                 self.logger.warning(f"❌ Error con {primary_model}: {str(e)}")
 
-        # Intentar con modelo de respaldo
+        # 🔄 FALLBACK CRÍTICO: Intentar con modelo de respaldo (VITAL PARA CUOTAS API)
         if self.config['enable_fallback'] and fallback_model in models:
             try:
-                self.logger.info(f"🔄 ACTIVANDO FALLBACK: Intentando con {fallback_model}")
+                self.logger.info(f"🔄 [FALLBACK CRÍTICO] ACTIVANDO: {fallback_model} (cuota API agotada)")
+                self.logger.info(f"🔄 [FALLBACK CRÍTICO] RAZÓN: Cambio de API key por límites de cuota")
                 response = models[fallback_model].generate_content(prompt)
                 if response and response.text:
-                    self.logger.info(f"✅ FALLBACK EXITOSO: Respuesta obtenida con {fallback_model}")
+                    self.logger.info(f"✅ [FALLBACK CRÍTICO] EXITOSO: Respuesta obtenida con {fallback_model}")
                     return response.text
             except Exception as e:
-                self.logger.error(f"❌ FALLBACK FALLÓ: Error con {fallback_model}: {str(e)}")
+                self.logger.error(f"❌ [FALLBACK CRÍTICO] FALLÓ: Error con {fallback_model}: {str(e)}")
 
+        # Si todos los modelos fallan, entonces sí fallar
+        self.logger.error(f"❌ [FALLBACK CRÍTICO] TODOS LOS MODELOS FALLARON: {primary_model}, {fallback_model}")
         return None
 
     def parse_json_response(self, response: str) -> Optional[Dict[str, Any]]:

@@ -141,47 +141,56 @@ class MessageProcessor:
             if conversation_context.get("recent_messages"):
                 context.recent_messages = conversation_context["recent_messages"]
 
-            # NUEVO: Ejecutar con MasterInterpreter pasando la pila conversacional
-            result = self.master_interpreter.interpret(context, self.conversation_stack)
+            # 🎯 PROCESAMIENTO CON CONTEXTO CONVERSACIONAL ACTIVADO
+            conversation_stack = self.conversation_stack  # ← USAR PILA REAL
+
+            # 🔧 CRÍTICO: Agregar conversation_stack al context para que llegue al Student
+            context.conversation_stack = conversation_stack
+
+
+
+            if conversation_stack:
+                self.logger.info(f"🎯 CONTEXTO ACTIVO - {len(conversation_stack)} niveles disponibles")
+            else:
+                self.logger.info("🎯 CONTEXTO VACÍO - Procesando consulta individual")
+
+
+
+            result = self.master_interpreter.interpret(context, conversation_stack)
 
             if result:
+
+
                 # Manejar diferentes tipos de resultados
-                if result.action == "consulta_sql_exitosa":
+                if result.action in ["consulta_sql_exitosa", "BUSCAR_UNIVERSAL"]:
                     message = result.parameters.get("human_response",
                                                    result.parameters.get("message", "Consulta procesada"))
 
                     # NUEVO: Procesar auto-reflexión del LLM
-                    auto_reflexion = result.parameters.get("auto_reflexion", {})
+                    # Para BUSCAR_UNIVERSAL, la auto-reflexión está en 'reflexion_conversacional'
+                    auto_reflexion = result.parameters.get("reflexion_conversacional",
+                                                          result.parameters.get("auto_reflexion", {}))
 
                     # 🔧 DEBUG: Verificar si auto-reflexión está llegando
                     self.logger.info(f"🧠 DEBUG - Auto-reflexión recibida: {auto_reflexion}")
 
+
+
+                    # 🎯 CONTEXTO ACTIVADO - Evaluar auto-reflexión para conversation_stack
                     if auto_reflexion.get("espera_continuacion", False):
-                        tipo_esperado = auto_reflexion.get("tipo_esperado", "selection")
+                        tipo_esperado = auto_reflexion.get("tipo_esperado", "analysis")
                         datos_recordar = auto_reflexion.get("datos_recordar", {})
-                        razonamiento = auto_reflexion.get("razonamiento", "")
 
-                        self.logger.info(f"✅ LLM auto-reflexión detectó continuación esperada:")
-                        self.logger.info(f"   - Tipo: {tipo_esperado}")
-                        self.logger.info(f"   - Razonamiento: {razonamiento}")
-                        self.logger.info(f"   - Datos a recordar: {datos_recordar}")
+                        self.logger.info(f"🎯 CONTEXTO ACTIVADO - Auto-reflexión detecta continuación esperada: {tipo_esperado}")
 
-                        # Agregar automáticamente a la pila conversacional
+                        # Agregar a conversation_stack
                         self.add_to_conversation_stack(
                             consulta_para_procesar,
-                            {
-                                "data": result.parameters.get("data", []),
-                                "row_count": result.parameters.get("row_count", 0),
-                                "message": message,
-                                "sql_query": result.parameters.get("sql_query", ""),
-                                **datos_recordar  # Agregar datos adicionales de la reflexión
-                            },
+                            {**result.parameters, **datos_recordar},
                             tipo_esperado
                         )
-
-                        self.logger.info(f"📚 PILA CONVERSACIONAL ACTUALIZADA: {len(self.conversation_stack)} niveles")
                     else:
-                        self.logger.info("❌ LLM auto-reflexión: No espera continuación")
+                        self.logger.info("🎯 CONTEXTO EVALUADO - No se espera continuación para esta consulta")
 
                     # 🎯 CONFIGURAR DATOS ESTRUCTURADOS PARA DATADISPLAYMANAGER
                     data = result.parameters.get("data", [])
@@ -202,6 +211,8 @@ class MessageProcessor:
                         self.logger.debug(f"Guardando conversación con datos estructurados: '{consulta_para_procesar}' -> '{message[:50]}...'")
                         self.add_to_conversation(consulta_para_procesar, message, formatted_parameters)
                         self.logger.debug(f"Total mensajes en historial: {len(self.conversation_history)}")
+
+
 
                         return True, message, formatted_parameters
 
@@ -242,8 +253,12 @@ class MessageProcessor:
                             "confirmation"  # Espera confirmación para constancia
                         )
 
-                    self.add_to_conversation(consulta_para_procesar, message, result.parameters)
-                    return True, message, result.parameters
+                    # 🎯 AGREGAR ACCIÓN A LOS PARÁMETROS PARA QUE LLEGUE AL CHATENGINE
+                    parameters_with_action = result.parameters.copy()
+                    parameters_with_action["action"] = result.action  # ← PRESERVAR ACCIÓN
+
+                    self.add_to_conversation(consulta_para_procesar, message, parameters_with_action)
+                    return True, message, parameters_with_action
 
                 elif result.action in ["constancia_confirmada", "constancia_abierta", "constancia_cancelada"]:
                     message = result.parameters.get("message", "Acción de constancia completada")
@@ -268,8 +283,18 @@ class MessageProcessor:
                 elif result.action == "transformation_preview":
                     # 🆕 MANEJAR VISTA PREVIA DE TRANSFORMACIÓN
                     message = result.parameters.get("message", "Vista previa de transformación generada")
-                    self._handle_transformation_preview(result.parameters)
-                    return True, message, result.parameters
+
+                    # 🎯 AGREGAR ACCIÓN A LOS PARÁMETROS PARA QUE LLEGUE AL CHATENGINE
+                    parameters_with_action = result.parameters.copy()
+                    parameters_with_action["action"] = result.action  # ← PRESERVAR ACCIÓN
+
+                    # 🔍 DEBUG: Verificar que la acción se está agregando
+                    self.logger.info(f"🔍 [DEBUG] TRANSFORMATION_PREVIEW - Acción agregada: {parameters_with_action.get('action')}")
+                    self.logger.info(f"🔍 [DEBUG] TRANSFORMATION_PREVIEW - Mensaje: {message}")
+                    self.logger.info(f"🔍 [DEBUG] TRANSFORMATION_PREVIEW - Parameters keys: {list(parameters_with_action.keys())}")
+
+                    self._handle_transformation_preview(parameters_with_action)
+                    return True, message, parameters_with_action
 
                 elif result.action == "transformation_error":
                     # 🆕 MANEJAR ERRORES DE TRANSFORMACIÓN
@@ -361,6 +386,66 @@ class MessageProcessor:
     def get_random_success_phrase(self):
         """Devuelve una frase de éxito aleatoria"""
         return random.choice(self.success_phrases)
+
+    def add_to_conversation_stack(self, query, result_data, awaiting_type):
+        """
+        Agrega nivel a la pila conversacional según PROTOCOLO_COMUNICACION_BIDIRECCIONAL.md
+
+        Args:
+            query (str): Consulta del usuario que generó estos datos
+            result_data (dict): Datos del resultado (data, row_count, sql_executed)
+            awaiting_type (str): Tipo de continuación esperada (analysis, action, confirmation, selection)
+        """
+        from datetime import datetime
+
+
+
+        # Estructura según PROTOCOLO_COMUNICACION_BIDIRECCIONAL.md
+        level = {
+            "id": len(self.conversation_stack) + 1,
+            "query": query,
+            "data": result_data.get("data", []),
+            "row_count": result_data.get("row_count", 0),
+            "sql_executed": result_data.get("sql_executed", ""),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "awaiting": awaiting_type,
+            "active": True,
+            "context_available": {
+                "positions": len(result_data.get("data", [])) > 0,  # "el segundo", "el tercero"
+                "names": len(result_data.get("data", [])) > 0,      # "FRANCO", "VALERIA"
+                "actions": awaiting_type in ["confirmation", "action"],  # "constancia para"
+                "filters": awaiting_type in ["analysis", "selection"]    # "que tengan"
+            },
+            "priority": 0.9  # Más reciente = mayor prioridad
+        }
+
+        # Actualizar prioridades de niveles anteriores
+        for existing_level in self.conversation_stack:
+            existing_level["priority"] *= 0.7  # Reducir prioridad
+
+        self.conversation_stack.append(level)
+        self.awaiting_continuation = True
+
+        self.logger.info(f"📋 [CONVERSATION_STACK] Nivel agregado:")
+        self.logger.info(f"    ├── Query: '{query}'")
+        self.logger.info(f"    ├── Datos: {len(result_data.get('data', []))} elementos")
+        self.logger.info(f"    ├── Esperando: {awaiting_type}")
+        self.logger.info(f"    └── Total niveles: {len(self.conversation_stack)}")
+
+
+
+    def clear_conversation_stack(self):
+        """Limpiar pila conversacional"""
+        niveles_eliminados = len(self.conversation_stack)
+
+
+
+        self.conversation_stack = []
+        self.awaiting_continuation = False
+
+        self.logger.info(f"🗑️ [CONVERSATION_STACK] Limpiado - {niveles_eliminados} niveles eliminados")
+
+
 
     def add_to_conversation(self, user_message, system_response, query_results=None):
         """Agregar intercambio al historial conversacional"""
@@ -475,112 +560,9 @@ EJEMPLOS DE CUÁNDO USAR CONTEXTO:
     # MÉTODOS DE GESTIÓN DE PILA CONVERSACIONAL
     # ==========================================
 
-    def add_to_conversation_stack(self, query, result_data, awaiting_type):
-        """Agregar nivel a la pila conversacional"""
-        from datetime import datetime
 
-        level = {
-            "query": query,
-            "data": result_data.get("data", []),
-            "row_count": result_data.get("row_count", 0),
-            "awaiting": awaiting_type,  # "selection", "action", "confirmation", "specification"
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
-            "sql_query": result_data.get("sql_query", ""),
-            "message": result_data.get("message", "")
-        }
 
-        self.conversation_stack.append(level)
-        self.awaiting_continuation = True
 
-        self.logger.debug(f"Agregado a pila conversacional: Nivel {len(self.conversation_stack)}")
-        self.logger.debug(f"Tipo esperado: {awaiting_type}")
-        self.logger.debug(f"Datos disponibles: {level['row_count']} elementos")
-
-    def clear_conversation_stack(self):
-        """Limpiar pila cuando se completa una acción o inicia consulta nueva"""
-        stack_size = len(self.conversation_stack)
-        self.conversation_stack = []
-        self.awaiting_continuation = False
-        self.logger.debug(f"Pila conversacional limpiada (tenía {stack_size} niveles)")
-
-    def get_conversation_context_for_llm(self):
-        """Formatear pila conversacional para el LLM"""
-        if not self.conversation_stack:
-            return ""
-
-        context = "\n=== PILA CONVERSACIONAL ACTIVA ===\n"
-        context += f"📚 NIVELES EN LA PILA: {len(self.conversation_stack)}\n"
-
-        for i, level in enumerate(self.conversation_stack, 1):
-            context += f"""
-📋 NIVEL {i}:
-- Consulta original: "{level['query']}"
-- Datos disponibles: {level['row_count']} elementos
-- Esperando del usuario: {level['awaiting']}
-- SQL ejecutado: {level['sql_query'][:50]}{'...' if len(level['sql_query']) > 50 else ''}
-- Timestamp: {level['timestamp']}
-"""
-
-        context += """
-🧠 INSTRUCCIONES PARA USO DE LA PILA:
-- Si la nueva consulta se refiere a algún nivel de la pila, USA esos datos
-- NO generes nuevo SQL si puedes usar datos de la pila
-- Ejemplos de referencias: "del primero", "número 5", "para él", "ese alumno"
-- Si es consulta completamente nueva, ignora la pila
-
-PATRONES DE CONTINUACIÓN:
-✅ "CURP del quinto" → usar elemento 5 del último nivel con lista
-✅ "constancia para él" → usar último alumno seleccionado
-✅ "sí" → confirmar acción propuesta en el último nivel
-❌ "cuántos alumnos hay" → consulta nueva, limpiar pila
-"""
-
-        return context
-
-    def _detect_awaiting_continuation(self, response_message, result_data):
-        """Detecta automáticamente si la respuesta espera continuación del usuario"""
-        import re
-
-        # Patrones que indican que se espera continuación
-        continuation_indicators = [
-            # Preguntas directas
-            (r"¿.*información.*específica.*\?", "selection"),      # "¿información específica?"
-            (r"¿.*necesitas.*\?", "action"),                       # "¿necesitas algo?"
-            (r"¿.*te.*gustaría.*\?", "action"),                    # "¿te gustaría...?"
-            (r"¿.*qué.*tipo.*\?", "specification"),                # "¿qué tipo de constancia?"
-            (r"¿.*cuál.*\?", "selection"),                         # "¿cuál prefieres?"
-
-            # Listas numeradas (indican selección posible)
-            (r"\d+\.\s+[A-Z].*encontrados", "selection"),          # "1. NOMBRE... encontrados"
-            (r"📋.*\(\d+.*encontrados\)", "selection"),            # "📋 LISTA (X encontrados)"
-
-            # Ofertas de servicios
-            (r"generar.*constancia", "action"),                    # Ofrece generar constancia
-            (r"consultar.*información", "action"),                 # Ofrece consultar más
-            (r"buscar.*criterios", "action"),                      # Ofrece buscar más
-        ]
-
-        for pattern, awaiting_type in continuation_indicators:
-            if re.search(pattern, response_message, re.IGNORECASE):
-                self.logger.debug(f"Patrón detectado: '{pattern}' → Tipo: {awaiting_type}")
-
-                # Determinar tipo específico basado en contenido
-                if awaiting_type == "selection" and result_data.get("row_count", 0) > 1:
-                    return "selection"  # Lista con múltiples elementos
-                elif "constancia" in response_message.lower():
-                    return "action"     # Acción de constancia
-                elif "tipo" in response_message.lower():
-                    return "specification"  # Especificación de tipo
-                else:
-                    return awaiting_type
-
-        # Verificar si hay datos de lista que podrían usarse después
-        if result_data.get("row_count", 0) > 1:
-            self.logger.debug(f"Lista de {result_data['row_count']} elementos detectada → Posible selección futura")
-            return "selection"
-
-        self.logger.debug("No se detectó patrón de continuación")
-        return None  # No espera continuación
 
     # 🗑️ MÉTODOS DEL SISTEMA DE MEMORIA PROBLEMÁTICO ELIMINADOS
     # El sistema de plantillas SQL los reemplaza completamente

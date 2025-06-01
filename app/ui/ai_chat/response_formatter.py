@@ -115,8 +115,12 @@ class ResponseFormatter:
             return text
 
     def _format_data_response(self, text: str) -> str:
-        """Formatea respuestas con datos usando configuración centralizada"""
-        # Resaltar números importantes
+        """📊 FORMATEA RESPUESTAS CON DATOS usando configuración centralizada"""
+        # 🔧 APLICAR FORMATEO MARKDOWN COMPLETO
+        text = self._convert_bold_titles(text)
+        text = self._convert_bullet_lists(text)
+        text = self._enhance_emojis(text)
+        text = self._highlight_important_info(text)
         text = self._highlight_numbers(text)
 
         # 🎯 USAR CONFIGURACIÓN CENTRALIZADA PARA WRAPPERS
@@ -311,17 +315,17 @@ class ResponseFormatter:
 
     def _highlight_important_info(self, text: str) -> str:
         """🎯 RESALTA INFORMACIÓN IMPORTANTE"""
-        # Resaltar CURPs
+        # 🔧 SIMPLIFICAR RESALTADO DE CURPs (sin CSS complejo)
         text = re.sub(
             r'\b([A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d)\b',
-            r'<code style="background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 3px; font-family: monospace;">\1</code>',
+            r'<code>\1</code>',
             text
         )
 
-        # Resaltar matrículas
+        # 🔧 SIMPLIFICAR RESALTADO DE MATRÍCULAS (sin CSS complejo)
         text = re.sub(
             r'\b([A-Z]{4}-\d{6}-[A-Z0-9]{3})\b',
-            r'<code style="background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 3px; font-family: monospace;">\1</code>',
+            r'<code>\1</code>',
             text
         )
 
