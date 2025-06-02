@@ -23,20 +23,26 @@ Usuario → Master → Student → ActionExecutor → Base de Datos → Student 
 🧠 Master Interpreter (Coordinador)
     ├── 🎯 Analiza intenciones y entidades
     ├── 🧠 Maneja contexto conversacional
+    ├── 🔀 Delega a especialistas según intención
     └── 💬 Genera respuestas humanizadas
     ↓ Información estructurada
-🎓 Student Query Interpreter (Ejecutor Técnico)
-    ├── 🗃️ Mapea campos con contexto DB
-    ├── 🔧 Selecciona herramientas del catálogo
-    ├── 📊 Ejecuta acciones técnicas
-    └── 🧠 Genera auto-reflexión para contexto futuro
-    ↓ Criterios técnicos
-🔧 Action Executor (Motor de Ejecución)
-    ├── 🔧 Construye SQL dinámicamente
-    ├── ⚡ Ejecuta en base de datos
-    └── 📊 Retorna resultados estructurados
-    ↓ Datos procesados
-💾 SQLite Database
+    ├─── 🎓 Student Query Interpreter (Ejecutor Técnico)
+    │    ├── 🗃️ Mapea campos con contexto DB
+    │    ├── 🔧 Selecciona herramientas del catálogo
+    │    ├── 📊 Ejecuta acciones técnicas
+    │    └── 🧠 Genera auto-reflexión para contexto futuro
+    │    ↓ Criterios técnicos
+    │    🔧 Action Executor (Motor de Ejecución)
+    │    ├── 🔧 Construye SQL dinámicamente
+    │    ├── ⚡ Ejecuta en base de datos
+    │    └── 📊 Retorna resultados estructurados
+    │    ↓ Datos procesados
+    │    💾 SQLite Database
+    │
+    └─── 🆘 Help Interpreter (Sistema de Ayuda)
+         ├── 📚 Capacidades del sistema con ejemplos reales
+         ├── 🎯 Tutorial paso a paso con casos probados
+         └── 💡 Información 100% basada en funcionalidades validadas
 ```
 
 ### 🎯 PRINCIPIOS FUNDAMENTALES
@@ -45,8 +51,187 @@ Usuario → Master → Student → ActionExecutor → Base de Datos → Student 
 2. **Mapeo inteligente**: Student mapea campos usando contexto completo de DB
 3. **Selección de herramientas**: Student elige la acción más adecuada del catálogo
 4. **Auto-reflexión**: Student predice continuaciones para contexto futuro
-5. **Comunicación unidireccional**: Master → Student → Master (no bidireccional)
+5. **Comunicación bidireccional inteligente**: Master pregunta al usuario cuando detecta ambigüedades reales, razonando como humano
 6. **Contexto compartido**: Conversation stack + auto-reflexión para memoria
+7. **Sistema de ayuda integrado**: HelpInterpreter proporciona información real y validada para nuevos usuarios
+
+---
+
+## 🆘 HELPINTERPRETER - SISTEMA DE AYUDA INTEGRADO
+
+### 📋 Propósito y Filosofía
+
+El **HelpInterpreter** es un especialista dedicado que maneja consultas de ayuda del sistema, proporcionando información **100% real y validada** sobre las capacidades del sistema escolar.
+
+#### **🎯 Filosofía de Diseño:**
+- **Información fiel**: Solo menciona funcionalidades realmente implementadas y probadas
+- **Ejemplos reales**: Usa nombres y datos reales de la base de datos (MARTINEZ TORRES, SOPHIA ROMERO GARCIA, etc.)
+- **Casos validados**: Basado en BATERIA_PRUEBAS_MASTER_STUDENT.md con 25+ casos probados
+- **Sin exageraciones**: No promete funcionalidades inexistentes como "inscripciones online" o "plataformas virtuales"
+
+### 🔀 Flujo de Delegación desde Master
+
+```
+Usuario: "¿qué puedes hacer?"
+    ↓
+🧠 Master detecta: ayuda_sistema/pregunta_capacidades
+    ↓
+🆘 HelpInterpreter ejecuta: AYUDA_CAPACIDADES
+    ↓
+📊 Respuesta estructurada con ejemplos reales
+    ↓
+🧠 Master genera respuesta humanizada
+    ↓
+👤 Usuario recibe información completa y real
+```
+
+### 🎯 Acciones Implementadas (Solo 2 - Simplicidad)
+
+#### **1. AYUDA_CAPACIDADES**
+**Activadores**: "¿qué puedes hacer?", "¿cuáles son tus capacidades?", "¿qué tipos de constancias generas?"
+
+**Contenido estructurado**:
+```python
+{
+    "busquedas_por_apellido": {
+        "descripcion": "Buscar alumnos por apellidos (✅ Probado A1.1-A1.5)",
+        "ejemplos_reales": [
+            "busca alumnos con apellido MARTINEZ TORRES",
+            "estudiantes apellido DIAZ RODRIGUEZ"
+        ]
+    },
+    "busquedas_por_nombre_completo": {
+        "descripcion": "Buscar por nombre y apellidos completos (✅ Probado A2.1-A2.5)",
+        "ejemplos_reales": [
+            "buscar SOPHIA ROMERO GARCIA",
+            "información de ANDRES FLORES SANCHEZ"
+        ]
+    },
+    "constancias_pdf_completas": {
+        "descripcion": "Generar documentos oficiales en PDF (✅ Probado B1.1-B2.4)",
+        "ejemplos_reales": [
+            "constancia para NICOLAS GOMEZ DIAZ",
+            "constancia con foto para NATALIA MORALES SILVA"
+        ]
+    }
+    // ... 7 capacidades totales con ejemplos reales
+}
+```
+
+#### **2. AYUDA_TUTORIAL**
+**Activadores**: "¿cómo buscar alumnos?", "¿cómo generar constancias?", "¿cómo funciona?", "tutorial paso a paso"
+
+**Contenido estructurado**:
+```python
+{
+    "pasos": [
+        {
+            "titulo": "Búsquedas Básicas",
+            "descripcion": "Encuentra alumnos por nombre o apellido",
+            "ejemplos_reales": ["buscar MARTINEZ TORRES", "estudiante PATRICIA TORRES TORRES"]
+        },
+        {
+            "titulo": "Generar Constancias",
+            "descripcion": "Crea documentos oficiales en PDF",
+            "ejemplos_reales": ["constancia para NICOLAS GOMEZ DIAZ"]
+        }
+    ],
+    "consejos": [
+        "Usa nombres COMPLETOS para mejores resultados",
+        "El sistema recuerda automáticamente tu búsqueda anterior"
+    ]
+}
+```
+
+### 🚫 Exclusión del Sistema de Colapso
+
+**Problema identificado**: Las respuestas de ayuda se colapsaban automáticamente por tener muchas líneas.
+
+**Solución implementada**: Exclusión específica en `chat_bubble.py`:
+```python
+# 🚫 EXCLUIR RESPUESTAS DE AYUDA DEL SISTEMA (NUNCA COLAPSAR)
+help_indicators = [
+    "¿Qué puedo hacer?",
+    "BÚSQUEDAS POR APELLIDO",
+    "BÚSQUEDAS POR NOMBRE COMPLETO",
+    "CONSTANCIAS PDF",
+    "escuela PROF. MAXIMO GAMIZ FERNANDEZ"
+]
+
+if any(indicator in text for indicator in help_indicators):
+    return False  # NO colapsar
+```
+
+**Resultado**: Las respuestas de ayuda se muestran **SIEMPRE COMPLETAS** con todos los saltos de línea y formato.
+
+### 📊 Ejemplo Completo de Flujo
+
+#### **Consulta**: "¿qué puedes hacer?"
+
+**1. Master detecta intención**:
+```python
+{
+    "intention_type": "ayuda_sistema",
+    "sub_intention": "pregunta_capacidades",
+    "confidence": 0.95
+}
+```
+
+**2. HelpInterpreter ejecuta AYUDA_CAPACIDADES**:
+```python
+{
+    "tipo": "capacidades_sistema",
+    "contenido": {
+        "busquedas_por_apellido": {...},
+        "constancias_pdf_completas": {...},
+        // ... 7 capacidades con ejemplos reales
+    }
+}
+```
+
+**3. Master genera respuesta humanizada**:
+```
+¡Hola! 👋 ¡Perfecto! Te explico qué puedo hacer en la escuela PROF. MAXIMO GAMIZ FERNANDEZ:
+
+1. BÚSQUEDAS POR APELLIDO: Puedo buscar alumnos usando sus apellidos. Por ejemplo, puedo encontrar a todos los alumnos con apellido MARTINEZ TORRES.
+
+2. BÚSQUEDAS POR NOMBRE COMPLETO: También puedo buscar alumnos por su nombre completo. Por ejemplo, puedo buscar información de SOPHIA ROMERO GARCIA.
+
+[... 7 capacidades totales con ejemplos específicos ...]
+
+¡Anímate a probar mis capacidades! Intenta con alguno de los ejemplos o con tus propias consultas.
+```
+
+### 🎯 Ventajas del HelpInterpreter
+
+#### **✅ Para Nuevos Usuarios:**
+- **Información completa**: Ve todas las capacidades del sistema
+- **Ejemplos específicos**: Sabe exactamente qué probar
+- **Casos reales**: Usa nombres y datos reales de la base de datos
+- **Sin confusión**: No promete funcionalidades inexistentes
+
+#### **✅ Para el Sistema:**
+- **Mantenible**: Solo 2 acciones simples
+- **Escalable**: Fácil agregar nuevas capacidades
+- **Consistente**: Información siempre actualizada con las pruebas
+- **Eficiente**: No interfiere con el flujo principal
+
+#### **✅ Para Desarrolladores:**
+- **Debuggeable**: Información estructurada y trazeable
+- **Testeable**: Basado en casos de prueba validados
+- **Documentado**: Cada ejemplo tiene referencia a pruebas específicas
+
+### 🚀 Flujo Típico de Usuario Nuevo
+
+```
+1. Usuario nuevo → "¿qué puedes hacer?"
+2. Ve 7 capacidades con ejemplos reales
+3. Prueba: "buscar MARTINEZ TORRES"
+4. Ve resultados reales del sistema
+5. ¡Ya sabe usar el sistema! 🎉
+```
+
+**Tiempo estimado para aprender**: **2-3 minutos** ⚡
 
 ---
 
@@ -266,6 +451,9 @@ Si SÍ: Tipo, referencia específica, y acción solicitada
 - ✅ **Constancias**: "constancia para Juan"
 - ✅ **Estadísticas**: "cuántos alumnos hay por grado"
 - ✅ **Transformaciones**: PDF a diferentes formatos
+- ✅ **Ayuda del sistema**: "¿qué puedes hacer?", "¿cómo buscar alumnos?"
+- ✅ **Capacidades detalladas**: "¿qué tipos de constancias generas?"
+- ✅ **Tutoriales paso a paso**: "¿cómo funciona el sistema?"
 
 ---
 
@@ -468,12 +656,20 @@ INSTRUCCIONES PARA RAZONAMIENTO HUMANO:
 
 ### 📊 Resumen de Prompts LLM Utilizados
 
-**TOTAL: 4 PROMPTS LLM** para resolver cualquier consulta:
+**TOTAL: 4 PROMPTS LLM** para resolver cualquier consulta (incluyendo ayuda):
 
+#### **🎓 Para Consultas de Datos (StudentInterpreter):**
 1. **🧠 Master: Análisis de Intención + Razonamiento de Ambigüedad**
 2. **🎓 Student: Selección de Herramientas + Mapeo de Campos**
 3. **🎓 Student: Preparación de Respuesta + Auto-reflexión Estratégica**
 4. **🧠 Master: Respuesta Humanizada Final**
+
+#### **🆘 Para Consultas de Ayuda (HelpInterpreter):**
+1. **🧠 Master: Análisis de Intención + Detección de Tipo de Ayuda**
+2. **🆘 Help: Preparación de Contenido Estructurado (SIN LLM - datos estáticos)**
+3. **🧠 Master: Respuesta Humanizada con Ejemplos Reales**
+
+**Ventaja del HelpInterpreter**: Solo usa **2 prompts LLM** vs 4 del flujo normal, ya que el contenido de ayuda es estructurado y no requiere mapeo de base de datos.
 
 ### 🛑 Pausas Estratégicas Completas (5 pausas)
 

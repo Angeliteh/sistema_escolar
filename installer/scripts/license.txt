@@ -1,0 +1,12 @@
+LICENCIA DE USO - SISTEMA DE CONSTANCIAS ESCOLARES
+
+Copyright (c) 2024 Sistema de Constancias
+
+Se concede permiso para usar este software bajo los siguientes términos:
+
+1. Este software se proporciona "tal como está", sin garantías de ningún tipo.
+2. El uso de este software es bajo su propio riesgo.
+3. No se permite la redistribución sin autorización expresa.
+4. El soporte técnico está disponible para usuarios registrados.
+
+Para más información, contacte: soporte@constancias.edu.mx

@@ -1,0 +1,6 @@
+pdfplumber==0.10.2
+Jinja2==3.1.2
+Pillow==10.0.0
+PyPDF2==3.0.1
+# Nota: Para generar PDFs, instale wkhtmltopdf desde https://wkhtmltopdf.org/downloads.html
+# tkinter viene incluido con Python

@@ -1,0 +1,58 @@
+{
+  "school_info": {
+    "name": "PROF. MAXIMO GAMIZ FERNANDEZ",
+    "cct": "10DPR0392H",
+    "director": "JOSE ANGEL ALVARADO SOSA",
+    "address": "VICTORIA DE DURANGO, DURANGO",
+    "phone": "",
+    "email": "",
+    "zone": "ZONA ESCOLAR 01",
+    "sector": "SECTOR 01",
+    "test_field": "PRUEBA_MODIFICACION"
+  },
+  "academic_info": {
+    "current_year": "2024-2025",
+    "grades": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "groups": [
+      "A",
+      "B",
+      "C"
+    ],
+    "shifts": [
+      "MATUTINO",
+      "VESPERTINO"
+    ],
+    "education_level": "PRIMARIA"
+  },
+  "location_info": {
+    "city": "VICTORIA DE DURANGO",
+    "state": "DURANGO",
+    "country": "MÉXICO"
+  },
+  "customization": {
+    "logo_file": "logo_educacion.png",
+    "primary_color": "#2C3E50",
+    "secondary_color": "#3498DB",
+    "use_custom_templates": false,
+    "show_photos": true
+  },
+  "features": {
+    "enable_photos": true,
+    "enable_grades": true,
+    "enable_transfer": true,
+    "enable_ai_chat": true,
+    "enable_pdf_transform": true
+  },
+  "system_info": {
+    "version": "1.0.0",
+    "created_date": "2024-12-01",
+    "last_updated": "2024-12-01"
+  }
+}

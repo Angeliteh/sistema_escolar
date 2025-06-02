@@ -26,39 +26,77 @@ def create_installer_structure():
         Path(directory).mkdir(parents=True, exist_ok=True)
         print(f"✅ Creado: {directory}")
 
+def check_prerequisites():
+    """Verifica que todos los prerequisitos estén listos"""
+    print("\n🔍 VERIFICANDO PREREQUISITOS")
+    print("=" * 50)
+
+    # Verificar archivos Python principales
+    required_files = [
+        "simple_launcher.py",
+        "app/__init__.py",
+        "school_config.json",
+        "resources/data/alumnos.db"
+    ]
+
+    missing_files = []
+    for file in required_files:
+        if not Path(file).exists():
+            missing_files.append(file)
+
+    if missing_files:
+        print(f"❌ Archivos faltantes: {', '.join(missing_files)}")
+        return False
+
+    print("✅ Archivos Python encontrados")
+    print("✅ Prerequisitos verificados")
+    return True
+
 def copy_application_files():
-    """Copia los archivos de la aplicación al directorio del instalador"""
+    """Copia los archivos Python de la aplicación al directorio del instalador"""
     print("\n📦 COPIANDO ARCHIVOS DE LA APLICACIÓN")
     print("=" * 50)
-    
-    # Verificar que existe el ejecutable
-    source_exe = Path("dist/SistemaConstancias")
-    if not source_exe.exists():
-        print("❌ No se encuentra dist/SistemaConstancias/")
-        print("💡 Asegúrate de que el ejecutable esté en dist/SistemaConstancias/")
-        return False
-    
-    # Copiar ejecutable completo
+
     dest_app = Path("installer/source/app")
     if dest_app.exists():
         shutil.rmtree(dest_app)
-    
-    shutil.copytree(source_exe, dest_app)
-    print(f"✅ Copiado ejecutable: {source_exe} → {dest_app}")
-    
+    dest_app.mkdir(parents=True)
+
+    # Copiar archivos y carpetas principales
+    items_to_copy = [
+        "simple_launcher.py",
+        "ai_chat.py",
+        "main_qt.py",
+        "app/",
+        "resources/",
+        "requirements.txt"
+    ]
+
+    for item in items_to_copy:
+        source = Path(item)
+        if source.exists():
+            if source.is_file():
+                shutil.copy2(source, dest_app / source.name)
+                print(f"✅ Copiado archivo: {source}")
+            elif source.is_dir():
+                shutil.copytree(source, dest_app / source.name)
+                print(f"✅ Copiado directorio: {source}")
+        else:
+            print(f"⚠️ No encontrado: {source}")
+
     # Copiar archivos de configuración
     config_files = [
         "school_config.json",
         "version.json"
     ]
-    
+
     for config_file in config_files:
         if Path(config_file).exists():
             shutil.copy2(config_file, f"installer/source/config/{config_file}")
             print(f"✅ Copiado config: {config_file}")
         else:
             print(f"⚠️ No encontrado: {config_file}")
-    
+
     return True
 
 def download_dependencies():
@@ -71,7 +109,8 @@ def download_dependencies():
     # URLs de dependencias
     dependencies = {
         "vcredist_x64.exe": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
-        "wkhtmltopdf.exe": "https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox-0.12.6-1.msvc2015-win64.exe"
+        "wkhtmltopdf.exe": "https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox-0.12.6-1.msvc2015-win64.exe",
+        "python-3.12.5-amd64.exe": "https://www.python.org/ftp/python/3.12.5/python-3.12.5-amd64.exe"
     }
     
     for filename, url in dependencies.items():
@@ -166,7 +205,7 @@ Name: "desktopicon"; Description: "{{cm:CreateDesktopIcon}}"; GroupDescription: 
 Name: "quicklaunchicon"; Description: "{{cm:CreateQuickLaunchIcon}}"; GroupDescription: "{{cm:AdditionalIcons}}"; Flags: unchecked; OnlyBelowVersion: 6.1
 
 [Files]
-; Aplicación principal
+; Aplicación principal (archivos Python)
 Source: "installer\\source\\app\\*"; DestDir: "{{app}}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Archivos de configuración
@@ -175,24 +214,34 @@ Source: "installer\\source\\config\\*"; DestDir: "{{userappdata}}\\SistemaConsta
 ; Dependencias
 Source: "installer\\source\\dependencies\\vcredist_x64.exe"; DestDir: "{{tmp}}"; Flags: deleteafterinstall
 Source: "installer\\source\\dependencies\\wkhtmltopdf.exe"; DestDir: "{{tmp}}"; Flags: deleteafterinstall
+Source: "installer\\source\\dependencies\\python-3.12.5-amd64.exe"; DestDir: "{{tmp}}"; Flags: deleteafterinstall
+
+; Script de launcher
+Source: "installer\\scripts\\launcher.bat"; DestDir: "{{app}}"; Flags: ignoreversion
 
 [Icons]
-Name: "{{group}}\\Sistema de Constancias"; Filename: "{{app}}\\simple_launcher.exe"
-Name: "{{group}}\\Interfaz con IA"; Filename: "{{app}}\\simple_launcher.exe"; Parameters: "ai"
-Name: "{{group}}\\Interfaz Tradicional"; Filename: "{{app}}\\simple_launcher.exe"; Parameters: "traditional"
+Name: "{{group}}\\Sistema de Constancias"; Filename: "{{app}}\\launcher.bat"
+Name: "{{group}}\\Interfaz con IA"; Filename: "{{app}}\\launcher.bat"; Parameters: "ai"
+Name: "{{group}}\\Interfaz Tradicional"; Filename: "{{app}}\\launcher.bat"; Parameters: "traditional"
 Name: "{{group}}\\{{cm:UninstallProgram,Sistema de Constancias}}"; Filename: "{{uninstallexe}}"
-Name: "{{commondesktop}}\\Sistema de Constancias"; Filename: "{{app}}\\simple_launcher.exe"; Tasks: desktopicon
-Name: "{{userappdata}}\\Microsoft\\Internet Explorer\\Quick Launch\\Sistema de Constancias"; Filename: "{{app}}\\simple_launcher.exe"; Tasks: quicklaunchicon
+Name: "{{commondesktop}}\\Sistema de Constancias"; Filename: "{{app}}\\launcher.bat"; Tasks: desktopicon
+Name: "{{userappdata}}\\Microsoft\\Internet Explorer\\Quick Launch\\Sistema de Constancias"; Filename: "{{app}}\\launcher.bat"; Tasks: quicklaunchicon
 
 [Run]
+; Instalar Python
+Filename: "{{tmp}}\\python-3.12.5-amd64.exe"; Parameters: "/quiet InstallAllUsers=1 PrependPath=1"; StatusMsg: "Instalando Python 3.12.5..."; Flags: waituntilterminated
+
 ; Instalar Visual C++ Redistributables
 Filename: "{{tmp}}\\vcredist_x64.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Instalando Visual C++ Redistributables..."; Flags: waituntilterminated
 
 ; Instalar wkhtmltopdf
 Filename: "{{tmp}}\\wkhtmltopdf.exe"; Parameters: "/S"; StatusMsg: "Instalando wkhtmltopdf..."; Flags: waituntilterminated
 
+; Instalar dependencias Python
+Filename: "python"; Parameters: "-m pip install -r ""{{app}}\\requirements.txt"""; WorkingDir: "{{app}}"; StatusMsg: "Instalando dependencias Python..."; Flags: waituntilterminated
+
 ; Ejecutar aplicación al finalizar
-Filename: "{{app}}\\simple_launcher.exe"; Description: "{{cm:LaunchProgram,Sistema de Constancias}}"; Flags: nowait postinstall skipifsilent
+Filename: "{{app}}\\launcher.bat"; Description: "{{cm:LaunchProgram,Sistema de Constancias}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{{userappdata}}\\SistemaConstancias"
@@ -310,19 +359,39 @@ SOPORTE:
     
     with open(scripts_dir / "readme.txt", "w", encoding="utf-8") as f:
         f.write(readme_text)
-    
+
+    # Crear script launcher.bat
+    launcher_script = """@echo off
+cd /d "%~dp0"
+python simple_launcher.py %*
+if errorlevel 1 (
+    echo.
+    echo Error ejecutando la aplicacion. Presiona cualquier tecla para continuar...
+    pause >nul
+)
+"""
+
+    with open(scripts_dir / "launcher.bat", "w", encoding="utf-8") as f:
+        f.write(launcher_script)
+
     print("✅ Archivos de soporte creados")
+    print("✅ Script launcher.bat creado")
     return True
 
 def main():
     """Función principal"""
     print("🛠️ PREPARANDO INSTALADOR PROFESIONAL")
     print("=" * 70)
-    
+
     try:
+        # Paso 0: Verificar prerequisitos
+        if not check_prerequisites():
+            print("❌ Prerequisitos no cumplidos")
+            return False
+
         # Paso 1: Crear estructura
         create_installer_structure()
-        
+
         # Paso 2: Copiar archivos de aplicación
         if not copy_application_files():
             print("❌ Error copiando archivos de aplicación")
