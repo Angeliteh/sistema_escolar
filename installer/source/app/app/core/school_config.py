@@ -158,6 +158,22 @@ class SchoolConfig:
     def available_shifts(self) -> list:
         return self._school_data["academic_info"]["shifts"]
 
+    # Propiedades para compatibilidad con sistema dinámico
+    @property
+    def grades(self) -> list:
+        """Alias para available_grades para compatibilidad"""
+        return self.available_grades
+
+    @property
+    def groups(self) -> list:
+        """Alias para available_groups para compatibilidad"""
+        return self.available_groups
+
+    @property
+    def shifts(self) -> list:
+        """Alias para available_shifts para compatibilidad"""
+        return self.available_shifts
+
     # Métodos para obtener configuraciones completas
     def get_school_info(self) -> Dict[str, Any]:
         """Obtiene toda la información de la escuela"""

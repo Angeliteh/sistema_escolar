@@ -45,9 +45,7 @@ class IntentionDetector:
         # Enviar al LLM
         response = self.gemini_client.send_prompt_sync(master_prompt)
 
-        self.logger.info(f"🎯 [INTENTION_DETECTOR] Respuesta del LLM: {response}")
-
-        # Parsear respuesta (sin fallbacks)
+        # 🧠 [MASTER] Analizando intención con LLM
         intention_data = self._parse_intention_response(response)
 
         # 🆕 EXTRAER CATEGORIZACIÓN ESPECÍFICA
@@ -85,9 +83,7 @@ class IntentionDetector:
         for pattern in json_patterns:
             matches = re.findall(pattern, clean_response, re.DOTALL)
             if matches:
-                self.logger.info(f"🔍 [PARSE] Patrón encontrado: {pattern}")
                 intention_data = json.loads(matches[0])
-                self.logger.info(f"✅ [PARSE] Intención parseada: {intention_data}")
                 return intention_data
 
         # Si no encuentra patrones, intentar parsear directamente

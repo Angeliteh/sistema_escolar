@@ -1,6 +1,57 @@
-pdfplumber==0.10.2
-Jinja2==3.1.2
-Pillow==10.0.0
-PyPDF2==3.0.1
-# Nota: Para generar PDFs, instale wkhtmltopdf desde https://wkhtmltopdf.org/downloads.html
-# tkinter viene incluido con Python
+# ========================================
+# SISTEMA DE CONSTANCIAS - DEPENDENCIAS COMPLETAS
+# Generado automáticamente por generate_requirements.py
+# ========================================
+
+# 🎯 DEPENDENCIAS CRÍTICAS (INSTALACIÓN AUTOMÁTICA)
+PyQt5==5.15.10                    # Interfaz gráfica (CRÍTICO)
+google-generativeai>=0.3.2        # Inteligencia Artificial (CRÍTICO)
+python-dotenv>=1.0.0              # Configuración de entorno (CRÍTICO)
+pdfplumber==0.10.2                # Procesamiento de PDF (CRÍTICO)
+PyPDF2==3.0.1                     # Manipulación de PDF (CRÍTICO)
+Pillow==10.0.0                    # Procesamiento de imágenes (CRÍTICO)
+Jinja2==3.1.2                     # Plantillas HTML (CRÍTICO)
+PyMuPDF>=1.23.0                   # PDF avanzado (OPCIONAL)
+
+# 🌐 DEPENDENCIAS ADICIONALES (RECOMENDADAS)
+requests>=2.31.0                  # Comunicación HTTP
+urllib3>=2.0.0                    # Utilidades HTTP
+reportlab>=4.0.0                  # Generación de PDF
+
+# ========================================
+# NOTAS IMPORTANTES:
+# ========================================
+# - wkhtmltopdf se instala por separado (incluido en installer)
+# - sqlite3 viene incluido con Python
+# - tkinter viene incluido con Python
+# - Módulos estándar no requieren instalación
+# ========================================
+
+# 📋 MÓDULOS ESTÁNDAR DETECTADOS (NO REQUIEREN INSTALACIÓN):
+# abc
+# argparse
+# ast
+# collections
+# dataclasses
+# datetime
+# hashlib
+# inspect
+# io
+# json
+# logging
+# os
+# pathlib
+# platform
+# random
+# shutil
+# sqlite3
+# subprocess
+# sys
+# tempfile
+# threading
+# time
+# traceback
+# typing
+# unicodedata
+
+# 🏠 MÓDULOS LOCALES DETECTADOS:

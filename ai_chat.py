@@ -36,7 +36,16 @@ def main():
         print("       ├── 🎓 Student: Recibe información del Master")
         print("       ├── 🔍 Master: Detección inteligente de continuación (LLM)")
         print("       ├── 🗃️ Student: Mapeo de campos con contexto DB")
-        print("       └── 🔧 ActionExecutor: SQL final generado\n")
+        print("       ├── 🔧 ActionExecutor: SQL final generado")
+        print("       ├── 📋 ConversationStack: Estado ANTES de procesar (contexto completo)")
+        print("       ├── 📋 ConversationStack: Estado DESPUÉS de procesar (contexto actualizado)")
+        print("       ├── 📋 ConversationStack: NUEVO NIVEL agregado (Master decide)")
+        print("       └── 🔍 Master: Análisis de contexto para referencias (completo)")
+        print("   🎯 NUEVA ARQUITECTURA: Master como cerebro central del contexto")
+        print("       ├── Master decide TODO sobre conversation_stack")
+        print("       ├── Student solo reporta resultados")
+        print("       ├── SIEMPRE agregar datos relevantes al contexto")
+        print("       └── Sincronización perfecta análisis ↔ respuesta\n")
     elif args.no_debug_pauses:
         os.environ['DEBUG_PAUSES'] = 'false'
         print("⚡ DEBUG: Pausas de debug DESACTIVADAS")

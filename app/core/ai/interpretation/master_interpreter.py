@@ -1,12 +1,28 @@
 """
 Intérprete maestro - Coordina todos los módulos de interpretación
 """
-from typing import Optional
+import os
+from typing import Optional, Dict, Any
+from dataclasses import dataclass
 from app.core.ai.interpretation.base_interpreter import InterpretationContext, InterpretationResult
-from app.core.ai.interpretation.intention_detector import IntentionDetector
 from app.core.ai.interpretation.student_query_interpreter import StudentQueryInterpreter
+from app.core.ai.interpretation.master_knowledge import MasterKnowledge
 from app.core.logging import get_logger
 from app.core.config import Config
+
+@dataclass
+class IntentionResult:
+    """Resultado de la detección de intención (LOCAL - reemplaza intention_detector obsoleto)"""
+    intention_type: str  # "consulta_alumnos", "ayuda_sistema", "conversacion_general"
+    sub_intention: str   # "busqueda_simple", "generar_constancia", etc.
+    confidence: float
+    reasoning: str
+    detected_entities: Dict[str, Any]
+    categoria: str = ""           # busqueda|estadistica|reporte|constancia|transformacion|continuacion
+    sub_tipo: str = ""            # simple|complejo|listado|conteo|generacion|conversion
+    complejidad: str = ""         # baja|media|alta
+    requiere_contexto: bool = False
+    flujo_optimo: str = ""        # sql_directo|analisis_datos|listado_completo
 
 class MasterInterpreter:
     """
@@ -23,25 +39,44 @@ class MasterInterpreter:
         self.gemini_client = gemini_client
         self.logger = get_logger(__name__)
 
+        # 🧠 INICIALIZAR CEREBRO DEL MASTER (CONOCIMIENTO PROFUNDO)
+        self.knowledge = MasterKnowledge()
+        self.logger.info("🧠 [MASTER] Cerebro inicializado con conocimiento profundo del sistema")
+
+        # 🎯 INICIALIZAR PROMPT MANAGER PARA ROUTING FORZADO
+        from app.core.ai.prompts.master_prompt_manager import MasterPromptManager
+        self.prompt_manager = MasterPromptManager()
+        self.logger.info("🎯 [MASTER] PromptManager inicializado para routing forzado")
+
         # 🎯 CONTEXTO ESTRATÉGICO DEL SISTEMA (SEGÚN INTENCIONES_ACCIONES_DEFINITIVAS.md)
         self.system_map = {
             "StudentQueryInterpreter": {
-                "handles": ["consulta_alumnos"],
+                "handles": ["consulta_alumnos"],  # ✅ Solo intención principal
                 "sub_intentions": ["busqueda_simple", "busqueda_compleja", "estadisticas", "generar_constancia", "transformacion_pdf"],
-                "capabilities": "Consultas de BD, documentos, análisis de 211 alumnos",
+                "capabilities": "Consultas de BD, documentos, análisis de alumnos",
                 "description": "Especialista en datos de alumnos y generación de documentos"
             },
             "HelpInterpreter": {
                 "handles": ["ayuda_sistema"],
-                "sub_intentions": ["pregunta_capacidades", "pregunta_tecnica"],
-                "capabilities": "Ayuda y soporte técnico del sistema",
-                "description": "Especialista en ayuda y explicaciones del sistema"
+                "sub_intentions": [
+                    "explicacion_general", "tutorial_funciones", "sobre_creador",
+                    "auto_consciencia", "ventajas_sistema", "casos_uso_avanzados",
+                    "limitaciones_honestas", "pregunta_capacidades", "pregunta_tecnica"
+                ],
+                "capabilities": "Asistente de IA consciente, persuasivo y experto en el sistema",
+                "description": "Especialista en explicar el sistema con personalidad y conocimiento sobre Angel"
             },
             "MasterInterpreter": {
                 "handles": ["aclaracion_requerida"],
                 "sub_intentions": ["multiple_interpretations", "incomplete_query", "ambiguous_reference"],
                 "capabilities": "Detección de ambigüedades y comunicación directa con usuario",
                 "description": "Master se delega a sí mismo para consultas ambiguas"
+            },
+            "GeneralInterpreter": {
+                "handles": ["conversacion_general"],
+                "sub_intentions": ["saludo", "chat_casual", "despedida", "redireccion_educada"],
+                "capabilities": "Conversación natural, saludos, temas no escolares",
+                "description": "Especialista en conversación general con identidad escolar sutil"
             }
         }
 
@@ -55,32 +90,39 @@ class MasterInterpreter:
             "continuation_type": None
         }
 
-        # 🔧 INICIALIZAR COMPONENTES
-        self.intention_detector = IntentionDetector(gemini_client)
+        # 🔧 COMPONENTES ELIMINADOS: IntentionDetector (ahora todo es unificado en _analyze_and_delegate_intelligently)
 
         # 🎯 LOGS DE DEPURACIÓN FORZADOS - CONTEXTO ESTRATÉGICO COMPLETO
         self.logger.info("🎯 [MASTER] INICIALIZADO CON CONTEXTO ESTRATÉGICO")
         self.logger.info(f"   ├── Especialistas disponibles: {len(self.system_map)}")
         self.logger.info(f"   ├── StudentQueryInterpreter: {self.system_map['StudentQueryInterpreter']['capabilities']}")
-        self.logger.info(f"   └── HelpInterpreter: {self.system_map['HelpInterpreter']['capabilities']}")
+        self.logger.info(f"   ├── HelpInterpreter: {self.system_map['HelpInterpreter']['capabilities']}")
+        self.logger.info(f"   └── GeneralInterpreter: {self.system_map['GeneralInterpreter']['capabilities']}")
 
-        # 🔍 DEBUG DETALLADO DEL CONTEXTO ESTRATÉGICO
-        # Puedes cambiar esto a False para desactivar logs detallados
-        self.debug_detailed_context = True
-        if self.debug_detailed_context:
-            self._log_detailed_strategic_context()
+        # 🧠 [MASTER] Contexto estratégico inicializado
+        self._log_strategic_context()
 
         # 🎯 INICIALIZAR ESPECIALISTAS (DESPUÉS DE MOSTRAR CONTEXTO MASTER)
         self.logger.info("🎯 [MASTER] Inicializando especialistas...")
         from app.core.config import Config
         db_path = Config.DB_PATH
+
+        # 🎯 INICIALIZAR SCHOOL CONFIG MANAGER CON BD PARA AUTO-DETECCIÓN
+        from app.core.config.school_config_manager import get_school_config_manager
+        school_config = get_school_config_manager(db_path=db_path)
+        self.logger.info(f"🏫 [MASTER] Configuración escolar: {school_config.get_school_name()} ({school_config.get_total_students()} alumnos)")
+
         self.student_interpreter = StudentQueryInterpreter(db_path, gemini_client)
 
         from app.core.ai.interpretation.help_interpreter import HelpInterpreter
         self.help_interpreter = HelpInterpreter(gemini_client)
-        self.logger.info("✅ [MASTER] Especialistas inicializados correctamente")
 
-    def interpret(self, context: InterpretationContext, conversation_stack=None) -> Optional[InterpretationResult]:
+        from app.core.ai.interpretation.general_interpreter import GeneralInterpreter
+        self.general_interpreter = GeneralInterpreter(gemini_client)
+
+        self.logger.info("✅ [MASTER] Especialistas inicializados correctamente (Student, Help, General)")
+
+    def interpret(self, context: InterpretationContext, conversation_stack=None, current_pdf=None) -> Optional[InterpretationResult]:
         """
         🎯 INTERPRETACIÓN MAESTRO CON CONTEXTO ESTRATÉGICO COMPLETO
 
@@ -97,6 +139,9 @@ class MasterInterpreter:
             self.logger.info(f"   ├── Conversation_stack: {len(conversation_stack) if conversation_stack else 0} niveles")
             self.logger.info(f"   └── Memoria anterior: {self.interaction_memory}")
 
+            # 🎯 ALMACENAR CONVERSATION_STACK PARA USO EN RESPUESTA FINAL
+            self.current_conversation_stack = conversation_stack or []
+
             # 🎯 PROCESAMIENTO CON CONTEXTO CONVERSACIONAL ACTIVADO
             context.conversation_stack = conversation_stack or []
             if context.conversation_stack:
@@ -104,61 +149,61 @@ class MasterInterpreter:
             else:
                 self.logger.info("🎯 [MASTER] Procesando consulta individual")
 
-            # PASO 1: DETECTAR INTENCIÓN CON CONTEXTO
-            intention = self._detect_intention_with_context(context.user_message, context.conversation_stack)
+            # 🧠 ANÁLISIS UNIFICADO MAESTRO - UN SOLO PROMPT PARA TODO
+            # Reemplaza: detección de intención + resolución de contexto + análisis
+            analysis_result = self._analyze_and_delegate_intelligently(context.user_message, context.conversation_stack)
 
-            # PASO 2: RESOLVER REFERENCIAS CONTEXTUALES SI ES NECESARIO
-            if intention.requiere_contexto and context.conversation_stack:
-                intention = self._resolve_contextual_references(intention, context.conversation_stack, context.user_message)
+            if not analysis_result:
+                self.logger.error("❌ [MASTER] Error en análisis unificado")
+                return None
 
-            # 🎯 LOGS DE DEPURACIÓN DE INTENCIÓN CONSOLIDADA
-            self.logger.info(f"🎯 [MASTER] INTENCIÓN CONSOLIDADA DETECTADA:")
-            self.logger.info(f"   ├── Tipo: {intention.intention_type}")
-            self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
-            self.logger.info(f"   ├── Confianza: {intention.confidence}")
-            self.logger.info(f"   ├── 🆕 Categoría: {intention.categoria}")
-            self.logger.info(f"   ├── 🆕 Sub-tipo: {intention.sub_tipo}")
-            self.logger.info(f"   ├── 🆕 Complejidad: {intention.complejidad}")
-            self.logger.info(f"   ├── 🆕 Requiere contexto: {intention.requiere_contexto}")
-            self.logger.info(f"   ├── 🆕 Flujo óptimo: {intention.flujo_optimo}")
-            self.logger.info(f"   └── Razonamiento: {intention.reasoning}")
+            # Convertir análisis unificado a IntentionResult para compatibilidad
+            intention = self._convert_analysis_to_intention(analysis_result)
+
+            # 🧠 [MASTER] Intención detectada y categorizada
+            self.logger.info(f"🧠 [MASTER] Analizando: \"{context.user_message}\" → {intention.intention_type} ({intention.confidence})")
+
+            # 🔧 DEBUG: Información detallada solo en modo debug
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [MASTER] Detalles: {intention.intention_type}/{intention.sub_intention}")
+            debug_detailed(self.logger, f"🔧 [MASTER] Categoría: {intention.categoria}, Sub-tipo: {intention.sub_tipo}")
+            debug_detailed(self.logger, f"🔧 [MASTER] Complejidad: {intention.complejidad}, Flujo: {intention.flujo_optimo}")
 
             # PASO 3: VALIDAR INTENCIÓN CON SISTEMA MAP
             validated_intention = self._validate_intention_with_system_map(intention)
             if validated_intention != intention:
                 self.logger.info(f"🔧 [MASTER] Intención corregida por system_map")
 
-            # 🛑 PAUSA ESTRATÉGICA #1: MASTER RAZONAMIENTO INICIAL COMPLETO
-            import os
-            if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
-                print(f"\n🛑 [MASTER] ANÁLISIS INICIAL:")
-                print(f"    ├── 📝 Consulta: '{context.user_message}'")
-                print(f"    ├── 🧠 Intención detectada: {intention.intention_type}/{intention.sub_intention}")
-                print(f"    ├── 📊 Confianza: {intention.confidence}")
-                print(f"    ├── 🎯 Entidades extraídas: {list(intention.detected_entities.keys())}")
-                for key, value in intention.detected_entities.items():
-                    if isinstance(value, list) and len(value) > 2:
-                        print(f"    │   ├── {key}: {value[:2]}... (+{len(value)-2} más)")
-                    else:
-                        print(f"    │   ├── {key}: {value}")
-                print(f"    ├── 💭 Razonamiento: {intention.reasoning[:100]}...")
-                print(f"    ├── 🔍 Confianza: {intention.confidence}")
-                print(f"    └── Presiona ENTER para delegar a Student...")
-                input()
+            # 🧠 PASO 2: ANÁLISIS DE CONOCIMIENTO (¿PUEDO HACERLO?)
+            feasibility = self._validate_feasibility_with_knowledge(validated_intention, context.user_message)
+
+            # Si no es factible, crear respuesta de limitación inmediatamente
+            if not feasibility["can_handle"]:
+                return self._create_limitation_response(feasibility, context.user_message)
+
+            # 🧠 PASO 3: ANÁLISIS DE CONTEXTO (¿HAY INFORMACIÓN PREVIA RELEVANTE?)
+            context_analysis = self._analyze_context_relevance(validated_intention, context.conversation_stack, context.user_message)
 
             # PASO 4: VERIFICAR SI NECESITA ACLARACIÓN
-            if validated_intention.intention_type == "aclaracion_requerida":
+            # 🔧 ARREGLO: Verificar si es InterpretationResult con action aclaracion_requerida
+            if hasattr(validated_intention, 'action') and validated_intention.action == "aclaracion_requerida":
+                return validated_intention
+            elif hasattr(validated_intention, 'intention_type') and validated_intention.intention_type == "aclaracion_requerida":
                 return self._handle_ambiguous_query(context, validated_intention)
 
             # PASO 5: DIRIGIR AL ESPECIALISTA DIRECTAMENTE
-            result = self._delegate_to_specialist_direct(context, validated_intention)
+            result = self._delegate_to_specialist_direct(context, validated_intention, current_pdf)
 
             # PASO 5: ANALIZAR RESULTADOS Y DECIDIR SI NECESITA COMUNICACIÓN BIDIRECCIONAL
-            if result and self._should_ask_user_about_results(result, context.user_message):
+            # 🔧 ARREGLO: Solo si validated_intention no es InterpretationResult
+            if (result and hasattr(validated_intention, 'intention_type') and
+                self._should_ask_user_about_results(result, context.user_message)):
                 return self._handle_results_analysis(context, validated_intention, result)
 
             # PASO 6: PROCESAR RETROALIMENTACIÓN DEL ESPECIALISTA
-            self._process_specialist_feedback(validated_intention, result)
+            # 🔧 ARREGLO: Solo si validated_intention no es InterpretationResult
+            if hasattr(validated_intention, 'intention_type'):
+                self._process_specialist_feedback(validated_intention, result)
 
             return result
 
@@ -166,68 +211,758 @@ class MasterInterpreter:
             self.logger.error(f"❌ [MASTER] Error en interpretación: {e}")
             return None
 
-    def _detect_intention_with_context(self, user_message: str, conversation_stack: list = None):
-        """🎯 DETECTAR INTENCIÓN CON CONTEXTO CONVERSACIONAL"""
+    def _convert_analysis_to_intention(self, analysis_result: dict):
+        """
+        🔧 CONVERTIR ANÁLISIS UNIFICADO A INTENTIONRESULT
+        Mantiene compatibilidad con el resto del sistema
+        """
         try:
-            return self.intention_detector.detect_intention(user_message, conversation_stack)
-        except Exception as e:
-            self.logger.error(f"❌ Error detectando intención: {e}")
-            # Fallback básico
-            from app.core.ai.interpretation.intention_detector import IntentionResult
-            return IntentionResult(
-                intention_type="consulta_alumnos",
-                sub_intention="busqueda_simple",
-                confidence=0.5,
-                reasoning="Fallback por error en detección",
-                detected_entities={}
+            # Usar IntentionResult local (reemplaza intention_detector obsoleto)
+
+            # Extraer información del análisis
+            intention_type = analysis_result.get('intention_type', 'consulta_alumnos')
+            sub_intention = analysis_result.get('sub_intention', 'busqueda_simple')
+            usar_contexto = analysis_result.get('usar_contexto', False)
+            alumno_resuelto = analysis_result.get('detected_entities', {}).get('alumno_resuelto')
+
+            # 🔧 NORMALIZAR INTENCIONES: Convertir a minúsculas para compatibilidad con system_map
+            intention_type = intention_type.lower() if intention_type else 'consulta_alumnos'
+            sub_intention = sub_intention.lower() if sub_intention else 'busqueda_simple'
+
+            self.logger.info(f"🔧 [MASTER] Análisis convertido: {intention_type}/{sub_intention} (contexto: {usar_contexto})")
+
+            # 🎯 TRANSFERIR TODAS LAS DETECTED_ENTITIES DEL LLM AL STUDENT
+            detected_entities = analysis_result.get('detected_entities', {})
+
+            # Agregar alumno_resuelto si existe (compatibilidad)
+            if alumno_resuelto:
+                detected_entities['alumno_resuelto'] = alumno_resuelto
+
+            self.logger.info(f"🎯 [MASTER] Entidades transferidas al Student: {list(detected_entities.keys())}")
+            if 'limite_resultados' in detected_entities:
+                self.logger.info(f"🎯 [MASTER] Límite detectado: {detected_entities['limite_resultados']}")
+            if 'filtros' in detected_entities:
+                self.logger.info(f"🎯 [MASTER] Filtros detectados: {detected_entities['filtros']}")
+
+            # Crear IntentionResult compatible
+            intention = IntentionResult(
+                intention_type=intention_type,
+                sub_intention=sub_intention,
+                confidence=0.95,  # Alta confianza del análisis unificado
+                reasoning=analysis_result.get('reasoning', 'Análisis unificado del Master'),
+                detected_entities=detected_entities,
+                categoria="",  # No necesario en el flujo unificado
+                sub_tipo="",
+                complejidad="",
+                requiere_contexto=usar_contexto,
+                flujo_optimo=""
             )
 
-    def _resolve_contextual_references(self, intention, conversation_stack: list, user_query: str):
-        """
-        🎯 MASTER RESUELVE REFERENCIAS CONTEXTUALES COMPLETAMENTE
-        Esta es la funcionalidad clave que faltaba
-        """
-        try:
-            self.logger.info("🎯 [MASTER] RESOLVIENDO REFERENCIAS CONTEXTUALES...")
-
-            detected_entities = intention.detected_entities.copy()
-            contexto_especifico = detected_entities.get('contexto_especifico', '')
-
-            # 🎯 CASO 1: REFERENCIA POSICIONAL ("segundo", "tercero", etc.)
-            if any(word in user_query.lower() for word in ['segundo', 'segunda', 'tercero', 'tercer', 'primero', 'primer', 'último', 'última']):
-                resolved_alumno = self._resolve_positional_reference(user_query, conversation_stack)
-                if resolved_alumno:
-                    detected_entities['alumno_resuelto'] = resolved_alumno
-                    # Cambiar requiere_contexto a False porque ya lo resolvimos
-                    intention.requiere_contexto = False
-                    self.logger.info(f"✅ [MASTER] REFERENCIA POSICIONAL RESUELTA: {resolved_alumno['nombre']} (ID: {resolved_alumno['id']})")
-
-            # 🎯 CASO 2: REFERENCIA PRONOMINAL ("él", "ella", "ese", "esa")
-            elif any(word in user_query.lower() for word in ['él', 'ella', 'ese', 'esa', 'este', 'esta']):
-                resolved_alumno = self._resolve_pronominal_reference(conversation_stack)
-                if resolved_alumno:
-                    detected_entities['alumno_resuelto'] = resolved_alumno
-                    intention.requiere_contexto = False
-                    self.logger.info(f"✅ [MASTER] REFERENCIA PRONOMINAL RESUELTA: {resolved_alumno['nombre']} (ID: {resolved_alumno['id']})")
-
-            # 🎯 CASO 3: REFERENCIA POR NOMBRE PARCIAL ("mario", "juan", etc.)
-            elif detected_entities.get('fuente_datos') == 'conversacion_previa':
-                nombres_detectados = detected_entities.get('nombres', [])
-                if nombres_detectados:
-                    resolved_alumno = self._resolve_name_reference(nombres_detectados[0], conversation_stack)
-                    if resolved_alumno:
-                        detected_entities['alumno_resuelto'] = resolved_alumno
-                        intention.requiere_contexto = False
-                        self.logger.info(f"✅ [MASTER] REFERENCIA POR NOMBRE RESUELTA: {resolved_alumno['nombre']} (ID: {resolved_alumno['id']})")
-
-            # Actualizar las entidades detectadas
-            intention.detected_entities = detected_entities
-
+            self.logger.info(f"🔧 [MASTER] Análisis convertido: {intention_type}/{sub_intention} (contexto: {usar_contexto})")
             return intention
 
         except Exception as e:
-            self.logger.error(f"❌ Error resolviendo referencias contextuales: {e}")
+            self.logger.error(f"❌ Error convirtiendo análisis a intention: {e}")
+            # Fallback básico usando IntentionResult local
+            return IntentionResult(
+                intention_type='consulta_alumnos',
+                sub_intention='busqueda_simple',
+                confidence=0.5,
+                reasoning='Fallback por error en conversión',
+                detected_entities={},
+                requiere_contexto=False
+            )
+
+    # MÉTODO ELIMINADO: _detect_intention_with_context
+    # Ahora todo se maneja en _analyze_and_delegate_intelligently (prompt unificado)
+
+    # MÉTODO ELIMINADO: _resolve_contextual_references
+    # Ahora todo se maneja directamente en el flujo principal con _analyze_and_delegate_intelligently
+
+    # ✅ MÉTODO ELIMINADO: _force_area_selection() - Reemplazado por _analyze_and_delegate_intelligently()
+
+    # ✅ MÉTODO ELIMINADO: _fallback_area_detection() - No se usa en flujo actual
+
+    # ✅ MÉTODO ELIMINADO: _delegate_to_general() - No se usa en flujo actual
+
+    # ✅ MÉTODO ELIMINADO: _convert_routing_to_student_format() - No se usa en flujo actual
+
+    # ✅ MÉTODO ELIMINADO: _convert_routing_to_help_format() - No se usa en flujo actual
+
+    # ✅ MÉTODO ELIMINADO: _update_interaction_memory() con routing - Reemplazado por actualización directa en flujo principal
+
+    def _get_dynamic_intentions_section(self) -> str:
+        """
+        🎯 GENERAR SECCIÓN DINÁMICA DE INTENCIONES
+
+        Usa SystemCatalog para generar la sección de intenciones
+        que se inyecta en el prompt del Master.
+        """
+        try:
+            from app.core.ai.system_catalog import SystemCatalog
+            return SystemCatalog.generate_intentions_section()
+        except Exception as e:
+            self.logger.error(f"❌ [MASTER] Error generando sección de intenciones: {e}")
+            # Fallback a sección básica
+            return """
+🎯 **CONSULTA_ALUMNOS** → StudentQueryInterpreter (Prioridad: 1)
+   ├── DESCRIPCIÓN: TODO sobre alumnos de la escuela (211 alumnos activos)
+   ├── SUB-INTENCIONES: busqueda_simple, estadisticas, generar_constancia
+
+🎯 **AYUDA_SISTEMA** → HelpInterpreter (Prioridad: 2)
+   ├── DESCRIPCIÓN: Ayuda sobre el sistema y capacidades
+   ├── SUB-INTENCIONES: explicacion_general, sobre_creador, auto_consciencia
+"""
+
+    def _get_dynamic_mapping_examples(self) -> str:
+        """
+        🎯 GENERAR EJEMPLOS DINÁMICOS DE MAPEO
+
+        Usa SystemCatalog para generar ejemplos de mapeo
+        que ayudan al LLM a entender las intenciones.
+        """
+        try:
+            from app.core.ai.system_catalog import SystemCatalog
+            return SystemCatalog.generate_mapping_examples()
+        except Exception as e:
+            self.logger.error(f"❌ [MASTER] Error generando ejemplos de mapeo: {e}")
+            # Fallback a ejemplos básicos
+            return """
+- "buscar García" → consulta_alumnos/busqueda_simple
+- "cuántos alumnos" → consulta_alumnos/estadisticas
+- "constancia para Juan" → consulta_alumnos/generar_constancia
+- "qué puedes hacer" → ayuda_sistema/explicacion_general
+- "quién te creó" → ayuda_sistema/sobre_creador
+"""
+
+    def _generate_humanized_response(self, result, user_query: str, routing_decision: dict):
+        """
+        🗣️ MASTER COMO VOCERO FINAL (PROMPT 4)
+
+        Genera respuesta humanizada basada en el resultado del especialista.
+        Equivale al PROMPT 4 del flujo tradicional Master-Student.
+
+        Args:
+            result: Resultado del especialista
+            user_query: Consulta original del usuario
+            routing_decision: Decisión del routing forzado
+
+        Returns:
+            InterpretationResult con respuesta humanizada
+        """
+        try:
+            self.logger.info("🗣️ [MASTER] Generando respuesta final como vocero...")
+
+            # Usar el método existente de generación de respuesta
+            humanized_response = self._generate_master_response(result.parameters, user_query)
+
+            if humanized_response:
+                self.logger.info("✅ Master generó respuesta contextual exitosamente")
+                self.logger.info(f"✅ [MASTER] Respuesta final: '{humanized_response[:50]}...'")
+
+                # Crear nuevo resultado con respuesta humanizada
+                from app.core.ai.interpretation.base_interpreter import InterpretationResult
+
+                humanized_result = InterpretationResult(
+                    action=result.action,
+                    parameters={
+                        **result.parameters,
+                        "master_response": humanized_response,
+                        "humanized": True,
+                        "routing_info": routing_decision
+                    },
+                    confidence=result.confidence
+                )
+
+                self.logger.info("🗣️ [MASTER] Respuesta final generada como vocero")
+                return humanized_result
+            else:
+                self.logger.warning("⚠️ [MASTER] No se pudo generar respuesta humanizada")
+                return result
+
+        except Exception as e:
+            self.logger.error(f"❌ [MASTER] Error generando respuesta humanizada: {e}")
+            return result
+
+    def _analyze_and_delegate_intelligently(self, user_query: str, conversation_stack: list):
+        """
+        🧠 ANÁLISIS INTELIGENTE UNIFICADO CON RAZONAMIENTO HUMANO
+        Reemplaza análisis semántico + resolución de referencias
+
+        🔄 AHORA USA MASTERPROMPTMANAGER MEJORADO
+        """
+        try:
+            # 🔄 USAR MASTERPROMPTMANAGER EN LUGAR DE PROMPT HARDCODEADO
+            conversation_context = self.prompt_manager.format_conversation_context(conversation_stack)
+            prompt = self.prompt_manager.get_intention_detection_prompt(user_query, conversation_context)
+            # 🔍 DEBUG: MOSTRAR PROMPT COMPLETO ENVIADO AL LLM
+            if os.getenv('DEBUG_PAUSES') == 'true':
+                print("\n🛑 [MASTER-DEBUG] PROMPT COMPLETO ENVIADO AL LLM:")
+                print("=" * 80)
+                print(prompt)
+                print("=" * 80)
+                print("└── Presiona ENTER para enviar al LLM...")
+                input()
+
+            # 🔍 DEBUG: Verificar si los ejemplos de constancia están en el prompt
+            if "generale una constancia" in prompt:
+                self.logger.info("✅ [DEBUG] Ejemplos de constancia encontrados en prompt")
+            else:
+                self.logger.error("❌ [DEBUG] Ejemplos de constancia NO encontrados en prompt")
+
+            # 🔍 DEBUG: Verificar si hay contexto disponible
+            if "Franco Alexander" in prompt:
+                self.logger.info("✅ [DEBUG] Contexto de Franco Alexander encontrado en prompt")
+            else:
+                self.logger.info("🔍 [DEBUG] No se encontró contexto de Franco Alexander en prompt")
+
+            if self.gemini_client:
+                response = self.gemini_client.send_prompt_sync(prompt)
+
+                # 🔍 DEBUG: MOSTRAR RESPUESTA CRUDA DEL LLM
+                if os.getenv('DEBUG_PAUSES') == 'true':
+                    print("\n🛑 [MASTER-DEBUG] RESPUESTA CRUDA DEL LLM:")
+                    print("=" * 80)
+                    print(response)
+                    print("=" * 80)
+                    print("└── Presiona ENTER para parsear JSON...")
+                    input()
+
+                if response:
+                    import json
+                    try:
+                        # Limpiar respuesta JSON
+                        clean_response = response.strip()
+                        if clean_response.startswith('```json'):
+                            clean_response = clean_response[7:]
+                        if clean_response.startswith('```'):
+                            clean_response = clean_response[3:]
+                        if clean_response.endswith('```'):
+                            clean_response = clean_response[:-3]
+                        clean_response = clean_response.strip()
+
+                        result = json.loads(clean_response)
+
+                        # 🔍 DEBUG: MOSTRAR JSON PARSEADO
+                        if os.getenv('DEBUG_PAUSES') == 'true':
+                            print("\n🛑 [MASTER-DEBUG] JSON PARSEADO EXITOSAMENTE:")
+                            print("=" * 80)
+                            import json
+                            print(json.dumps(result, indent=2, ensure_ascii=False))
+                            print("=" * 80)
+                            print("└── Presiona ENTER para continuar...")
+                            input()
+
+                        self.logger.info(f"🧠 [MASTER] Análisis unificado exitoso: {result.get('reasoning', '')[:100]}...")
+                        return result
+
+                    except json.JSONDecodeError as e:
+                        self.logger.warning(f"🧠 [MASTER] Error parsing JSON: {e}")
+                        self.logger.warning(f"🧠 [MASTER] Respuesta: {response}")
+
+                        # 🔍 DEBUG: MOSTRAR ERROR DE PARSING
+                        if os.getenv('DEBUG_PAUSES') == 'true':
+                            print(f"\n🛑 [MASTER-DEBUG] ERROR PARSING JSON:")
+                            print(f"Error: {e}")
+                            print(f"Respuesta que falló: {response}")
+                            print("└── Presiona ENTER para continuar...")
+                            input()
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error en análisis inteligente unificado: {e}")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error en análisis inteligente unificado: {e}")
+            return None
+
+    def _process_unified_analysis(self, analysis_result: dict, original_intention):
+        """
+        🔧 PROCESAR RESULTADO DEL ANÁLISIS UNIFICADO
+        Convierte el análisis del LLM en intención actualizada
+        """
+        try:
+            # Actualizar intención basada en el análisis
+            original_intention.intention_type = analysis_result.get('intention_type', original_intention.intention_type)
+            original_intention.sub_intention = analysis_result.get('sub_intention', original_intention.sub_intention)
+            original_intention.requiere_contexto = analysis_result.get('usar_contexto', False)
+
+            # 🎯 VALIDAR RESOLUCIÓN DE ALUMNO
+            detected_entities = analysis_result.get('detected_entities', {})
+            alumno_resuelto = detected_entities.get('alumno_resuelto')
+            referencia_encontrada = analysis_result.get('referencia_encontrada', '')
+
+            if alumno_resuelto and isinstance(alumno_resuelto, dict):
+                alumno_id = alumno_resuelto.get('id')
+                alumno_nombre = alumno_resuelto.get('nombre', '')
+
+                # 🧠 CONFIAR EN EL ANÁLISIS INTELIGENTE DEL LLM
+                # El LLM ya validó que tiene información suficiente para resolver
+                if alumno_nombre and not alumno_nombre.startswith('identificar'):
+                    # ✅ EL LLM ENCONTRÓ INFORMACIÓN VÁLIDA - CONFIAR EN ÉL
+                    # 🎯 NOMBRE COMPLETO ES SUFICIENTE - Student manejará el mapeo técnico
+
+                    # ✅ ACEPTAR LA RESOLUCIÓN DEL LLM (nombre completo es suficiente)
+                    original_intention.detected_entities['alumno_resuelto'] = alumno_resuelto
+                    original_intention.requiere_contexto = False  # Ya no necesita contexto, está resuelto
+                    self.logger.info(f"✅ [MASTER] Información suficiente para Student: {alumno_nombre} → Student manejará mapeo técnico")
+
+                    # ✅ MAPEAR SUB-INTENCIONES CORRECTAS PARA STUDENT
+                    if analysis_result.get('sub_intention') in ['informacion_completa', 'busqueda_filtrada']:
+                        original_intention.sub_intention = 'busqueda_simple'
+                        self.logger.info(f"🔧 [MASTER] Mapeando '{analysis_result.get('sub_intention')}' → 'busqueda_simple' para alumno resuelto")
+                    elif analysis_result.get('sub_intention') == 'generar_constancia':
+                        # 🎯 CONSTANCIAS: Mantener como consulta_alumnos + generar_constancia
+                        original_intention.intention_type = 'consulta_alumnos'
+                        original_intention.sub_intention = 'generar_constancia'
+                        self.logger.info(f"🔧 [MASTER] Mapeando 'generar_constancia' → 'consulta_alumnos/generar_constancia' para alumno resuelto")
+
+                else:
+                    # ❌ Solo rechazar si el nombre es claramente inválido o descriptivo
+                    self.logger.warning(f"⚠️ [MASTER] Resolución inválida: Nombre inválido o descriptivo: '{alumno_nombre}'")
+                    original_intention.requiere_contexto = True
+
+            # 📊 LOG DEL ANÁLISIS COMPLETO
+            razonamiento = analysis_result.get('reasoning', 'No especificado')
+            contexto_analizado = analysis_result.get('contexto_analizado', 'No especificado')
+
+            self.logger.info(f"🧠 [MASTER] Razonamiento: {razonamiento[:100]}...")
+            self.logger.info(f"📊 [MASTER] Contexto analizado: {contexto_analizado}")
+            self.logger.info(f"🔍 [MASTER] Referencia encontrada: {referencia_encontrada}")
+            self.logger.info(f"🎯 [MASTER] Análisis unificado completado: {analysis_result.get('intention_type')}/{original_intention.sub_intention}")
+
+            return original_intention
+
+        except Exception as e:
+            self.logger.error(f"Error procesando análisis unificado: {e}")
+            return original_intention
+
+    def _create_context_summary(self, conversation_stack: list) -> str:
+        """
+        📋 CREAR RESUMEN DEL CONTEXTO CONVERSACIONAL
+        Genera un resumen inteligente del conversation_stack para el LLM
+        """
+        try:
+            if not conversation_stack:
+                return "Sin contexto conversacional previo."
+
+            context_lines = []
+            context_lines.append("CONTEXTO CONVERSACIONAL (niveles por prioridad, más reciente primero):")
+            context_lines.append("")
+
+            for i, nivel in enumerate(reversed(conversation_stack), 1):
+                query = nivel.get('query', 'N/A')
+                row_count = nivel.get('row_count', 0)
+                awaiting = nivel.get('awaiting', 'N/A')
+                data = nivel.get('data', [])
+
+                context_lines.append(f"NIVEL {i}: '{query}'")
+
+                if row_count == 1 and data:
+                    # Información específica del alumno
+                    alumno = data[0]
+                    nombre = alumno.get('nombre', 'N/A')
+                    id_alumno = alumno.get('id', 'N/A')
+                    grado = alumno.get('grado', 'N/A')
+                    grupo = alumno.get('grupo', 'N/A')
+                    context_lines.append(f"→ Alumno específico: {nombre} (ID: {id_alumno}) - {grado}° {grupo}")
+
+                elif row_count <= 10 and data:
+                    # Lista pequeña con nombres
+                    if isinstance(data, list):
+                        nombres = [d.get('nombre', 'N/A') for d in data[:5]]
+                        context_lines.append(f"→ Lista pequeña ({row_count} alumnos): {', '.join(nombres)}")
+                        if row_count > 5:
+                            context_lines.append(f"→ (y {row_count - 5} más...)")
+                    else:
+                        context_lines.append(f"→ Datos estructurados ({row_count} elementos)")
+
+                elif row_count > 10:
+                    # Lista grande - CONTEXTO COMPLETO PARA RESOLUCIÓN INTELIGENTE
+                    context_lines.append(f"→ Lista grande: {row_count} alumnos disponibles")
+                    if data:
+                        # ✅ MOSTRAR SUFICIENTES ELEMENTOS PARA RESOLUCIÓN DINÁMICA
+                        elementos_mostrar = min(10, len(data))  # Mostrar hasta 10 para referencias
+                        context_lines.append(f"→ Primeros {elementos_mostrar} alumnos (para referencias posicionales, nombres, etc.):")
+                        for j, alumno in enumerate(data[:elementos_mostrar], 1):
+                            nombre = alumno.get('nombre', 'N/A')
+                            id_alumno = alumno.get('id', 'N/A')
+                            matricula = alumno.get('matricula', 'N/A')
+                            grado = alumno.get('grado', 'N/A')
+                            grupo = alumno.get('grupo', 'N/A')
+                            context_lines.append(f"   {j}. {nombre} (ID: {id_alumno}, Mat: {matricula}, {grado}°{grupo})")
+
+                        if row_count > elementos_mostrar:
+                            context_lines.append(f"   ... y {row_count - elementos_mostrar} más disponibles")
+
+                        # Detectar criterios comunes
+                        primer_alumno = data[0]
+                        if 'grado' in primer_alumno:
+                            grado = primer_alumno.get('grado')
+                            context_lines.append(f"→ Criterio detectado: {grado}° grado")
+                        if 'turno' in primer_alumno:
+                            turno = primer_alumno.get('turno')
+                            context_lines.append(f"→ Turno: {turno}")
+
+                        # ✅ INFORMACIÓN PARA RESOLUCIÓN DINÁMICA
+                        context_lines.append(f"→ LISTA COMPLETA DISPONIBLE: Puedes referenciar por posición, nombre, matrícula, etc.")
+                else:
+                    context_lines.append(f"→ {row_count} resultados")
+
+                context_lines.append(f"→ Esperando: {awaiting}")
+                context_lines.append("")
+
+            return "\n".join(context_lines)
+
+        except Exception as e:
+            self.logger.error(f"Error creando resumen de contexto: {e}")
+            return "Error procesando contexto conversacional."
+
+    def _handle_ambiguous_reference(self, user_query: str, intention, conversation_stack: list):
+        """
+        🚨 MANEJA REFERENCIAS AMBIGUAS DETECTADAS POR EL LLM
+        Genera una respuesta de aclaración inteligente basada en el contexto
+        """
+        try:
+            from app.core.ai.interpretation.base_interpreter import InterpretationResult
+
+            # Obtener información del contexto para generar aclaración específica
+            ultimo_nivel = conversation_stack[-1] if conversation_stack else None
+            if not ultimo_nivel:
+                return intention
+
+            row_count = ultimo_nivel.get('row_count', 0)
+            query_anterior = ultimo_nivel.get('query', 'consulta anterior')
+
+            # Generar mensaje de aclaración específico
+            if row_count > 1:
+                human_response = f"🤔 Tu consulta '{user_query}' es ambigua. Encontré {row_count} alumnos en '{query_anterior}'. ¿Podrías especificar a cuál te refieres? Por ejemplo: 'el segundo', 'el tercero', o menciona el nombre específico."
+            else:
+                human_response = f"🤔 Tu consulta '{user_query}' no es lo suficientemente clara. ¿Podrías ser más específico sobre qué información necesitas?"
+
+            # Crear resultado de aclaración
+            result = InterpretationResult(
+                action="aclaracion_requerida",
+                parameters={
+                    "message": human_response,
+                    "original_query": user_query,
+                    "human_response": human_response,
+                    "context_info": {
+                        "row_count": row_count,
+                        "query_anterior": query_anterior
+                    }
+                },
+                confidence=0.9
+            )
+
+            self.logger.info(f"🚨 [MASTER] Generada aclaración para referencia ambigua: {row_count} candidatos")
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ Error manejando referencia ambigua: {e}")
             return intention
+
+    def _analyze_context_relevance(self, intention, conversation_stack: list, user_query: str) -> dict:
+        """
+        🧠 PASO 3: ANÁLISIS DE CONTEXTO COMO HUMANO EXPERTO
+        Determina si hay información previa relevante para la consulta actual
+        """
+        try:
+            # Si no hay contexto, es independiente
+            if not conversation_stack:
+                return {
+                    "needs_context": False,
+                    "analysis": "Sin contexto conversacional previo - consulta independiente",
+                    "resolved_reference": None
+                }
+
+            # Análisis básico de referencias contextuales
+            contextual_keywords = [
+                "él", "ella", "ese", "esa", "este", "esta", "aquel", "aquella",
+                "el anterior", "la anterior", "el primero", "el segundo", "el último",
+                "sus datos", "su información", "de él", "para ella",
+                "también", "además", "igualmente"
+            ]
+
+            needs_context = any(keyword in user_query.lower() for keyword in contextual_keywords)
+
+            if needs_context:
+                # Hay referencias contextuales - necesita análisis profundo
+                return {
+                    "needs_context": True,
+                    "analysis": f"Detectadas referencias contextuales en: '{user_query}'",
+                    "resolved_reference": "Requiere análisis LLM para resolución"
+                }
+            else:
+                # Consulta independiente
+                return {
+                    "needs_context": False,
+                    "analysis": "Consulta semánticamente independiente - no requiere contexto",
+                    "resolved_reference": None
+                }
+
+        except Exception as e:
+            self.logger.error(f"Error analizando relevancia de contexto: {e}")
+            return {
+                "needs_context": False,
+                "analysis": "Error en análisis - procesando como independiente",
+                "resolved_reference": None
+            }
+
+    def _analyze_query_semantic_independence(self, user_query: str, conversation_stack: list) -> bool:
+        """
+        🧠 ANALIZA SI LA CONSULTA ES SEMÁNTICAMENTE INDEPENDIENTE
+        Usa razonamiento LLM para determinar si necesita contexto
+        """
+        try:
+            # Si no hay contexto, obviamente es independiente
+            if not conversation_stack:
+                return True
+
+            # Crear prompt para análisis semántico
+            context_summary = self._create_context_summary(conversation_stack)
+
+            prompt = f"""
+🧠 ANÁLISIS CONTEXTUAL INTELIGENTE - MASTER DEL SISTEMA ESCOLAR
+
+CONTEXTO CONVERSACIONAL COMPLETO:
+{context_summary}
+
+CONSULTA A ANALIZAR: "{user_query}"
+
+🎯 MI IDENTIDAD Y CONOCIMIENTO COMPLETO:
+- Sistema escolar "PROF. MAXIMO GAMIZ FERNANDEZ"
+- Base de datos: 211 alumnos en grados 1° a 6°
+- Especialistas: StudentQueryInterpreter, HelpInterpreter
+
+🎯 ESPECIALISTAS QUE DIRIJO:
+**StudentQueryInterpreter**:
+- BUSCAR_UNIVERSAL: Búsquedas flexibles
+- CONTAR_UNIVERSAL: Conteos y estadísticas
+- GENERAR_CONSTANCIA_COMPLETA: Documentos PDF
+- BUSCAR_Y_FILTRAR: Filtros sobre resultados
+
+📋 NIVELES DE CONTEXTO:
+- Nivel 1 = MÁS RECIENTE (más relevante)
+- Listas grandes = "regenerables" (SQL + metadatos)
+- Puedo usar CUALQUIER nivel para resolver referencias
+
+🧠 RAZONAMIENTO INTELIGENTE:
+1. ¿Qué solicita el usuario?
+2. ¿Qué información tengo disponible?
+3. ¿Puedo resolver con contexto?
+4. ¿Hay referencias que resolver?
+
+ELEMENTOS QUE INDICAN NECESIDAD DE CONTEXTO:
+• Pronombres referenciales: "él", "ella", "ese", "esa", "este", "esta", "aquel", "aquella"
+• Frases pronominales: "ese alumno", "esa estudiante", "ese chico", "esa persona"
+• Referencias posicionales: "el primero", "el segundo", "el último", "la primera"
+• Adjetivos demostrativos sin sustantivo: "ese", "esa", "este", "esta"
+• Referencias implícitas: "sus datos", "su información", "de él", "para ella"
+• Continuaciones: "también", "además", "igualmente", "del mismo modo"
+• Filtros sobre resultados previos: "de esos", "entre ellos", "de los anteriores"
+
+EJEMPLOS DE ANÁLISIS INTELIGENTE:
+INDEPENDIENTES:
+- "buscar García" → Nueva búsqueda completa
+- "buscar JUAN PÉREZ LÓPEZ" → Nombre completo específico
+- "constancia para MARÍA GONZÁLEZ" → Nombre específico
+- "estadísticas de grupos" → Consulta general
+- "cuántos alumnos hay en total" → Consulta global
+
+NECESITAN CONTEXTO:
+- "constancia para el segundo" → Referencia posicional
+- "de esos cuántos son del turno matutino" → Filtro sobre anteriores
+- "dame la curp de gabriela" → Nombre parcial, buscar en contexto
+- "constancia para ella" → Pronombre, resolver referencia
+- "también necesito su constancia" → Continuación con referencia
+
+RESPUESTA: "INDEPENDIENTE" o "NECESITA_CONTEXTO"
+"""
+
+            response = self.gemini_client.send_prompt_sync(prompt)
+            result = response.strip().upper() if response else ""
+
+            is_independent = "INDEPENDIENTE" in result
+
+            self.logger.info(f"🧠 [MASTER] Análisis semántico: '{user_query}' → {'INDEPENDIENTE' if is_independent else 'NECESITA_CONTEXTO'}")
+
+            return is_independent
+
+        except Exception as e:
+            self.logger.error(f"Error en análisis semántico: {e}")
+            # 🧠 FALLBACK SIMPLE: Si hay error, asumir que necesita contexto si hay contexto disponible
+            if conversation_stack:
+                self.logger.warning(f"🧠 [MASTER] Error en LLM, pero hay contexto disponible - asumiendo NECESITA_CONTEXTO")
+                return False  # NECESITA CONTEXTO
+            else:
+                self.logger.warning(f"🧠 [MASTER] Error en LLM, sin contexto disponible - asumiendo INDEPENDIENTE")
+                return True  # INDEPENDIENTE
+
+    def _resolve_reference_with_llm(self, user_query: str, conversation_stack: list) -> dict:
+        """
+        🧠 RESOLUCIÓN INTELIGENTE DE REFERENCIAS CON LLM
+        El LLM entiende CUALQUIER tipo de referencia sin listas hardcodeadas
+        """
+        try:
+            if not conversation_stack:
+                return None
+
+            # Crear contexto para el LLM
+            context_summary = self._create_detailed_context_for_reference(conversation_stack)
+
+            prompt = f"""
+🧠 RESOLUCIÓN INTELIGENTE DE REFERENCIAS - SISTEMA ESCOLAR
+
+CONSULTA DEL USUARIO: "{user_query}"
+
+CONTEXTO CONVERSACIONAL DISPONIBLE:
+{context_summary}
+
+🎯 TU TAREA:
+Analiza si la consulta del usuario hace referencia a algún alumno específico del contexto.
+
+🧠 REGLAS CRÍTICAS DE RAZONAMIENTO:
+1. Si hay UNA SOLA persona en el contexto → Referencia clara
+2. Si hay MÚLTIPLES personas CON OPERACIÓN DE FILTRO → Referencia clara a la lista completa
+3. Si hay MÚLTIPLES personas SIN especificación ni operación → AMBIGUO, no asumir
+4. Si hay posición específica ("el segundo") → Referencia clara
+5. Si hay pronombre vago ("su") con lista múltiple SIN OPERACIÓN → AMBIGUO
+
+TIPOS DE REFERENCIAS VÁLIDAS:
+- Pronominales CLARAS: "su información" (cuando hay 1 alumno específico)
+- Posicionales ESPECÍFICAS: "el segundo", "el tercero", "el último"
+- Implícitas CLARAS: "también necesito" (cuando hay 1 alumno específico)
+- OPERACIONES DE FILTRO: "de ellos los que...", "de esos cuántos...", "los García del turno..."
+
+🎯 OPERACIONES DE FILTRO (SIEMPRE CLARAS):
+- "de ellos dame los que esten en el turno matutino" → FILTRO sobre lista completa
+- "de esos cuántos son de primer grado" → CONTEO sobre lista completa
+- "los García del turno vespertino" → FILTRO sobre lista completa
+- "cuántos de ellos tienen calificaciones" → ANÁLISIS sobre lista completa
+
+❌ NO ASUMIR REFERENCIAS EN CASOS AMBIGUOS:
+- "su información" con lista de 20+ alumnos SIN OPERACIÓN → AMBIGUO
+- "él" con múltiples candidatos SIN ESPECIFICACIÓN → AMBIGUO
+- Pronombres vagos sin contexto específico → AMBIGUO
+
+FORMATO DE RESPUESTA JSON:
+{{
+    "tiene_referencia": true/false,
+    "es_ambiguo": true/false,
+    "alumno_referenciado": {{
+        "id": número_id,
+        "nombre": "NOMBRE COMPLETO",
+        "razonamiento": "explicación específica"
+    }},
+    "motivo_ambiguedad": "explicación si es ambiguo"
+}}
+
+EJEMPLOS CORRECTOS:
+- "su información" + 1 alumno específico → tiene_referencia: true
+- "su información" + lista de 21 → es_ambiguo: true
+- "el segundo" + lista → tiene_referencia: true (posición específica)
+- "de ellos los del turno matutino" + lista de 49 → tiene_referencia: false (operación de filtro, NO referencia individual)
+- "de esos cuántos son de primer grado" + lista → tiene_referencia: false (operación de conteo, NO referencia individual)
+
+RESPONDE SOLO CON EL JSON:
+"""
+
+            if self.gemini_client:
+                response = self.gemini_client.send_prompt_sync(prompt)
+                if response:
+                    import json
+                    try:
+                        # 🔧 LIMPIAR RESPUESTA: Remover bloques de código markdown
+                        clean_response = response.strip()
+                        if clean_response.startswith('```json'):
+                            clean_response = clean_response[7:]  # Remover ```json
+                        if clean_response.startswith('```'):
+                            clean_response = clean_response[3:]   # Remover ```
+                        if clean_response.endswith('```'):
+                            clean_response = clean_response[:-3]  # Remover ``` final
+                        clean_response = clean_response.strip()
+
+                        result = json.loads(clean_response)
+
+                        # Verificar si es ambiguo
+                        if result.get("es_ambiguo"):
+                            motivo = result.get("motivo_ambiguedad", "Referencia ambigua")
+                            self.logger.info(f"🧠 [LLM] Referencia AMBIGUA detectada: {motivo}")
+                            return None  # No resolver, que pida aclaración
+
+                        # Si tiene referencia clara
+                        if result.get("tiene_referencia") and result.get("alumno_referenciado"):
+                            alumno = result["alumno_referenciado"]
+                            self.logger.info(f"🧠 [LLM] Referencia CLARA detectada: {alumno.get('razonamiento')}")
+                            return {
+                                'id': alumno.get('id'),
+                                'nombre': alumno.get('nombre'),
+                                'posicion': 'resuelto por LLM'
+                            }
+                    except json.JSONDecodeError as e:
+                        self.logger.warning(f"🧠 [LLM] Error parsing JSON: {e}")
+                        self.logger.warning(f"🧠 [LLM] Respuesta original: {response}")
+                        self.logger.warning(f"🧠 [LLM] Respuesta limpia: {clean_response}")
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error resolviendo referencia con LLM: {e}")
+            return None
+
+    def _create_detailed_context_for_reference(self, conversation_stack: list) -> str:
+        """
+        🧠 CONTEXTO DETALLADO PARA RESOLUCIÓN DE REFERENCIAS
+        """
+        try:
+            if not conversation_stack:
+                return "Sin contexto previo"
+
+            context_parts = []
+
+            for i, nivel in enumerate(reversed(conversation_stack), 1):
+                query = nivel.get('query', 'N/A')
+                data = nivel.get('data', [])
+                row_count = nivel.get('row_count', 0)
+
+                if data:
+                    if row_count == 1:
+                        alumno = data[0]
+                        context_parts.append(f"""
+NIVEL {i} (más reciente): "{query}"
+→ Alumno específico: {alumno.get('nombre')} (ID: {alumno.get('id')})
+→ Grado: {alumno.get('grado')}° {alumno.get('grupo')}, Turno: {alumno.get('turno')}
+→ CURP: {alumno.get('curp')}""")
+                    elif row_count <= 10:
+                        if isinstance(data, list):
+                            nombres = [f"{j+1}. {d.get('nombre')} (ID: {d.get('id')})" for j, d in enumerate(data[:5])]
+                            context_parts.append(f"""
+NIVEL {i}: "{query}"
+→ Lista de {row_count} alumnos:
+{chr(10).join(nombres)}""")
+                        else:
+                            context_parts.append(f"""
+NIVEL {i}: "{query}"
+→ Datos estructurados: {row_count} elementos""")
+                    else:
+                        context_parts.append(f"""
+NIVEL {i}: "{query}"
+→ Lista grande de {row_count} alumnos (primeros 3):
+1. {data[0].get('nombre')} (ID: {data[0].get('id')})
+2. {data[1].get('nombre')} (ID: {data[1].get('id')})
+3. {data[2].get('nombre')} (ID: {data[2].get('id')})
+... y {row_count-3} más""")
+
+            return "\n".join(context_parts) if context_parts else "Sin contexto útil"
+
+        except Exception as e:
+            self.logger.error(f"Error creando contexto detallado: {e}")
+            return "Error en contexto"
+
+
 
     def _resolve_positional_reference(self, user_query: str, conversation_stack: list) -> dict:
         """Resuelve referencias posicionales como 'segundo', 'tercero'"""
@@ -274,20 +1009,51 @@ class MasterInterpreter:
             return None
 
     def _resolve_pronominal_reference(self, conversation_stack: list) -> dict:
-        """Resuelve referencias pronominales como 'él', 'ese'"""
+        """
+        🧠 RESOLUCIÓN INTELIGENTE DE REFERENCIAS PRONOMINALES
+        MEJORA: Busca en TODOS los niveles con lógica inteligente
+        """
         try:
             if not conversation_stack:
                 return None
 
-            # Buscar el último alumno mencionado específicamente
+            # 🧠 BUSCAR EN TODOS LOS NIVELES CON LÓGICA INTELIGENTE
             for nivel in reversed(conversation_stack):
                 data = nivel.get('data', [])
-                if data and len(data) == 1:  # Un solo alumno mencionado
+                query = nivel.get('query', '').lower()
+
+                if not data:
+                    continue
+
+                # CASO 1: Un solo alumno (ideal)
+                if len(data) == 1:
+                    alumno = data[0]
+                    # Verificar que no sea consulta de campo específico
+                    if not any(word in query for word in ['curp', 'matrícula', 'información']):
+                        return {
+                            'id': alumno.get('id') or alumno.get('alumno_id'),
+                            'nombre': alumno.get('nombre'),
+                            'posicion': 'último mencionado específicamente'
+                        }
+
+                # CASO 2: Múltiples alumnos - buscar referencia específica
+                elif len(data) > 1:
+                    # Si hay nombre específico en la query
+                    for alumno in data:
+                        nombre_completo = alumno.get('nombre', '').lower()
+                        if any(part in query for part in nombre_completo.split()):
+                            return {
+                                'id': alumno.get('id') or alumno.get('alumno_id'),
+                                'nombre': alumno.get('nombre'),
+                                'posicion': 'referencia específica por nombre'
+                            }
+
+                    # Si no hay referencia específica, tomar el primero
                     alumno = data[0]
                     return {
                         'id': alumno.get('id') or alumno.get('alumno_id'),
                         'nombre': alumno.get('nombre'),
-                        'posicion': 'último mencionado'
+                        'posicion': 'primero de la lista anterior'
                     }
 
             return None
@@ -332,26 +1098,100 @@ class MasterInterpreter:
             self.logger.error(f"Error resolviendo referencia por nombre: {e}")
             return None
 
+    def _get_student_id_by_name(self, nombre_completo: str) -> Optional[int]:
+        """
+        🚫 MÉTODO OBSOLETO - NO USAR
+        RAZÓN: Master no debe buscar IDs, nombre completo es suficiente
+        Student maneja el mapeo técnico a la base de datos
+        """
+        try:
+            if not nombre_completo:
+                return None
+
+            self.logger.info(f"🔍 [MASTER] Buscando ID para: '{nombre_completo}'")
+
+            # Usar el servicio de alumnos para buscar
+            from app.core.service_provider import ServiceProvider
+            service_provider = ServiceProvider.get_instance()
+            alumno_service = service_provider.alumno_service
+
+            # Buscar por nombre exacto
+            alumnos_encontrados = alumno_service.buscar_alumnos(nombre_completo)
+
+            if not alumnos_encontrados:
+                self.logger.warning(f"❌ [MASTER] No se encontró alumno con nombre: '{nombre_completo}'")
+                return None
+
+            # Buscar coincidencia exacta
+            for alumno in alumnos_encontrados:
+                alumno_dict = alumno.to_dict() if hasattr(alumno, 'to_dict') else alumno
+                if alumno_dict.get('nombre', '').upper() == nombre_completo.upper():
+                    alumno_id = alumno_dict.get('id')
+                    self.logger.info(f"✅ [MASTER] ID encontrado: '{nombre_completo}' → ID: {alumno_id}")
+                    return alumno_id
+
+            # Si no hay coincidencia exacta, tomar el primero si es muy similar
+            primer_alumno = alumnos_encontrados[0]
+            alumno_dict = primer_alumno.to_dict() if hasattr(primer_alumno, 'to_dict') else primer_alumno
+            alumno_id = alumno_dict.get('id')
+
+            self.logger.info(f"✅ [MASTER] Usando primer resultado similar: '{alumno_dict.get('nombre')}' → ID: {alumno_id}")
+            return alumno_id
+
+        except Exception as e:
+            self.logger.error(f"Error buscando ID por nombre: {e}")
+            return None
+
     def _validate_intention_with_system_map(self, intention):
-        """🎯 VALIDAR INTENCIÓN CON SYSTEM MAP"""
+        """🛡️ VALIDAR INTENCIÓN CON SYSTEM MAP Y CORREGIR AUTOMÁTICAMENTE"""
         try:
             intention_type = intention.intention_type
 
-            # Verificar si la intención es manejada por algún especialista
+            # 🎯 LISTA DE INTENCIONES VÁLIDAS (SEGÚN SYSTEM_MAP)
+            valid_intentions = []
             for specialist, config in self.system_map.items():
-                if intention_type in config["handles"]:
-                    self.logger.info(f"✅ [MASTER] Intención '{intention_type}' validada para {specialist}")
-                    return intention
+                valid_intentions.extend(config["handles"])
 
-            # Si no se encuentra, log de advertencia pero continuar
+            # ✅ VERIFICAR SI LA INTENCIÓN ES VÁLIDA
+            if intention_type in valid_intentions:
+                for specialist, config in self.system_map.items():
+                    if intention_type in config["handles"]:
+                        self.logger.info(f"✅ [MASTER] Intención '{intention_type}' validada para {specialist}")
+                        return intention
+
+            # 🔧 CORRECCIÓN AUTOMÁTICA DE INTENCIONES INCORRECTAS
             self.logger.warning(f"⚠️ [MASTER] Intención '{intention_type}' no encontrada en system_map")
+
+            # Mapeo automático para intenciones comunes mal detectadas
+            incorrect_mappings = {
+                "estadistica": "consulta_alumnos",
+                "busqueda": "consulta_alumnos",
+                "constancia": "consulta_alumnos",
+                "transformacion": "transformacion_pdf",  # Corregir transformacion → transformacion_pdf
+                "ayuda": "ayuda_sistema",
+                "help": "ayuda_sistema"
+            }
+
+            if intention_type in incorrect_mappings:
+                old_intention = intention_type
+                intention.intention_type = incorrect_mappings[old_intention]
+                self.logger.info(f"🔧 [MASTER] Auto-corrección: '{old_intention}' → '{intention.intention_type}'")
+                return intention
+
+            # ❌ ERROR SI NO SE PUEDE MAPEAR
+            self.logger.error(f"❌ [MASTER] Intención no reconocida: {intention_type}")
+            self.logger.error(f"❌ Intenciones válidas: {valid_intentions}")
+
+            # Fallback a consulta_alumnos para mantener funcionalidad
+            self.logger.info(f"🔧 [MASTER] Fallback: '{intention_type}' → 'consulta_alumnos'")
+            intention.intention_type = "consulta_alumnos"
             return intention
 
         except Exception as e:
             self.logger.error(f"❌ Error validando intención: {e}")
             return intention
 
-    def _delegate_to_specialist_direct(self, context: InterpretationContext, intention):
+    def _delegate_to_specialist_direct(self, context: InterpretationContext, intention, current_pdf=None):
         """🎯 DELEGAR AL ESPECIALISTA CON CONTEXTO COMPLETO"""
         try:
 
@@ -371,97 +1211,87 @@ class MasterInterpreter:
                 'flujo_optimo': intention.flujo_optimo
             }
 
-            # 🎯 DEBUG ESTRATÉGICO: LO QUE MASTER ENVÍA A STUDENT (CONSOLIDADO)
-            self.logger.info("=" * 60)
-            self.logger.info("🎯 [DEBUG] MASTER → STUDENT COMMUNICATION (CONSOLIDADO):")
-            self.logger.info("=" * 60)
-            self.logger.info(f"📤 CONSULTA ORIGINAL: '{context.user_message}'")
-            self.logger.info(f"📤 INTENCIÓN DETECTADA: {intention.intention_type}/{intention.sub_intention}")
-            self.logger.info(f"📤 CONFIANZA: {intention.confidence}")
-            self.logger.info(f"📤 🆕 CATEGORÍA: {intention.categoria}")
-            self.logger.info(f"📤 🆕 SUB-TIPO: {intention.sub_tipo}")
-            self.logger.info(f"📤 🆕 COMPLEJIDAD: {intention.complejidad}")
-            self.logger.info(f"📤 🆕 FLUJO ÓPTIMO: {intention.flujo_optimo}")
-            self.logger.info(f"📤 ENTIDADES DETECTADAS: {len(intention.detected_entities)} elementos")
-            for key, value in intention.detected_entities.items():
-                self.logger.info(f"     ├── {key}: {value}")
-            self.logger.info(f"📤 RAZONAMIENTO MASTER: {intention.reasoning}")
-            self.logger.info("=" * 60)
+            # 🧠 [MASTER] Delegando a Student con instrucciones claras
 
-            # Dirigir según la intención
-            if intention.intention_type == "consulta_alumnos":
-                self.logger.info(f"🎯 [MASTER] Dirigiendo a StudentQueryInterpreter")
-                self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
-                self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
-
-
-
-                result = self.student_interpreter.interpret(context)
-                self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
-
-
-
-                # 🎯 MASTER COMO VOCERO: Generar respuesta final
-                if result:
-                    final_result = self._generate_master_response(result, context.user_message)
-                    self.logger.info(f"🗣️ [MASTER] Respuesta final generada como vocero")
-                    return final_result
-
-                return result
-
-            elif intention.intention_type == "generar_constancia":
-                self.logger.info("🎯 [MASTER] Dirigiendo a StudentQueryInterpreter (constancia)")
-                self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
-                self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
-
-                result = self.student_interpreter.interpret(context)
-                self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
-
-                # 🎯 MASTER COMO VOCERO: Generar respuesta final
-                if result:
-                    final_result = self._generate_master_response(result, context.user_message)
-                    self.logger.info(f"🗣️ [MASTER] Respuesta final generada como vocero")
-                    return final_result
-
-                return result
-
-            elif intention.intention_type == "transformacion_pdf":
-                self.logger.info("🎯 [MASTER] Dirigiendo a StudentQueryInterpreter (transformación PDF)")
-                self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
-                self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
-
-                result = self.student_interpreter.interpret(context)
-                self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
-
-                # 🎯 MASTER COMO VOCERO: Generar respuesta final
-                if result:
-                    final_result = self._generate_master_response(result, context.user_message)
-                    self.logger.info(f"🗣️ [MASTER] Respuesta final generada como vocero")
-                    return final_result
-
-                return result
-
-            elif intention.intention_type == "ayuda_sistema":
-                self.logger.info("🎯 [MASTER] Dirigiendo a HelpInterpreter")
-                result = self.help_interpreter.interpret(context)
-                self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
-
-                # 🎯 MASTER COMO VOCERO: Generar respuesta final
-                if result:
-                    final_result = self._generate_master_response(result, context.user_message)
-                    self.logger.info(f"🗣️ [MASTER] Respuesta final generada como vocero")
-                    return final_result
-
-                return result
-
-            else:
-                # 🧹 SIN FALLBACKS - Que falle claramente para debugging
-                self.logger.error(f"❌ [MASTER] Intención no reconocida: {intention.intention_type}")
-                raise ValueError(f"Intención no reconocida: {intention.intention_type}")
+            # 🎯 DELEGACIÓN CONSOLIDADA - Elimina duplicación masiva
+            return self._execute_delegation_unified(intention, context, current_pdf=current_pdf)
 
         except Exception as e:
             self.logger.error(f"❌ Error delegando al especialista: {e}")
             # 🧹 SIN FALLBACKS - Que falle claramente para debugging
+            raise
+
+    def _execute_delegation_unified(self, intention, context: InterpretationContext, current_pdf=None):
+        """
+        🎯 DELEGACIÓN UNIFICADA - Elimina duplicación masiva de código
+
+        Consolida la lógica de delegación que estaba duplicada 4 veces.
+        Mantiene 100% la funcionalidad original pero sin repetición.
+        """
+        try:
+            intention_type = intention.intention_type
+
+            # 🎯 MAPEO DE INTENCIONES A ESPECIALISTAS
+            specialist_map = {
+                "consulta_alumnos": {
+                    "interpreter": self.student_interpreter,
+                    "name": "StudentQueryInterpreter",
+                    "description": ""
+                },
+                "transformacion_pdf": {
+                    "interpreter": self.student_interpreter,
+                    "name": "StudentQueryInterpreter",
+                    "description": " (transformación PDF)"
+                },
+                "ayuda_sistema": {
+                    "interpreter": self.help_interpreter,
+                    "name": "HelpInterpreter",
+                    "description": ""
+                },
+                "conversacion_general": {
+                    "interpreter": self.general_interpreter,
+                    "name": "GeneralInterpreter",
+                    "description": " (conversación natural)"
+                }
+            }
+
+            # 🎯 OBTENER ESPECIALISTA PARA LA INTENCIÓN
+            specialist_config = specialist_map.get(intention_type)
+            if not specialist_config:
+                self.logger.error(f"❌ [MASTER] Intención no reconocida: {intention_type}")
+                raise ValueError(f"Intención no reconocida: {intention_type}")
+
+            # 🎯 LOGS UNIFICADOS (MISMA ESTRUCTURA QUE ANTES)
+            specialist_name = specialist_config["name"]
+            description = specialist_config["description"]
+            self.logger.info(f"🎯 [MASTER] Dirigiendo a {specialist_name}{description}")
+            self.logger.info(f"   ├── Sub-intención: {intention.sub_intention}")
+            self.logger.info(f"   └── Entidades: {len(intention.detected_entities)} detectadas")
+
+            # 🎯 EJECUTAR DELEGACIÓN
+            specialist = specialist_config["interpreter"]
+            # Verificar si el specialist acepta current_pdf
+            if hasattr(specialist, 'interpret'):
+                import inspect
+                sig = inspect.signature(specialist.interpret)
+                if 'current_pdf' in sig.parameters:
+                    result = specialist.interpret(context, current_pdf=current_pdf)
+                else:
+                    result = specialist.interpret(context)
+            else:
+                result = specialist.interpret(context)
+            self.logger.info(f"📊 [MASTER] Resultado: {result.action if result else 'None'}")
+
+            # 🎯 MASTER COMO VOCERO: Generar respuesta final (IGUAL QUE ANTES)
+            if result:
+                final_result = self._generate_master_response(result, context.user_message)
+                self.logger.info(f"🗣️ [MASTER] Respuesta final generada como vocero")
+                return final_result
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ Error en delegación unificada: {e}")
             raise
 
     def _process_specialist_feedback(self, intention, result):
@@ -487,10 +1317,6 @@ class MasterInterpreter:
 
         except Exception as e:
             self.logger.error(f"❌ Error procesando retroalimentación: {e}")
-
-    # 🗑️ MÉTODOS DE AMBIGÜEDAD ELIMINADOS - SIMPLIFICACIÓN ARQUITECTURAL
-    # Ya no necesitamos verificar ambigüedades por separado
-    # El IntentionDetector maneja todo el análisis
 
     def _handle_ambiguous_query(self, context: InterpretationContext, intention) -> Optional[InterpretationResult]:
         """
@@ -526,12 +1352,6 @@ class MasterInterpreter:
             if intention_type in config["handles"]:
                 return specialist
         return "Unknown"
-
-    # 🗑️ MÉTODO ELIMINADO: _create_ambiguity_analysis_prompt
-    # Ya no necesitamos análisis de ambigüedad por separado
-
-    # 🗑️ MÉTODOS ELIMINADOS: _parse_ambiguity_response, _generate_clarification_question
-    # Ya no necesitamos análisis de ambigüedad por separado
 
     def _should_ask_user_about_results(self, result: 'InterpretationResult', user_query: str) -> bool:
         """
@@ -602,10 +1422,17 @@ class MasterInterpreter:
             data = result.parameters.get('data', [])
             candidates = []
 
-            for item in data[:5]:  # Máximo 5 candidatos
+            if isinstance(data, list):
+                for item in data[:5]:  # Máximo 5 candidatos
+                    candidates.append({
+                        'nombre': item.get('nombre', 'N/A'),
+                        'grado': f"{item.get('grado', 'N/A')}°{item.get('grupo', '')}"
+                    })
+            elif isinstance(data, dict):
+                # Si data es un diccionario, tratarlo como un solo candidato
                 candidates.append({
-                    'nombre': item.get('nombre', 'N/A'),
-                    'grado': f"{item.get('grado', 'N/A')}°{item.get('grupo', '')}"
+                    'nombre': data.get('nombre', 'N/A'),
+                    'grado': f"{data.get('grado', 'N/A')}°{data.get('grupo', '')}"
                 })
 
             message = f"🔍 Encontré {len(data)} candidatos para la constancia. ¿Cuál necesitas?\n\n"
@@ -672,85 +1499,14 @@ class MasterInterpreter:
             self.logger.error(f"Error creando pregunta de ayuda: {e}")
             return result
 
-    # 🗑️ MÉTODOS OBSOLETOS ELIMINADOS: COMUNICACIÓN BIDIRECCIONAL LEGACY
-    # RAZÓN: Student ya no envía feedback bidireccional - Master analiza resultados directamente
-    #
-    # Métodos eliminados:
-    # - _needs_bidirectional_communication() → Reemplazado por _should_ask_user_about_results()
-    # - _handle_student_feedback() → Ya no es necesario, Student no envía feedback
-    # - _handle_multiple_results_feedback() → Integrado en _handle_results_analysis()
-    # - _handle_multiple_candidates_feedback() → Integrado en _create_candidate_selection_question()
-    # - _handle_ambiguity_feedback() → Manejado en análisis previo
-    # - _handle_validation_feedback() → Integrado en _handle_results_analysis()
-    # - _handle_generic_feedback() → Ya no es necesario
-
-    # 🗑️ MÉTODOS OBSOLETOS ELIMINADOS: FEEDBACK HANDLERS LEGACY
-    # RAZÓN: Student ya no envía feedback bidireccional - Master analiza resultados directamente
-    #
-    # Métodos eliminados:
-    # - _handle_multiple_results_feedback() → Integrado en _create_filter_suggestion_question()
-    # - _handle_multiple_candidates_feedback() → Integrado en _create_candidate_selection_question()
-    # - _handle_ambiguity_feedback() → Manejado en análisis previo con _check_for_ambiguities()
-    # - _handle_validation_feedback() → Integrado en _create_no_results_help_question()
-    # - _handle_generic_feedback() → Ya no es necesario
-
-    def _log_detailed_strategic_context(self):
-        """🔍 MOSTRAR CONTEXTO ESTRATÉGICO COMPLETO EN LOGS"""
+    def _log_strategic_context(self):
+        """🧠 [MASTER] Contexto estratégico del sistema"""
         try:
-            self.logger.info("=" * 80)
-            self.logger.info("🔍 [MASTER] CONTEXTO ESTRATÉGICO DETALLADO:")
-            self.logger.info("=" * 80)
+            self.logger.info("🧠 [MASTER] Sistema Master-Student inicializado")
+            self.logger.info(f"🧠 [MASTER] Especialistas disponibles: {list(self.system_map.keys())}")
+            self.logger.info("🧠 [MASTER] Listo para procesar consultas")
 
-            # 1. SYSTEM MAP COMPLETO
-            self.logger.info("📋 1. SYSTEM MAP (Especialistas y Capacidades):")
-            for specialist, config in self.system_map.items():
-                self.logger.info(f"   🎯 {specialist}:")
-                self.logger.info(f"      ├── Rol: {config.get('description', 'No definido')}")
-                self.logger.info(f"      ├── Maneja: {config.get('handles', [])}")
-                self.logger.info(f"      ├── Sub-intenciones: {config.get('sub_intentions', [])}")
-                self.logger.info(f"      └── Capacidades: {config.get('capabilities', 'No definidas')}")
 
-            # 2. MEMORIA DE INTERACCIONES
-            self.logger.info("")
-            self.logger.info("💭 2. MEMORIA DE INTERACCIONES:")
-            for key, value in self.interaction_memory.items():
-                self.logger.info(f"      ├── {key}: {value}")
-
-            # 3. CONTEXTO DEL SISTEMA ESCOLAR
-            sistema_context = {
-                "tipo": "Dirección de Escuela Primaria PROF. MAXIMO GAMIZ FERNANDEZ",
-                "estudiantes_total": 211,
-                "areas_disponibles": ["Consultas de Alumnos", "Ayuda Técnica"]
-            }
-            self.logger.info("")
-            self.logger.info("🏫 3. CONTEXTO DEL SISTEMA ESCOLAR:")
-            for key, value in sistema_context.items():
-                self.logger.info(f"      ├── {key}: {value}")
-
-            # 4. TIPOS DE CONSULTAS ESPERADAS
-            tipos_consultas = {
-                "busquedas": "buscar García, alumnos de 2do A, estudiantes matutinos",
-                "estadisticas": "cuántos alumnos hay, promedio general, distribuciones",
-                "documentos": "constancia para Juan, certificado de calificaciones",
-                "transformaciones": "convertir constancia, cambiar formato",
-                "ayuda": "qué puedes hacer, cómo buscar alumnos"
-            }
-            self.logger.info("")
-            self.logger.info("📝 4. TIPOS DE CONSULTAS ESPERADAS:")
-            for tipo, ejemplos in tipos_consultas.items():
-                self.logger.info(f"      ├── {tipo}: {ejemplos}")
-
-            # 5. ESTADO DE INICIALIZACIÓN (COMPONENTES BÁSICOS)
-            self.logger.info("")
-            self.logger.info("✅ 5. ESTADO DE INICIALIZACIÓN:")
-            self.logger.info(f"      ├── Gemini Client: {'✅ Conectado' if self.gemini_client else '❌ No disponible'}")
-            self.logger.info(f"      ├── Intention Detector: {'✅ Inicializado' if self.intention_detector else '❌ No disponible'}")
-            self.logger.info(f"      ├── Student Interpreter: ⏳ Se inicializará después")
-            self.logger.info(f"      └── Help Interpreter: ⏳ Se inicializará después")
-
-            self.logger.info("=" * 80)
-            self.logger.info("🎯 [MASTER] CONTEXTO ESTRATÉGICO CARGADO Y VERIFICADO")
-            self.logger.info("=" * 80)
 
         except Exception as e:
             self.logger.error(f"❌ Error mostrando contexto detallado: {e}")
@@ -793,6 +1549,15 @@ class MasterInterpreter:
             student_data = student_result.parameters
             action_used = student_result.action
 
+            # 🔧 DEBUG: Mostrar reporte recibido del Student
+            self._debug_pause("📥 [MASTER] RECIBIENDO REPORTE DEL STUDENT", {
+                "action_recibida": action_used,
+                "datos_tecnicos": list(student_data.keys()),
+                "row_count": student_data.get('row_count', 0),
+                "requiere_respuesta_master": student_data.get('requires_master_response', False),
+                "sql_ejecutado": student_data.get('sql_executed', '')[:50] + "..." if student_data.get('sql_executed') else "N/A"
+            })
+
             # 🎯 EXTRAER CRITERIOS DE BÚSQUEDA DINÁMICAMENTE DESPUÉS DE LA EJECUCIÓN
             search_criteria = self._extract_search_criteria_for_display(student_data)
 
@@ -800,6 +1565,13 @@ class MasterInterpreter:
             student_data["search_criteria"] = search_criteria
 
             # 🎯 MASTER GENERA RESPUESTA FINAL USANDO PROMPT ESPECIALIZADO
+            self._debug_pause("🧠 [MASTER] INTERPRETANDO REPORTE Y GENERANDO RESPUESTA", {
+                "tipo_consulta": self._detect_query_type(action_used, student_data, user_query),
+                "criterios_busqueda": len(search_criteria),
+                "datos_disponibles": student_data.get('row_count', 0),
+                "prompt_especializado": "Generando respuesta contextual con LLM"
+            })
+
             master_response = self._generate_master_response_with_llm(student_data, user_query, action_used)
 
             # 🔧 CASOS ESPECIALES QUE REQUIEREN PROCESAMIENTO ADICIONAL
@@ -861,17 +1633,12 @@ class MasterInterpreter:
     def _extract_search_criteria_for_display(self, student_data: dict) -> dict:
         """🎯 EXTRAE CRITERIOS DE BÚSQUEDA DINÁMICAMENTE DEL SQL EJECUTADO"""
         try:
-            # 🔍 DEBUG: Ver qué datos llegan
-            self.logger.info(f"🔍 [DEBUG] student_data keys: {list(student_data.keys())}")
-
-            # 🚀 ENFOQUE DINÁMICO: Analizar el SQL real que se ejecutó
+            # 🧠 [MASTER] Analizando SQL ejecutado para extraer criterios
             sql_query = student_data.get("sql_executed", "") or student_data.get("sql_query", "")
             search_description = ""
             relevant_fields = []
 
-            self.logger.info(f"🔍 [DEBUG] sql_query encontrado: '{sql_query}'")
-            self.logger.info(f"🔍 [DEBUG] ¿sql_executed existe? {'sql_executed' in student_data}")
-            self.logger.info(f"🔍 [DEBUG] ¿sql_query existe? {'sql_query' in student_data}")
+            self.logger.info(f"🧠 [MASTER] SQL encontrado: '{sql_query[:50]}...'" if sql_query else "🧠 [MASTER] No hay SQL disponible")
 
             if sql_query:
                 # Extraer campos de WHERE clause dinámicamente
@@ -924,9 +1691,9 @@ class MasterInterpreter:
                             # Un solo grupo
                             search_description += description_template.format(matches[0]) + " "
 
-                self.logger.info(f"🔍 [DYNAMIC] SQL analizado: {sql_query[:100]}...")
-                self.logger.info(f"🔍 [DYNAMIC] Campos extraídos: {relevant_fields}")
-                self.logger.info(f"🔍 [DYNAMIC] Descripción: {search_description.strip()}")
+                self.logger.info(f"🧠 [MASTER] Criterios extraídos: {len(relevant_fields)} campos")
+                if search_description.strip():
+                    self.logger.info(f"🧠 [MASTER] Descripción: {search_description.strip()}")
 
             # Si no hay SQL o no se encontraron patrones, usar fallback inteligente
             if not relevant_fields:
@@ -938,10 +1705,11 @@ class MasterInterpreter:
                 if campo:
                     relevant_fields.append(campo)
                     search_description = f"búsqueda por {campo}"
-                    self.logger.info(f"🔍 [FALLBACK] Campo del criterio principal: {campo}")
+                    self.logger.info(f"🧠 [MASTER] Campo principal: {campo}")
 
-            # Siempre incluir campos básicos
-            basic_fields = ['nombre', 'curp']
+            # Incluir campos básicos dinámicamente desde configuración
+            from app.core.config import Config
+            basic_fields = getattr(Config, 'BASIC_DISPLAY_FIELDS', ['nombre', 'curp'])
             all_fields = basic_fields + [field for field in relevant_fields if field not in basic_fields]
 
             return {
@@ -958,33 +1726,32 @@ class MasterInterpreter:
                 "has_specific_criteria": False
             }
 
-    # 🗑️ MÉTODO ELIMINADO: _generate_count_response
-    # RAZÓN: Ahora el Student genera respuestas dinámicas directamente con el prompt mejorado
-
-    # 🗑️ MÉTODO ELIMINADO: _generate_count_response_from_filters
-    # RAZÓN: Ahora el Student genera respuestas dinámicas directamente con el prompt mejorado
-
-    # 🗑️ MÉTODO ELIMINADO: _generate_search_response
-    # RAZÓN: Ahora el Student genera respuestas dinámicas directamente con el prompt mejorado
 
 
 
     def _generate_master_response_with_llm(self, student_data: dict, user_query: str, action_used: str) -> str:
         """
-        🎯 GENERA RESPUESTA FINAL USANDO LLM ESPECIALIZADO DEL MASTER
+        🗣️ MASTER GENERA RESPUESTA HUMANIZADA CON CONTEXTO CONVERSACIONAL
 
+        MEJORA: Ahora incluye contexto conversacional para respuestas contextuales
         El Master usa su propio prompt especializado en comunicación para generar
         respuestas humanizadas basándose en los datos técnicos del Student.
         """
         try:
-            # Crear prompt especializado para respuesta del Master
-            master_prompt = self._create_master_response_prompt(student_data, user_query, action_used)
+            # 🎯 OBTENER CONTEXTO CONVERSACIONAL COMPLETO (IGUAL QUE MASTER INICIAL)
+            conversation_stack = getattr(self, 'current_conversation_stack', [])
+            context_info = self._create_context_summary(conversation_stack)
+
+            # Crear prompt con contexto completo
+            master_prompt = self._create_master_response_prompt_with_context(
+                student_data, user_query, action_used, context_info
+            )
 
             # Llamar al LLM para generar respuesta humanizada
             response = self.gemini_client.send_prompt_sync(master_prompt)
 
             if response and response.strip():
-                self.logger.info(f"✅ Master generó respuesta humanizada exitosamente")
+                self.logger.info(f"✅ Master generó respuesta contextual exitosamente")
                 return response.strip()
             else:
                 self.logger.warning(f"❌ Master LLM no generó respuesta, usando fallback")
@@ -1021,23 +1788,101 @@ class MasterInterpreter:
         🎯 CREA PROMPT ESPECIALIZADO DINÁMICO SEGÚN TIPO DE CONSULTA
 
         Diferentes tipos de consulta requieren diferentes enfoques de respuesta.
+        INCLUYE INTERPRETACIÓN INTELIGENTE DEL REPORTE DEL STUDENT.
         """
+        # 🧠 INTERPRETACIÓN INTELIGENTE DEL REPORTE
+        intelligent_interpretation = self._interpret_student_report_intelligently(student_data, user_query)
+
+        # 🛑 PAUSA ESTRATÉGICA #5: INTERPRETACIÓN INTELIGENTE DEL REPORTE
+        import os
+        if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
+            print(f"\n🛑 [MASTER-BRAIN] PASO 5: INTERPRETACIÓN INTELIGENTE DEL REPORTE")
+            print(f"    ├── 🧠 PREGUNTA: ¿Qué pasó y cómo respondo al usuario?")
+            print(f"    ├── 📝 Consulta original: '{user_query}'")
+            print(f"    ├── ⚡ Acción ejecutada por Student: {action_used}")
+            print(f"    ├── 📊 Resultados obtenidos: {student_data.get('row_count', 0)} elementos")
+            print(f"    ├── ✅ Éxito de la operación: {student_data.get('success', True)}")
+            print(f"    ├── 🧠 Interpretación del conocimiento:")
+            print(f"    │   {intelligent_interpretation}")
+            print(f"    ├── ⚡ DECISIÓN: Generar respuesta humanizada para el usuario")
+            print(f"    └── Presiona ENTER para generar respuesta final...")
+            input()
+
         # Detectar tipo de consulta
         query_type = self._detect_query_type(action_used, student_data, user_query)
 
         # Crear prompt específico según el tipo
+        base_prompt = ""
         if query_type == "search":
-            return self._create_search_response_prompt(student_data, user_query, action_used)
+            base_prompt = self._create_search_response_prompt(student_data, user_query, action_used)
         elif query_type == "constancia":
-            return self._create_constancia_response_prompt(student_data, user_query, action_used)
+            base_prompt = self._create_constancia_response_prompt(student_data, user_query, action_used)
         elif query_type == "transformation":
-            return self._create_transformation_response_prompt(student_data, user_query, action_used)
+            base_prompt = self._create_transformation_response_prompt(student_data, user_query, action_used)
         elif query_type == "statistics":
-            return self._create_statistics_response_prompt(student_data, user_query, action_used)
+            base_prompt = self._create_statistics_response_prompt(student_data, user_query, action_used)
         elif query_type == "help":
-            return self._create_help_response_prompt(student_data, user_query, action_used)
+            base_prompt = self._create_help_response_prompt(student_data, user_query, action_used)
         else:
-            return self._create_generic_response_prompt(student_data, user_query, action_used)
+            base_prompt = self._create_generic_response_prompt(student_data, user_query, action_used)
+
+        # 🧠 AGREGAR INTERPRETACIÓN INTELIGENTE AL PROMPT
+        enhanced_prompt = f"""
+{base_prompt}
+
+🧠 INTERPRETACIÓN INTELIGENTE DEL MASTER:
+{intelligent_interpretation}
+
+🎯 INSTRUCCIONES ADICIONALES:
+- Usa la interpretación inteligente para mejorar tu respuesta
+- Si hay sugerencias, incorpóralas naturalmente
+- Si hay limitaciones, explícalas de manera empática
+- Mantén un tono profesional pero amigable
+
+RESPONDE ÚNICAMENTE con la respuesta conversacional final mejorada.
+"""
+
+        return enhanced_prompt
+
+    def _create_master_response_prompt_with_context(self, student_data: dict, user_query: str, action_used: str, context_info: str) -> str:
+        """
+        🗣️ MASTER RESPUESTA CON CONTEXTO CONVERSACIONAL
+
+        NUEVO: Prompt de respuesta que incluye contexto conversacional completo
+        """
+        # Detectar tipo de consulta
+        query_type = self._detect_query_type(action_used, student_data, user_query)
+
+        # Crear prompt base según el tipo
+        base_prompt = self._create_master_response_prompt(student_data, user_query, action_used)
+
+        # Agregar contexto conversacional al prompt
+        contextual_prompt = f"""
+🗣️ MASTER COMO VOCERO - RESPUESTA CONTEXTUAL INTELIGENTE
+
+CONTEXTO CONVERSACIONAL:
+{context_info}
+
+CONSULTA ORIGINAL: "{user_query}"
+RESULTADO DEL STUDENT: {action_used} - {student_data.get('row_count', 0)} resultados
+
+🎯 GENERAR RESPUESTA NATURAL Y CONTEXTUAL:
+1. Reconocer contexto conversacional cuando sea relevante
+2. Comunicar resultado de manera clara
+3. Mantener personalidad consistente
+4. Conectar con consultas anteriores cuando sea natural
+
+EJEMPLOS:
+- Continuación: "Perfecto! Basándome en [contexto]..."
+- Referencia resuelta: "He generado la constancia para [nombre resuelto]..."
+- Filtro aplicado: "De los resultados anteriores, encontré..."
+
+{base_prompt}
+
+IMPORTANTE: Si hay contexto conversacional relevante, conéctalo naturalmente en tu respuesta.
+"""
+
+        return contextual_prompt
 
     def _detect_query_type(self, action_used: str, student_data: dict, user_query: str) -> str:
         """Detecta el tipo específico de consulta para usar el prompt correcto"""
@@ -1065,6 +1910,10 @@ class MasterInterpreter:
         row_count = student_data.get("row_count", 0)
         data = student_data.get("data", [])
         ambiguity_level = student_data.get("ambiguity_level", "low")
+
+        # 🎯 MANEJO INTELIGENTE DE "NO ENCONTRADO" (row_count = 0)
+        if row_count == 0:
+            return self._create_no_results_response_prompt(student_data, user_query, action_used)
 
         # 🔧 MANEJO SEGURO DE DATOS - verificar que data sea una lista
         data_context = ""
@@ -1194,6 +2043,100 @@ Generar una respuesta HUMANA y CONECTADA que:
 - Saludo apropiado con emoji
 - Máximo 3-4 líneas pero con personalidad
 - Cierre que invite a continuar la conversación
+
+RESPONDE ÚNICAMENTE con la respuesta conversacional final.
+"""
+
+    def _create_no_results_response_prompt(self, student_data: dict, user_query: str, action_used: str) -> str:
+        """
+        🎯 PROMPT ESPECIALIZADO PARA CASOS DE "NO ENCONTRADO" (row_count = 0)
+
+        Master interpreta inteligentemente cuando Student reporta 0 resultados
+        y genera respuestas humanas con sugerencias útiles.
+        """
+        # Detectar tipo de búsqueda para respuesta específica
+        search_criteria = student_data.get("search_criteria", "")
+
+        # Detectar si es búsqueda por CURP
+        is_curp_search = "curp" in user_query.lower() or "curp" in search_criteria.lower()
+
+        # Detectar si es búsqueda por matrícula
+        is_matricula_search = "matrícula" in user_query.lower() or "matricula" in user_query.lower()
+
+        # Detectar si es búsqueda por nombre
+        is_name_search = any(word in user_query.lower() for word in ["buscar", "encontrar", "dame", "información"]) and not is_curp_search and not is_matricula_search
+
+        # Detectar contexto conversacional
+        reflexion = student_data.get("auto_reflexion", {})
+        datos_recordar = reflexion.get("datos_recordar", {})
+        conversation_context = datos_recordar.get("context", "")
+        es_continuacion = bool(conversation_context)
+
+        return f"""
+Eres el asistente empático y útil de la escuela "PROF. MAXIMO GAMIZ FERNANDEZ" 🏫
+
+🎯 SITUACIÓN CRÍTICA - NO SE ENCONTRARON RESULTADOS:
+- CONSULTA: "{user_query}"
+- CRITERIOS BUSCADOS: {search_criteria}
+- RESULTADOS: 0 estudiantes encontrados
+- ES CONTINUACIÓN: {es_continuacion}
+- CONTEXTO PREVIO: {conversation_context}
+- BÚSQUEDA POR CURP: {is_curp_search}
+- BÚSQUEDA POR MATRÍCULA: {is_matricula_search}
+- BÚSQUEDA POR NOMBRE: {is_name_search}
+
+🎭 TU PERSONALIDAD EMPÁTICA:
+- Comprensivo y útil (NO frustrante)
+- Profesional pero humano
+- Proactivo en soluciones
+- Educativo sin ser condescendiente
+
+🎯 TU TAREA ESPECÍFICA PARA "NO ENCONTRADO":
+Generar una respuesta EMPÁTICA Y ÚTIL que:
+
+1. 🤔 RECONOCE que no encontraste nada (sin culpar al usuario)
+2. 💡 EXPLICA posibles causas de manera educativa
+3. 🔍 SUGIERE alternativas específicas y útiles
+4. 🎯 OFRECE próximos pasos concretos
+5. 🔄 MANTIENE continuidad conversacional si existe
+
+🎯 RESPUESTAS ESPECÍFICAS POR TIPO DE BÚSQUEDA:
+
+**Para BÚSQUEDAS POR CURP:**
+- "No encontré ningún alumno con esa CURP en nuestra base de datos."
+- "Las CURPs tienen exactamente 18 caracteres. ¿Podrías verificar que esté completa?"
+- "También puedes buscar por nombre si prefieres: 'buscar [nombre del alumno]'"
+
+**Para BÚSQUEDAS POR MATRÍCULA:**
+- "No encontré esa matrícula en nuestros registros."
+- "¿Podrías verificar el número? También puedes buscar por nombre del alumno."
+
+**Para BÚSQUEDAS POR NOMBRE:**
+- "No encontré ningún alumno con ese nombre."
+- "¿Podrías intentar con el apellido? Por ejemplo: 'buscar García'"
+- "O puedes ser más específico: 'buscar María García de 3er grado'"
+
+🔄 CONTINUIDAD CONVERSACIONAL:
+- Si ES_CONTINUACIÓN = True: "Siguiendo con tu búsqueda anterior, no encontré..."
+- Si ES_CONTINUACIÓN = False: "No encontré..."
+- SIEMPRE ofrecer alternativas basadas en el contexto
+
+✅ PATRONES DE RESPUESTA EMPÁTICA:
+- "No encontré [lo que buscaste], pero puedes intentar..."
+- "Hmm, no hay resultados para [criterio]. ¿Te ayudo de otra forma?"
+- "No localicé [lo específico]. ¿Quieres que busque por [alternativa]?"
+
+❌ EVITA RESPUESTAS TÉCNICAS O FRÍAS:
+- "0 resultados encontrados"
+- "La consulta no devolvió datos"
+- "No hay coincidencias en la base de datos"
+
+📝 FORMATO EMPÁTICO Y ÚTIL:
+- Reconocimiento empático del problema
+- Explicación breve y educativa
+- 2-3 sugerencias concretas y específicas
+- Invitación amigable a continuar
+- Máximo 4-5 líneas con personalidad humana
 
 RESPONDE ÚNICAMENTE con la respuesta conversacional final.
 """
@@ -1615,74 +2558,6 @@ RESPONDE ÚNICAMENTE con la respuesta conversacional final.
 
         return False
 
-    def _handle_user_interaction_request(self, action_used: str, student_data: dict, base_response: str) -> str:
-        """
-        🎯 MANEJA SOLICITUDES DE INTERACCIÓN CON EL USUARIO
-
-        Mejora la respuesta del Student cuando necesita interacción,
-        agregando contexto y opciones claras para el usuario.
-        """
-        reflexion = student_data.get("reflexion_conversacional", {})
-        continuation_type = reflexion.get("tipo_esperado", "")
-
-        # MEJORAR RESPUESTA SEGÚN EL TIPO DE INTERACCIÓN NECESARIA
-        if continuation_type == "confirmation":
-            return f"{base_response}\n\n💡 **Responde 'sí' o 'no' para continuar.**"
-
-        elif continuation_type == "specification":
-            return f"{base_response}\n\n💡 **Por favor especifica los detalles que necesitas.**"
-
-        elif continuation_type == "selection":
-            data = student_data.get("data", [])
-            if data and len(data) > 1:
-                return f"{base_response}\n\n💡 **Puedes referenciar por posición (ej: 'el segundo', 'número 3') o por nombre.**"
-            else:
-                return f"{base_response}\n\n💡 **Por favor especifica cuál necesitas.**"
-
-        else:
-            # Caso genérico - agregar instrucción de ayuda
-            return f"{base_response}\n\n💡 **¿Necesitas ayuda con algo específico?**"
-
-    def _handle_confirmation(self, context: InterpretationContext, conversation_state: dict) -> Optional[InterpretationResult]:
-        """
-        Maneja confirmaciones del usuario para diferentes tipos de acciones pendientes
-        """
-        waiting_for = conversation_state.get('waiting_for')
-        context_data = conversation_state.get('context_data', {})
-
-        if waiting_for == "confirmacion_constancia_estudios":
-            # Usuario confirmó generar constancia de estudios como alternativa
-            alumno_nombre = context_data.get('alumno')
-            if alumno_nombre:
-                self.logger.info(f"Confirmación recibida: generar constancia de estudios para {alumno_nombre}")
-
-                # Crear consulta para generar constancia de estudios
-                constancia_query = f"generar constancia de estudios para {alumno_nombre}"
-                new_context = InterpretationContext(user_message=constancia_query)
-                return self.student_interpreter.interpret(new_context)
-
-        # Aquí se pueden agregar otros tipos de confirmación:
-        # elif waiting_for == "confirmacion_eliminar_alumno":
-        #     return self._handle_delete_confirmation(context_data)
-        # elif waiting_for == "confirmacion_actualizar_datos":
-        #     return self._handle_update_confirmation(context_data)
-
-        return None
-
-    def _handle_clarification(self, context: InterpretationContext, conversation_state: dict) -> Optional[InterpretationResult]:
-        """Maneja solicitudes de aclaración del usuario"""
-        return self.student_interpreter.interpret(context)
-
-    def _handle_selection(self, context: InterpretationContext, conversation_state: dict) -> Optional[InterpretationResult]:
-        """Maneja selecciones del usuario cuando hay múltiples opciones"""
-        return self.student_interpreter.interpret(context)
-
-    def _handle_related_question(self, context: InterpretationContext, conversation_state: dict) -> Optional[InterpretationResult]:
-        """Maneja preguntas relacionadas al contexto actual de la conversación"""
-        if self.help_interpreter:
-            return self.help_interpreter.interpret(context)
-        return self.student_interpreter.interpret(context)
-
     def get_available_modules(self) -> dict:
         """Retorna información sobre los módulos disponibles"""
         return {
@@ -1707,3 +2582,131 @@ RESPONDE ÚNICAMENTE con la respuesta conversacional final.
                 "ejemplos": ["hola", "¿cómo estás?"]
             }
         }
+
+    # 🧠 MÉTODOS DE CONOCIMIENTO PROFUNDO (FASE 2)
+
+    def _validate_feasibility_with_knowledge(self, intention, user_query: str) -> dict:
+        """
+        🧠 VALIDAR FACTIBILIDAD CON CONOCIMIENTO PROFUNDO
+        Usa MasterKnowledge para evaluar si la consulta es factible
+        """
+        try:
+            query_details = {"original_query": user_query}
+
+            feasibility = self.knowledge.can_handle_request(
+                intention.intention_type,
+                intention.sub_intention,
+                query_details
+            )
+
+            if feasibility["can_handle"]:
+                self.logger.info(f"✅ [MASTER-KNOWLEDGE] Consulta factible: {feasibility['explanation']}")
+                if feasibility["limitations"]:
+                    self.logger.info(f"⚠️ [MASTER-KNOWLEDGE] Limitaciones: {feasibility['limitations']}")
+            else:
+                self.logger.warning(f"❌ [MASTER-KNOWLEDGE] Consulta no factible: {feasibility['explanation']}")
+                self.logger.info(f"💡 [MASTER-KNOWLEDGE] Alternativas: {feasibility['alternatives']}")
+
+            return feasibility
+
+        except Exception as e:
+            self.logger.error(f"Error validando factibilidad: {e}")
+            # Fallback: asumir que es factible
+            return {
+                "can_handle": True,
+                "confidence": 0.5,
+                "limitations": [],
+                "alternatives": [],
+                "explanation": "Validación de factibilidad falló, procediendo con precaución"
+            }
+
+    def _create_limitation_response(self, feasibility: dict, user_query: str) -> 'InterpretationResult':
+        """
+        💡 CREAR RESPUESTA INTELIGENTE CUANDO ALGO NO ES FACTIBLE
+        """
+        try:
+            from app.core.ai.interpretation.base_interpreter import InterpretationResult
+
+            explanation = feasibility.get("explanation", "Esta funcionalidad no está disponible")
+            alternatives = feasibility.get("alternatives", [])
+
+            # Crear respuesta empática con alternativas
+            response_parts = [
+                f"🤔 {explanation}.",
+                "",
+                "💡 **Pero puedo ayudarte con estas alternativas:**"
+            ]
+
+            for i, alternative in enumerate(alternatives, 1):
+                response_parts.append(f"{i}. {alternative}")
+
+            if not alternatives:
+                response_parts.extend([
+                    "",
+                    "📋 **Capacidades disponibles:**",
+                    "• Buscar información de alumnos",
+                    "• Generar estadísticas básicas",
+                    "• Crear constancias oficiales",
+                    "• Transformar documentos PDF"
+                ])
+
+            response_parts.append("\n¿Te gustaría probar alguna de estas opciones? 😊")
+
+            response_text = "\n".join(response_parts)
+
+            self.logger.info(f"💡 [MASTER-KNOWLEDGE] Respuesta de limitación generada")
+
+            return InterpretationResult(
+                action="limitation_explanation",
+                parameters={
+                    "response": response_text,
+                    "explanation": explanation,
+                    "alternatives": alternatives,
+                    "user_query": user_query,
+                    "human_response": response_text,
+                    "success": True
+                },
+                confidence=1.0,
+                reasoning=f"Consulta no factible: {explanation}"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error creando respuesta de limitación: {e}")
+            return None
+
+    def _debug_pause(self, title: str, data: dict):
+        """Método de debug para mostrar información en --debug-pauses"""
+        import os
+        if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
+            print(f"\n🛑 {title}")
+            for key, value in data.items():
+                if isinstance(value, list) and len(value) > 3:
+                    print(f"    ├── {key}: {value[:3]}... ({len(value)} total)")
+                elif isinstance(value, str) and len(value) > 50:
+                    print(f"    ├── {key}: {value[:50]}...")
+                else:
+                    print(f"    ├── {key}: {value}")
+            print(f"    └── Presiona ENTER para continuar...")
+            input()
+
+    def _interpret_student_report_intelligently(self, student_data: dict, original_query: str) -> str:
+        """
+        🔍 INTERPRETAR REPORTES DEL STUDENT CON CONOCIMIENTO PROFUNDO
+        Usa MasterKnowledge para analizar qué pasó y sugerir mejoras
+        """
+        try:
+            interpretation = self.knowledge.interpret_student_report(student_data, original_query)
+
+            user_explanation = interpretation.get("user_explanation", "")
+            suggestions = interpretation.get("suggestions", [])
+
+            self.logger.info(f"🔍 [MASTER-KNOWLEDGE] Interpretación: {interpretation.get('interpretation', '')}")
+
+            if suggestions:
+                self.logger.info(f"💡 [MASTER-KNOWLEDGE] Sugerencias: {suggestions}")
+
+            return user_explanation
+
+        except Exception as e:
+            self.logger.error(f"Error interpretando reporte del Student: {e}")
+            return "Operación completada."

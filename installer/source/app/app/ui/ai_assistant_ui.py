@@ -9,15 +9,11 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
-# CommandExecutor eliminado - ahora usamos MessageProcessor directamente
-
 class AIAssistantPanel(QWidget):
     """Panel de asistente de IA"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # OBSOLETO: CommandExecutor eliminado - usar MessageProcessor directamente
-        # self.command_executor = CommandExecutor()
         self.setup_ui()
 
     def setup_ui(self):

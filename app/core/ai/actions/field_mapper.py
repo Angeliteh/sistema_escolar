@@ -52,7 +52,7 @@ class FieldMapper:
             operador = criterion.get("operador", "=")
             valor = criterion.get("valor", "")
             
-            self.logger.info(f"🔍 Validando criterio: {tabla}.{campo} {operador} '{valor}'")
+            # 🔧 Validando criterio
             
             # 1. Obtener estructura de la base de datos
             structure = self._get_database_structure()
@@ -79,7 +79,7 @@ class FieldMapper:
                 "valor": mapped_field_info["valor"]
             }
             
-            self.logger.info(f"✅ Criterio mapeado: {mapped_criterion}")
+            # ✅ Criterio mapeado exitosamente
             return mapped_criterion
             
         except Exception as e:
@@ -105,7 +105,7 @@ class FieldMapper:
             
             # 1. Si el campo existe directamente, usarlo PRESERVANDO EL OPERADOR ORIGINAL
             if campo in table_columns:
-                self.logger.info(f"✅ Campo '{campo}' existe directamente en '{tabla}'")
+                # ✅ Campo existe directamente
 
                 # 🔧 NORMALIZACIÓN DE DATOS SEGÚN EL CAMPO
                 valor_normalizado = self._normalize_field_value(campo, valor)
@@ -309,7 +309,7 @@ class FieldMapper:
         if campo.lower() in uppercase_fields:
             # Normalizar a mayúsculas y limpiar espacios extra
             normalized = valor.strip().upper()
-            self.logger.info(f"🔧 Normalizado '{campo}': '{valor}' → '{normalized}'")
+            # 🔧 Valor normalizado
             return normalized
 
         # Para otros campos, solo limpiar espacios

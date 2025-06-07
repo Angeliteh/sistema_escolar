@@ -5,6 +5,7 @@ Define la personalidad, tono y contexto base que todos los prompts deben usar
 
 from typing import Dict, Any
 from app.core.config import Config
+from app.core.config.school_config_manager import get_school_config_manager
 
 class BasePromptManager:
     """
@@ -24,6 +25,9 @@ class BasePromptManager:
     """
 
     def __init__(self):
+        # 🎯 NUEVO: Gestor de configuración escolar dinámico
+        self.school_config = get_school_config_manager()
+
         self._unified_identity = None
         self._school_context = None
         self._communication_patterns = None
@@ -37,10 +41,8 @@ class BasePromptManager:
         garantizar consistencia de personalidad
         """
         if self._unified_identity is None:
-            self._unified_identity = """
-🤖 IDENTIDAD DEL SISTEMA:
-Soy el ASISTENTE INTELIGENTE de la escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ".
-No soy una herramienta, soy el cerebro digital de la escuela que conoce a todos los estudiantes.
+            # 🎯 IDENTIDAD DINÁMICA: Se adapta automáticamente a cualquier escuela
+            self._unified_identity = self.school_config.get_school_identity_text() + """
 
 🎯 MI PERSONALIDAD:
 - Profesional pero cercano, como un secretario escolar experimentado
@@ -71,13 +73,8 @@ No soy una herramienta, soy el cerebro digital de la escuela que conoce a todos 
         Este contexto debe ser idéntico en todos los prompts
         """
         if self._school_context is None:
-            self._school_context = """
-🏫 CONTEXTO DE LA ESCUELA:
-- Escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ"
-- Ciclo escolar 2024-2025
-- 211 estudiantes registrados en grados 1° a 6°
-- Sistema integral de gestión académica y administrativa
-- Base de datos completa con información académica y personal
+            # 🎯 CONTEXTO DINÁMICO: Se adapta automáticamente a cualquier escuela
+            self._school_context = self.school_config.get_school_context_text() + """
 
 📊 DATOS DISPONIBLES:
 - Información personal: nombres, CURPs, matrículas, fechas de nacimiento
@@ -204,4 +201,48 @@ Responde ÚNICAMENTE con un JSON válido siguiendo esta estructura EXACTA:
 
 ✅ CORRECTO: {{"intention_type": "ayuda_sistema"}}
 ❌ INCORRECTO: {{'intention_type': 'ayuda_sistema'}}
+"""
+
+    def get_unified_json_instructions_dynamic(self) -> str:
+        """
+        INSTRUCCIONES JSON DINÁMICAS usando SystemCatalog
+
+        Genera instrucciones JSON con ejemplos específicos para
+        guiar al LLM en la detección correcta de entidades.
+        """
+        try:
+            from app.core.ai.system_catalog import SystemCatalog
+            return SystemCatalog.get_json_instructions_with_examples()
+        except Exception as e:
+            # Fallback con ejemplos básicos
+            return """
+📋 **FORMATO DE RESPUESTA OBLIGATORIO:**
+
+**EJEMPLO: "Dame 3 alumnos de segundo grado"**
+```json
+{
+  "intention_type": "consulta_alumnos",
+  "sub_intention": "busqueda_simple",
+  "confidence": 0.95,
+  "reasoning": "Usuario solicita búsqueda específica: 3 alumnos de grado 2",
+  "detected_entities": {
+    "filtros": ["grado: 2"],
+    "limite_resultados": 3,
+    "nombres": [],
+    "accion_principal": "buscar"
+  },
+  "student_categorization": {
+    "categoria": "busqueda",
+    "sub_tipo": "simple",
+    "requiere_contexto": false,
+    "flujo_optimo": "sql_directo"
+  }
+}
+```
+
+⚠️ **REGLAS CRÍTICAS:**
+- DETECTAR LÍMITES: "dame 3" → limite_resultados: 3
+- DETECTAR FILTROS: "segundo grado" → filtros: ["grado: 2"]
+- USA COMILLAS DOBLES (") para strings
+- NO agregar explicaciones fuera del JSON
 """

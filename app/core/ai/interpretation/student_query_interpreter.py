@@ -1,11 +1,23 @@
 """
-Interpretador especializado en consultas de alumnos/estudiantes usando LLM
-Implementa la filosofía de SETs especializados con auto-reflexión integrada.
+🎯 COORDINADOR PRINCIPAL DEL STUDENT QUERY INTERPRETER
 
-ARQUITECTURA MODULAR COMPLETADA:
-- Clases especializadas implementadas y funcionando
-- Código limpio y mantenible
-- Responsabilidades separadas por componente
+RESPONSABILIDAD: Coordinar el flujo principal y delegar a componentes especializados
+TAMAÑO OBJETIVO: ~200 líneas (solo coordinación)
+
+ARQUITECTURA REFACTORIZADA:
+├── StudentQueryInterpreter (COORDINADOR - este archivo)
+├── QueryAnalyzer (Análisis de consultas)
+├── ContinuationHandler (Manejo de continuaciones)
+├── ResponseBuilder (Construcción de respuestas)
+├── DataValidator (Validación de datos)
+└── ConstanciaProcessor (Ya existe)
+
+FLUJO PRINCIPAL:
+1. Recibir instrucciones del Master
+2. Delegar análisis a QueryAnalyzer
+3. Ejecutar acciones via ActionExecutor
+4. Construir respuesta via ResponseBuilder
+5. Retornar resultado al Master
 """
 import json
 import re
@@ -27,6 +39,11 @@ from .student_query.data_normalizer import DataNormalizer
 from .student_query.response_generator import ResponseGenerator
 from .utils.json_parser import JSONParser
 
+# 🆕 NUEVOS COMPONENTES REFACTORIZADOS (ARQUITECTURA LIMPIA)
+from .student_query.query_analyzer import QueryAnalyzer
+from .student_query.continuation_handler import ContinuationHandler
+from .student_query.response_builder import ResponseBuilder
+
 class StudentQueryInterpreter(BaseInterpreter):
     """Interpretador especializado en consultas de alumnos/estudiantes usando LLM"""
 
@@ -44,6 +61,10 @@ class StudentQueryInterpreter(BaseInterpreter):
         self.response_parser = ResponseParser()
         self.gemini_client = gemini_client
 
+        # 🆕 FIELD MAPPER PARA MAPEO DINÁMICO DE CAMPOS
+        from app.core.database.field_mapper import FieldMapper
+        self.field_mapper = FieldMapper()
+
         # PromptManager centralizado para contexto escolar unificado
         self.prompt_manager = StudentQueryPromptManager()
         self.logger.debug("StudentQueryPromptManager inicializado")
@@ -59,10 +80,16 @@ class StudentQueryInterpreter(BaseInterpreter):
         self.response_generator = ResponseGenerator(gemini_client, self.prompt_manager)
         self.json_parser = JSONParser()
 
-        self.logger.debug("✅ Clases especializadas inicializadas (Arquitectura modular completada)")
+        # 🆕 INICIALIZAR NUEVOS COMPONENTES REFACTORIZADOS
+        self.query_analyzer = QueryAnalyzer(self.database_analyzer, gemini_client)
+        self.continuation_handler = ContinuationHandler(self.database_analyzer, self.sql_executor, gemini_client)
+        self.response_builder = ResponseBuilder(self.prompt_manager, gemini_client)
 
-        # 🎯 LOGS DETALLADOS DE INICIALIZACIÓN
-        self._log_detailed_technical_context()
+        self.logger.debug("✅ Clases especializadas inicializadas (Arquitectura modular completada)")
+        self.logger.debug("✅ Nuevos componentes refactorizados inicializados")
+
+        # 🎯 INICIALIZACIÓN COMPLETADA
+        self.logger.info("🎯 [STUDENT] CONTEXTO TÉCNICO CARGADO Y VERIFICADO")
 
         # 🔍 DETECTAR SI DEBUG PAUSES ESTÁ HABILITADO
         import sys
@@ -150,7 +177,7 @@ class StudentQueryInterpreter(BaseInterpreter):
         """Método abstracto requerido - siempre True porque se usa desde MasterInterpreter"""
         return True  # El MasterInterpreter ya decidió que somos el intérprete correcto
 
-    def interpret(self, context: InterpretationContext) -> Optional[InterpretationResult]:
+    def interpret(self, context: InterpretationContext, current_pdf=None) -> Optional[InterpretationResult]:
         """
         🎯 MÉTODO PRINCIPAL SIMPLIFICADO - SOLO DIRIGE AL FLUJO UNIFICADO
 
@@ -158,30 +185,13 @@ class StudentQueryInterpreter(BaseInterpreter):
         usan el MISMO flujo principal unificado de 4 prompts.
         """
         try:
-            # 🎯 DEBUG ESTRATÉGICO: LO QUE STUDENT RECIBE DEL MASTER
-            self.logger.info("=" * 60)
-            self.logger.info("🎯 [DEBUG] STUDENT RECIBE DEL MASTER:")
-            self.logger.info("=" * 60)
-            self.logger.info(f"📥 CONSULTA: '{context.user_message}'")
-
-            # Verificar si tiene intention_info del Master
+            # 🎓 [STUDENT] Recibiendo instrucciones del Master
+            from app.core.logging import debug_detailed
+            debug_detailed(self.logger, f"🔧 [STUDENT] Información del Master recibida:")
             if hasattr(context, 'intention_info') and context.intention_info:
-                self.logger.info("📥 INFORMACIÓN DEL MASTER:")
-                self.logger.info(f"     ├── Intención: {context.intention_info.get('intention_type', 'N/A')}")
-                self.logger.info(f"     ├── Sub-intención: {context.intention_info.get('sub_intention', 'N/A')}")
-                self.logger.info(f"     ├── Confianza: {context.intention_info.get('confidence', 'N/A')}")
-                self.logger.info(f"     └── Entidades: {len(context.intention_info.get('detected_entities', {}))}")
-
-                # Mostrar entidades detectadas por Master
-                entities = context.intention_info.get('detected_entities', {})
-                for key, value in entities.items():
-                    self.logger.info(f"         ├── {key}: {value}")
-            else:
-                self.logger.info("❌ NO HAY INTENTION_INFO del Master")
-
-            self.logger.info("=" * 60)
-            self.logger.info("🧠 [STUDENT] INICIANDO RAZONAMIENTO...")
-            self.logger.info("=" * 60)
+                debug_detailed(self.logger, f"🔧 [STUDENT] Categoría: {context.intention_info.get('categoria', 'N/A')}")
+                debug_detailed(self.logger, f"🔧 [STUDENT] Sub-tipo: {context.intention_info.get('sub_tipo', 'N/A')}")
+                debug_detailed(self.logger, f"🔧 [STUDENT] Complejidad: {context.intention_info.get('complejidad', 'N/A')}")
 
             # 🛑 PAUSA ESTRATÉGICA #2: STUDENT RECIBE INFORMACIÓN DEL MASTER
             import os
@@ -212,9 +222,8 @@ class StudentQueryInterpreter(BaseInterpreter):
             # 🎯 GUARDAR CONTEXTO PARA USO EN MÉTODOS INTERNOS
             self._current_context = context
 
-            # 🔄 VERIFICAR SI ES RESPUESTA A ACLARACIÓN
-            if self._is_clarification_response(context):
-                return self._handle_clarification_response(context)
+            # 🗑️ ELIMINADO: Verificación de respuesta a aclaración
+            # RAZÓN: El Master maneja todas las aclaraciones, Student solo obedece
 
             # 🆕 INICIALIZAR ESTRUCTURAS SI NO EXISTEN
             if not hasattr(context, 'conversation_history') or context.conversation_history is None:
@@ -223,16 +232,18 @@ class StudentQueryInterpreter(BaseInterpreter):
                 context.conversation_stack = []
 
             # 🎯 PROCESAMIENTO CON CONTEXTO CONVERSACIONAL PRESERVADO
+            # 🎓 [STUDENT] Procesando consulta
+            from app.core.logging import debug_detailed
             if context.conversation_stack:
-                self.logger.info(f"🎯 PROCESANDO CON CONTEXTO - {len(context.conversation_stack)} niveles disponibles")
+                debug_detailed(self.logger, f"🔧 [STUDENT] PROCESANDO CON CONTEXTO - {len(context.conversation_stack)} niveles disponibles")
             else:
-                self.logger.info("🎯 PROCESANDO CONSULTA INDIVIDUAL")
+                debug_detailed(self.logger, "🔧 [STUDENT] PROCESANDO CONSULTA INDIVIDUAL")
 
             # PREPARAR CONTEXTO CONVERSACIONAL
             conversation_context = ""
             if context.conversation_stack:
                 conversation_context = self._format_conversation_stack_for_llm(context.conversation_stack)
-                self.logger.info(f"   ├── Contexto conversacional disponible: {len(context.conversation_stack)} niveles")
+                debug_detailed(self.logger, f"🔧 [STUDENT] Contexto conversacional disponible: {len(context.conversation_stack)} niveles")
 
             # 🆕 USAR INFORMACIÓN CONSOLIDADA DEL MASTER
             # Ya no necesitamos detectar intención específica - viene del Master
@@ -250,14 +261,16 @@ class StudentQueryInterpreter(BaseInterpreter):
             flujo_optimo = master_intention.get('flujo_optimo', 'sql_directo')
             self.logger.info(f"   └── ✅ Intención consolidada: {categoria} → {flujo_optimo}")
 
-            # 🎯 FLUJO PRINCIPAL UNIFICADO - MANEJA TODO
-            self.logger.info("=" * 80)
-            self.logger.info("🎯 [VERIFICACIÓN] USANDO FLUJO CONSOLIDADO DE 3 PROMPTS")
-            self.logger.info("🎯 [VERIFICACIÓN] PROMPT 1 ELIMINADO - INFORMACIÓN VIENE DEL MASTER")
-            self.logger.info("🎯 [VERIFICACIÓN] ARQUITECTURA: Master → Student Prompt 1 → Ejecución → Student Prompt 2")
-            self.logger.info("🎯 [VERIFICACIÓN] SIN FALLBACKS - IMPLEMENTACIÓN ÚNICA")
-            self.logger.info("=" * 80)
-            return self._execute_main_3_prompt_flow(context, master_intention, conversation_context)
+            # 🎓 [STUDENT] Iniciando procesamiento con información del Master
+            self._debug_pause("🎓 [STUDENT] RECIBIENDO ORDEN DEL MASTER", {
+                "categoria": categoria,
+                "sub_tipo": master_intention.get('sub_tipo'),
+                "complejidad": master_intention.get('complejidad'),
+                "flujo_optimo": flujo_optimo,
+                "entidades_detectadas": len(master_intention.get('detected_entities', {}))
+            })
+
+            return self._execute_main_3_prompt_flow(context, master_intention, conversation_context, current_pdf)
 
         except Exception as e:
             self.logger.error(f"❌ Error en StudentQueryInterpreter: {e}")
@@ -276,7 +289,7 @@ class StudentQueryInterpreter(BaseInterpreter):
 
     # 🎯 FLUJO PRINCIPAL UNIFICADO DE 4 PROMPTS
 
-    def _execute_main_3_prompt_flow(self, context, master_intention: Dict[str, Any], conversation_context: str) -> Optional[InterpretationResult]:
+    def _execute_main_3_prompt_flow(self, context, master_intention: Dict[str, Any], conversation_context: str, current_pdf=None) -> Optional[InterpretationResult]:
         """
         🎯 FLUJO PRINCIPAL OPTIMIZADO DE 3 PROMPTS (PROMPT 1 ELIMINADO)
 
@@ -291,57 +304,18 @@ class StudentQueryInterpreter(BaseInterpreter):
         - PROMPT 3: Validación + respuesta + auto-reflexión
         """
         try:
-            self.logger.info("🔍 [FLUJO OPTIMIZADO] Iniciando con información consolidada del Master...")
-            self.logger.info("🔍 [VERIFICACIÓN] MÉTODO: _execute_main_3_prompt_flow")
-            self.logger.info("🔍 [VERIFICACIÓN] STUDENT PROMPT 1 ELIMINADO - USANDO MASTER INFO")
+            # 🔧 CRÍTICO: Almacenar master_intention para que ActionExecutor pueda accederla
+            self.master_intention = master_intention
 
-            # 🚀 FLUJO DE 3 PROMPTS OPTIMIZADO: Selección → Ejecución → Respuesta
-            self.logger.info("   ├── FLUJO DE 3 PROMPTS: Selección → Ejecución → Respuesta...")
-
-            # Usar categoría del Master (ya no necesitamos detectarla)
+            # 🎓 [STUDENT] Ejecutando flujo de 3 prompts con información del Master
+            from app.core.logging import debug_detailed
             categoria = master_intention.get('categoria', 'busqueda')
-            self.logger.info(f"   ├── [VERIFICACIÓN] Categoría del Master: {categoria}")
-            self.logger.info(f"   ├── [VERIFICACIÓN] Sub-tipo del Master: {master_intention.get('sub_tipo')}")
-            self.logger.info(f"   ├── [VERIFICACIÓN] Flujo óptimo del Master: {master_intention.get('flujo_optimo')}")
+            self.logger.info(f"🎓 [STUDENT] Ejecutando: {master_intention.get('flujo_optimo', 'procesamiento')}")
+            debug_detailed(self.logger, f"🔧 [STUDENT] Categoría: {categoria} → {master_intention.get('flujo_optimo')}")
 
-            # 🎯 VERIFICAR SI ES TRANSFORMACIÓN ANTES DE SELECCIONAR ACCIONES
-            detected_entities = master_intention.get('detected_entities', {})
-            if self._is_transformation_request({}, detected_entities):
-                self.logger.info("🔄 DETECTADA TRANSFORMACIÓN - Usando flujo especializado")
-
-                # Verificar que hay PDF cargado
-                pdf_panel = getattr(context, 'pdf_panel', None)
-                if pdf_panel and hasattr(pdf_panel, 'original_pdf') and pdf_panel.original_pdf:
-                    if self._is_external_pdf_loaded(pdf_panel):
-                        self.logger.info(f"✅ PDF externo detectado: {pdf_panel.original_pdf}")
-
-                        # Usar flujo de transformación directamente
-                        constancia_info = {
-                            "tipo_constancia": detected_entities.get('tipo_constancia', 'estudio'),
-                            "incluir_foto": detected_entities.get('incluir_foto', False)
-                        }
-
-                        return self._process_constancia_from_pdf(constancia_info, pdf_panel, master_intention)
-                    else:
-                        self.logger.warning("❌ No hay PDF externo cargado para transformar")
-                        return InterpretationResult(
-                            action="transformation_error",
-                            parameters={
-                                "message": "No hay ningún PDF cargado para transformar. Por favor, carga un PDF primero.",
-                                "error": "no_pdf_loaded"
-                            },
-                            confidence=0.8
-                        )
-                else:
-                    self.logger.warning("❌ No se puede acceder al panel PDF")
-                    return InterpretationResult(
-                        action="transformation_error",
-                        parameters={
-                            "message": "Error accediendo al panel PDF. Intenta nuevamente.",
-                            "error": "pdf_panel_error"
-                        },
-                        confidence=0.8
-                    )
+            # 🗑️ ELIMINADO: Verificación de transformación
+            # RAZÓN: Los métodos _is_transformation_request, _is_external_pdf_loaded y _process_constancia_from_pdf
+            # fueron eliminados porque violan el principio Master-Student
 
             # PROMPT 2: Selección de acciones (ahora es PROMPT 1 del Student)
             self.logger.info("   ├── PROMPT 1 (Student): Selección de acciones...")
@@ -371,7 +345,8 @@ class StudentQueryInterpreter(BaseInterpreter):
 
             # 🔧 PASAR CONVERSATION_STACK Y MASTER_INTENTION AL MÉTODO
             self.conversation_stack = context.conversation_stack  # ✅ ASIGNAR PARA QUE getattr() FUNCIONE
-            self.master_intention = getattr(context, 'intention_info', {})  # ✅ USAR INFORMACIÓN DEL MASTER DESDE CONTEXT
+            # ✅ USAR INFORMACIÓN DEL MASTER CORRECTAMENTE
+            self.master_intention = master_intention  # Ya tenemos master_intention como parámetro
             action_request = self._select_action_strategy(context.user_message, categoria, conversation_context)
 
             if not action_request:
@@ -383,7 +358,7 @@ class StudentQueryInterpreter(BaseInterpreter):
 
             # EJECUCIÓN: ActionExecutor
             self.logger.info("   ├── EJECUCIÓN: ActionExecutor...")
-            execution_result = self._execute_selected_action(action_request)
+            execution_result = self._execute_selected_action(action_request, current_pdf)
 
             if not execution_result or not execution_result.get('success'):
                 self.logger.error(f"   └── ❌ Error en ejecución: {execution_result.get('message') if execution_result else 'Sin resultado'}")
@@ -434,9 +409,33 @@ class StudentQueryInterpreter(BaseInterpreter):
             self.logger.info("   └── ✅ Respuesta final generada exitosamente")
 
             # Crear resultado final - SOLO DATOS TÉCNICOS PARA EL MASTER
-            return InterpretationResult(
-                action=execution_result.get('action_used', 'consulta_procesada'),
-                parameters={
+            action_used = execution_result.get('action_used', 'consulta_procesada')
+
+            # 🎯 CASO ESPECIAL: PRESERVAR PARÁMETROS DE TRANSFORMACIÓN
+            if action_used == 'transformation_preview':
+                # Preservar todos los parámetros específicos de transformación
+                parameters = {
+                    # 🎯 DATOS TÉCNICOS PARA EL MASTER (NO RESPUESTA FINAL)
+                    "technical_response": final_response.get("respuesta_usuario", "Consulta procesada"),
+                    "reflexion_conversacional": final_response.get("reflexion_conversacional", {}),
+                    "data": execution_result.get('data', []),
+                    "row_count": execution_result.get('row_count', 0),
+                    "sql_executed": execution_result.get('sql_executed', ''),
+                    "master_intention": master_intention,  # 🆕 Incluir información del Master
+                    "execution_summary": f"Flujo de 3 prompts completado: {categoria} → {action_request.get('accion_principal')} → {execution_result.get('row_count')} resultados",
+                    # 🚨 FLAG PARA MASTER: Indica que debe generar respuesta final
+                    "requires_master_response": True,
+                    "student_action": action_request.get('accion_principal'),
+                    "query_category": categoria,
+                    # 🎯 PRESERVAR PARÁMETROS ESPECÍFICOS DE TRANSFORMACIÓN
+                    "files": execution_result.get('files', []),
+                    "alumno": execution_result.get('alumno', {}),
+                    "transformation_info": execution_result.get('transformation_info', {}),
+                    "human_response": final_response.get("respuesta_usuario", "Vista previa de transformación generada")
+                }
+            else:
+                # Parámetros normales para otras acciones
+                parameters = {
                     # 🎯 DATOS TÉCNICOS PARA EL MASTER (NO RESPUESTA FINAL)
                     "technical_response": final_response.get("respuesta_usuario", "Consulta procesada"),
                     "reflexion_conversacional": final_response.get("reflexion_conversacional", {}),
@@ -449,7 +448,20 @@ class StudentQueryInterpreter(BaseInterpreter):
                     "requires_master_response": True,
                     "student_action": action_request.get('accion_principal'),
                     "query_category": categoria
-                },
+                }
+
+            # 🔧 DEBUG: Mostrar reporte que se envía al Master
+            self._debug_pause("📤 [STUDENT] ENVIANDO REPORTE AL MASTER", {
+                "action_ejecutada": action_request.get('accion_principal'),
+                "resultados_obtenidos": execution_result.get('row_count', 0),
+                "sql_ejecutado": execution_result.get('sql_executed', '')[:100] + "..." if execution_result.get('sql_executed') else "N/A",
+                "requiere_respuesta_master": True,
+                "datos_tecnicos_incluidos": ["data", "row_count", "sql_executed", "master_intention"]
+            })
+
+            return InterpretationResult(
+                action=action_used,
+                parameters=parameters,
                 confidence=0.9
             )
 
@@ -459,134 +471,7 @@ class StudentQueryInterpreter(BaseInterpreter):
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return None
 
-    # 🗑️ MÉTODO ELIMINADO: _execute_main_4_prompt_flow
-    # RAZÓN: Reemplazado por _execute_main_3_prompt_flow que usa información consolidada del Master
 
-    def _execute_main_4_prompt_flow_ELIMINADO(self, context, specific_intention: Dict[str, Any], conversation_context: str) -> Optional[InterpretationResult]:
-        """
-        🎯 FLUJO PRINCIPAL UNIFICADO DE 4 PROMPTS
-
-        PROPÓSITO: Maneja TODAS las consultas (búsquedas, estadísticas, constancias, etc.)
-        ARQUITECTURA: PROMPT 2 → PROMPT 3 → EJECUCIÓN → PROMPT 4
-        EJEMPLOS: "buscar garcia", "promedio de calificaciones", "constancia para luis"
-
-        FLUJO UNIFICADO:
-        - PROMPT 2: Selección de acciones (BUSCAR_UNIVERSAL, CALCULAR_ESTADISTICA, etc.)
-        - EJECUCIÓN: ActionExecutor ejecuta la acción seleccionada
-        - PROMPT 4: Validación + respuesta + auto-reflexión
-        """
-        try:
-            self.logger.info("🔍 [FLUJO BÚSQUEDA OPTIMIZADO] Iniciando con prompt integrado...")
-
-            # 🚀 FLUJO DE 4 PROMPTS OPTIMIZADO: Análisis → Selección → Ejecución → Respuesta
-            self.logger.info("   ├── FLUJO DE 4 PROMPTS: Análisis → Selección → Ejecución → Respuesta...")
-
-            # Detectar categoría para optimizar selección de acciones
-            categoria = specific_intention.get('categoria', 'busqueda')
-
-            # PROMPT 2: Selección de acciones
-            self.logger.info("   ├── PROMPT 2: Selección de acciones...")
-
-
-
-            action_request = self._select_action_strategy(context.user_message, categoria, conversation_context)
-
-            if not action_request:
-                self.logger.info("   └── ❌ No se pudo seleccionar acción")
-                return None
-            self.logger.info(f"   └── ✅ Acción seleccionada: {action_request.get('accion_principal')}")
-
-
-
-            # PROMPT 3: Ejecutar acción seleccionada
-            self.logger.info("   ├── EJECUTANDO ACCIÓN...")
-            action_result = self._execute_selected_action(action_request)
-
-            if not action_result or not action_result.get("success"):
-                self.logger.info(f"   └── ❌ Ejecución de acción falló: {action_result.get('message', 'Error desconocido')}")
-                return None
-            self.logger.info(f"   └── ✅ Acción ejecutada: {action_result.get('row_count')} resultados")
-
-            # PROMPT 4: Validar + Generar respuesta + Auto-reflexión
-            self.logger.info("   ├── PROMPT 4: Validación + respuesta + auto-reflexión...")
-
-            # Usar método especializado para estadísticas si es necesario
-            action_used = action_result.get("action_used", "")
-            if (categoria == "estadistica" or action_used == "CALCULAR_ESTADISTICA") and action_result.get("estadistica_tipo"):
-                response_with_reflection = self._validate_and_generate_statistics_response(
-                    context.user_message,
-                    action_result.get("sql_executed", ""),
-                    action_result.get("data", []),
-                    action_result.get("row_count", 0),
-                    action_result.get("estadistica_tipo", ""),
-                    action_result.get("total_elementos", 0)
-                )
-            else:
-                response_with_reflection = self._validate_and_generate_response(
-                    context.user_message,
-                    action_result.get("sql_executed", ""),
-                    action_result.get("data", []),
-                    action_result.get("row_count", 0),
-                    context.conversation_stack  # ✅ USAR CONTEXTO CONVERSACIONAL DEL CONTEXT
-                )
-
-            if not response_with_reflection:
-                self.logger.info("   └── ❌ Validación falló")
-                return None
-            self.logger.info("   └── ✅ Validación y respuesta completadas")
-
-            # Extraer respuesta y reflexión
-            human_response = response_with_reflection.get("respuesta_usuario", "Búsqueda completada")
-            reflexion = response_with_reflection.get("reflexion_conversacional", {})
-
-            # Preparar resultado final
-            result = {
-                "success": True,
-                "data": action_result.get("data", []),
-                "row_count": action_result.get("row_count", 0),
-                "sql_executed": action_result.get("sql_executed", ""),
-                "action_used": action_request.get('accion_principal', 'unknown'),
-                "human_response": human_response,
-                "auto_reflexion": reflexion
-            }
-
-            self.logger.info(f"   └── ✅ Flujo de 4 prompts completado: {result.get('row_count', 0)} resultados")
-
-            # Preparar parámetros finales
-            parameters = {
-                "sql_query": result.get("sql_executed", ""),
-                "data": result.get("data", []),
-                "row_count": result.get("row_count", 0),
-                "message": result.get("human_response", "Búsqueda completada"),
-                "human_response": result.get("human_response", "Búsqueda completada"),
-                "auto_reflexion": result.get("auto_reflexion", {}),
-                "flow_type": "four_prompt_search",
-                "action_used": result.get("action_used", "BUSCAR_UNIVERSAL"),
-                "action_strategy": "four_prompts"
-            }
-
-            self.logger.info(f"📊 [FLUJO BÚSQUEDA OPTIMIZADO] Completado: {result.get('row_count', 0)} resultados")
-            return InterpretationResult(
-                action="consulta_sql_exitosa",
-                parameters=parameters,
-                confidence=0.9
-            )
-
-        except Exception as e:
-            self.logger.error(f"❌ Error en flujo de búsqueda optimizado: {e}")
-            return InterpretationResult(
-                action="consulta_sql_fallida",
-                parameters={
-                    "error": f"Error interno en búsqueda optimizada: {str(e)}",
-                    "flow_type": "integrated_search"
-                },
-                confidence=0.1
-            )
-
-    # 🗑️ MÉTODOS ELIMINADOS: Todos los flujos paralelos ahora usan el flujo principal unificado
-
-    # 🗑️ MÉTODOS ELIMINADOS: _handle_report_flow, _handle_constancia_flow, _handle_continuation_flow, _handle_search_flow_with_context
-    # TODOS AHORA USAN EL FLUJO PRINCIPAL UNIFICADO
 
     # 🎯 MÉTODOS DEL SISTEMA DE ACCIONES
 
@@ -600,6 +485,12 @@ class StudentQueryInterpreter(BaseInterpreter):
             # 🎯 PASO 1: OBEDECER DECISIÓN DEL MASTER SOBRE CONTEXTO
             # Obtener información del Master desde los atributos asignados previamente
             master_intention = getattr(self, 'master_intention', {})
+
+            # 🔧 VERIFICACIÓN DE TIPO: Asegurar que master_intention es un diccionario
+            if not isinstance(master_intention, dict):
+                self.logger.warning(f"⚠️ master_intention no es dict: {type(master_intention)} - Usando diccionario vacío")
+                master_intention = {}
+
             requiere_contexto = master_intention.get('requiere_contexto', False)
 
             conversation_stack = getattr(self, 'conversation_stack', [])
@@ -614,7 +505,18 @@ class StudentQueryInterpreter(BaseInterpreter):
 
             if alumno_resuelto:
                 self.logger.info(f"✅ MASTER YA RESOLVIÓ ALUMNO: {alumno_resuelto['nombre']} (ID: {alumno_resuelto['id']})")
-                return self._create_action_request_for_resolved_student(master_intention.get('sub_intention'), alumno_resuelto, detected_entities)
+                # 🔧 CREAR ACTION_REQUEST PARA EL ALUMNO RESUELTO (NO EJECUTAR AQUÍ)
+                sub_intention = master_intention.get('sub_intention')
+                self.logger.info(f"🔍 Sub-intención para alumno resuelto: {sub_intention}")
+
+                action_request = self._create_action_request_for_resolved_student(sub_intention, alumno_resuelto, detected_entities)
+                if action_request:
+                    self.logger.info(f"🎯 Action request creado para flujo normal: {action_request.get('accion_principal')} con parámetros: {action_request.get('parametros')}")
+                    # 🎯 DEVOLVER ACTION_REQUEST PARA QUE EL FLUJO NORMAL LO EJECUTE
+                    return action_request
+                else:
+                    self.logger.warning(f"❌ No se pudo crear action_request para sub_intention: {sub_intention}")
+                    return None
 
             elif requiere_contexto_normalizado and conversation_stack:
                 self.logger.info(f"✅ MASTER DECIDIÓ: Usar contexto - {len(conversation_stack)} niveles disponibles")
@@ -643,12 +545,15 @@ El Master detectó los siguientes filtros específicos en la consulta:
                         campo, valor = filtro.split(':', 1)
                         campo = campo.strip()
                         valor = valor.strip()
-                        if campo.lower() == 'grado':
-                            master_info += f"- Criterio grado: {{'tabla': 'datos_escolares', 'campo': 'grado', 'operador': '=', 'valor': '{valor}'}}\n"
-                        elif campo.lower() == 'grupo':
-                            master_info += f"- Criterio grupo: {{'tabla': 'datos_escolares', 'campo': 'grupo', 'operador': '=', 'valor': '{valor}'}}\n"
-                        elif campo.lower() == 'turno':
-                            master_info += f"- Criterio turno: {{'tabla': 'datos_escolares', 'campo': 'turno', 'operador': '=', 'valor': '{valor.upper()}'}}\n"
+                        # Mapeo dinámico de campos usando FieldMapper
+                        mapped_field = self.field_mapper.map_user_field_to_db(campo.lower())
+                        if mapped_field:
+                            tabla = mapped_field.get('tabla', 'datos_escolares')
+                            campo_db = mapped_field.get('campo', campo.lower())
+                            master_info += f"- Criterio {campo}: {{'tabla': '{tabla}', 'campo': '{campo_db}', 'operador': '=', 'valor': '{valor.upper()}'}}\n"
+                        else:
+                            # Fallback para campos no mapeados
+                            master_info += f"- Criterio {campo}: {{'tabla': 'datos_escolares', 'campo': '{campo.lower()}', 'operador': '=', 'valor': '{valor.upper()}'}}\n"
 
                 master_info += "\n🔧 USAR ESTOS COMO CRITERIOS SEPARADOS, NO COMBINADOS.\n"
 
@@ -658,44 +563,45 @@ El Master detectó los siguientes filtros específicos en la consulta:
                 master_intention  # 🔧 PASAR INFORMACIÓN DEL MASTER
             )
 
-            # 🔍 DEBUG: Logging del contexto que se envía al LLM
-            self.logger.info(f"🔍 DEBUG - Contexto enviado al LLM (primeros 500 chars): {conversation_context[:500]}...")
-            if "IDs disponibles" in conversation_context:
-                # Extraer la línea de IDs para verificar
-                lines = conversation_context.split('\n')
-                for line in lines:
-                    if "IDs disponibles" in line:
-                        self.logger.info(f"🔍 DEBUG - Línea de IDs: {line}")
-                        break
+            # 🎓 [STUDENT] Preparando prompt de selección de acciones
+            self.logger.info("🧠 [STUDENT-RAZONAMIENTO] Iniciando análisis basado en descripciones")
+            self.logger.info(f"   ├── Sub-intención recibida: {master_intention.get('sub_intention', 'N/A')}")
+            self.logger.info(f"   ├── Consulta a analizar: '{user_query}'")
+            self.logger.info(f"   └── Usando razonamiento humano (no ejemplos literales)")
 
-            # 🔍 DEBUG: Verificar tamaño del prompt antes de enviar
-            prompt_size = len(action_prompt)
-            self.logger.info(f"🔍 DEBUG - Tamaño del prompt: {prompt_size} caracteres")
-            if prompt_size > 10000:
-                self.logger.warning(f"⚠️ PROMPT MUY LARGO: {prompt_size} chars - Puede causar timeout")
-                # Mostrar primeros y últimos 200 caracteres
-                self.logger.info(f"🔍 Inicio: {action_prompt[:200]}...")
-                self.logger.info(f"🔍 Final: ...{action_prompt[-200:]}")
-
-            # Enviar al LLM
-            self.logger.info("🔄 Enviando prompt al LLM...")
+            # 🎓 [STUDENT] Enviando prompt al LLM
             response = self.gemini_client.send_prompt_sync(action_prompt)
-            self.logger.info("✅ Respuesta recibida del LLM")
 
             if response:
-                # Parsear respuesta JSON
+                # 🔍 DEBUG: Mostrar respuesta del LLM para diagnosticar problema
+                self.logger.info(f"🔍 [DEBUG] Respuesta del LLM: {response[:500]}...")
                 action_request = self._parse_action_response(response)
 
+                # 🔍 DEBUG: Verificar tipo de action_request
+                self.logger.info(f"🔍 [DEBUG] Tipo de action_request: {type(action_request)}")
                 if action_request:
+                    self.logger.info(f"🔍 [DEBUG] action_request contenido: {action_request}")
+
+                # 🧠 [STUDENT-RAZONAMIENTO] Analizar decisión del LLM
+                if action_request and isinstance(action_request, dict):
+                    campos_solicitados = action_request.get('parametros', {}).get('campos_solicitados', [])
+                    if campos_solicitados:
+                        self.logger.info(f"🧠 [STUDENT-RAZONAMIENTO] LLM decidió usar campos específicos: {campos_solicitados}")
+                        self.logger.info("   ├── ⚠️ VERIFICAR: ¿Es esto correcto para 'información completa'?")
+                        if any(campo.lower() in ['informacion_completa', 'datos_completos', 'toda_la_informacion'] for campo in campos_solicitados):
+                            self.logger.warning("   └── ❌ ERROR: LLM interpretó mal - estos NO son campos reales de BD")
+                    else:
+                        self.logger.info("🧠 [STUDENT-RAZONAMIENTO] LLM NO especificó campos_solicitados")
+                        self.logger.info("   └── ✅ CORRECTO: Para información completa, usar todos los campos")
+
+                if action_request and isinstance(action_request, dict):
                     accion_principal = action_request.get('accion_principal', 'unknown')
                     estrategia = action_request.get('estrategia', 'simple')
                     razonamiento = action_request.get('razonamiento', 'N/A')
                     parametros = action_request.get('parametros', {})
 
-                    self.logger.info(f"🎯 ESTRATEGIA DE ACCIÓN SELECCIONADA:")
-                    self.logger.info(f"   - Acción principal: {accion_principal}")
-                    self.logger.info(f"   - Estrategia: {estrategia}")
-                    self.logger.info(f"   - Razonamiento: {razonamiento}")
+                    # 🎓 [STUDENT] Estrategia seleccionada
+                    self.logger.info(f"🎓 [STUDENT] Mapeando: \"{user_query}\" → {accion_principal} ({estrategia})")
 
                     # 🛑 PAUSA ESTRATÉGICA: MOSTRAR MAPEO INTELIGENTE
                     import os
@@ -714,6 +620,9 @@ El Master detectó los siguientes filtros específicos en la consulta:
                             input()
 
                     return action_request
+                elif action_request:
+                    self.logger.error(f"❌ action_request no es un diccionario: {type(action_request)} - Contenido: {action_request}")
+                    return None
                 else:
                     self.logger.warning("❌ No se pudo parsear respuesta de selección de acción")
                     return None
@@ -725,44 +634,13 @@ El Master detectó los siguientes filtros específicos en la consulta:
             self.logger.error(f"Error seleccionando estrategia de acción: {e}")
             return None
 
-    def _is_follow_up_query(self, user_query: str) -> bool:
-        """
-        🧠 DETECTAR SI ES CONSULTA DE SEGUIMIENTO INTELIGENTE
-        Usa LLM para determinar si la consulta se refiere realmente al contexto previo
-        """
-        try:
-            query_lower = user_query.lower()
-
-            # 🎯 PATRONES EXPLÍCITOS DE SEGUIMIENTO (ALTA CONFIANZA)
-            explicit_patterns = [
-                "de estos", "de esos", "de ellos", "de las anteriores",
-                "solo los", "solo las", "únicamente los", "únicamente las",
-                "el primero", "el segundo", "el tercero", "la primera", "la segunda",
-                "ese alumno", "esa alumna", "para él", "para ella"
-            ]
-
-            # Si tiene patrones explícitos, es seguimiento seguro
-            for pattern in explicit_patterns:
-                if pattern in query_lower:
-                    self.logger.info(f"🔍 Patrón explícito de seguimiento detectado: '{pattern}'")
-                    return True
-
-            # 🎯 ELIMINADO: Patrones ambiguos hardcodeados
-            # Ya tenemos ContinuationDetector con LLM inteligente que maneja esto correctamente
-
-            # 🎯 ELIMINADO: Patrones independientes hardcodeados
-            # El ContinuationDetector con LLM ya maneja esto inteligentemente
-
-            return False
-
-        except Exception as e:
-            self.logger.error(f"Error detectando consulta de seguimiento: {e}")
-            return False
+    # 🗑️ MÉTODO ELIMINADO: _is_follow_up_query
+    # RAZÓN: Hardcoding innecesario - Master ya decide si usar contexto con LLM
 
     # 🗑️ MÉTODO ELIMINADO: _analyze_context_relevance_with_llm
     # Ya no se usa - reemplazado por ContinuationDetector con LLM inteligente
 
-    def _execute_selected_action(self, action_request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _execute_selected_action(self, action_request: Dict[str, Any], current_pdf=None) -> Optional[Dict[str, Any]]:
         """
         🎯 Ejecuta la acción seleccionada por el LLM usando ActionExecutor
         """
@@ -812,14 +690,29 @@ El Master detectó los siguientes filtros específicos en la consulta:
             from app.core.ai.actions import ActionExecutor
             action_executor = ActionExecutor(self.sql_executor, self)
 
+            # 🔧 AGREGAR LÍMITE DEL MASTER AL ACTION_REQUEST
+            limite_master = self._get_master_limit()
+            if limite_master and action_request.get("accion_principal") == "BUSCAR_UNIVERSAL":
+                if "parametros" not in action_request:
+                    action_request["parametros"] = {}
+                action_request["parametros"]["limit"] = limite_master
+                self.logger.info(f"✅ Límite del Master aplicado a BUSCAR_UNIVERSAL: {limite_master}")
+
             # Ejecutar la acción
+            if current_pdf:
+                action_request["current_pdf"] = current_pdf
+                # Para TRANSFORMAR_PDF, agregar current_pdf a los parámetros de la acción
+                if action_request.get("accion_principal") == "TRANSFORMAR_PDF":
+                    if "parametros" not in action_request:
+                        action_request["parametros"] = {}
+                    action_request["parametros"]["current_pdf"] = current_pdf
+                    self.logger.info(f"✅ current_pdf agregado a parámetros de TRANSFORMAR_PDF: {current_pdf[:50] if current_pdf else 'None'}...")
             result = action_executor.execute_action_request(action_request)
 
-            self.logger.info(f"🎯 RESULTADO DE ACCIÓN:")
-            self.logger.info(f"   - Success: {result.get('success')}")
-            self.logger.info(f"   - Action used: {result.get('action_used')}")
-            self.logger.info(f"   - Row count: {result.get('row_count')}")
-            self.logger.info(f"   - Message: {result.get('message')}")
+            # 📊 [RESULT] Acción ejecutada
+            row_count = result.get('row_count', 0)
+            action_used = result.get('action_used', 'N/A')
+            self.logger.info(f"📊 [RESULT] {row_count} resultados encontrados")
 
             return result
 
@@ -871,159 +764,6 @@ El Master detectó los siguientes filtros específicos en la consulta:
 
     # ✅ PLANTILLAS SQL ELIMINADAS - INTEGRADAS EN PROMPTS DEL PROMPTMANAGER
 
-    def _validate_and_generate_statistics_response(self, user_query: str, sql_query: str, data: List[Dict], row_count: int, estadistica_tipo: str, total_elementos: int) -> Optional[Dict]:
-        """
-        PROMPT 3 ESPECIALIZADO PARA ESTADÍSTICAS: Valida + Genera respuesta estadística + Auto-reflexiona
-        """
-        try:
-            # Para estadísticas agrupadas (por grado, turno, etc.)
-            if estadistica_tipo == "conteo_agrupado" and data and len(data) > 0:
-                estadisticas = data[0] if isinstance(data, list) else data
-
-                if isinstance(estadisticas, dict):
-                    # Formatear como tabla legible
-                    respuesta_estadistica = "📊 Estadísticas de alumnos:\n\n"
-                    for grupo, cantidad in estadisticas.items():
-                        respuesta_estadistica += f"• {grupo}° grado: {cantidad} alumnos\n"
-                    respuesta_estadistica += f"\n🎯 Total general: {total_elementos} alumnos"
-
-                    reflexion = {
-                        "espera_continuacion": False,
-                        "tipo_esperado": "none",
-                        "datos_recordar": {
-                            "estadisticas": estadisticas,
-                            "total": total_elementos,
-                            "tipo": estadistica_tipo
-                        },
-                        "razonamiento": f"Se proporcionaron estadísticas de {len(estadisticas)} grupos con {total_elementos} elementos totales."
-                    }
-
-                    return {
-                        "respuesta_usuario": respuesta_estadistica,
-                        "reflexion_conversacional": reflexion,
-                        "resuelve_consulta": True
-                    }
-
-            # Para conteos simples con filtros (ej: turno vespertino)
-            elif estadistica_tipo in ["conteo", "conteo_simple"] and data and len(data) > 0:
-                resultado = data[0] if isinstance(data, list) else data
-
-                if isinstance(resultado, dict) and 'total' in resultado:
-                    cantidad = resultado['total']
-
-                    # Generar respuesta humanizada basada en la consulta
-                    if "turno vespertino" in user_query.lower():
-                        respuesta_estadistica = f"🌅 En el turno vespertino hay {cantidad} alumnos inscritos."
-                    elif "turno matutino" in user_query.lower():
-                        respuesta_estadistica = f"🌄 En el turno matutino hay {cantidad} alumnos inscritos."
-                    elif "grado" in user_query.lower():
-                        respuesta_estadistica = f"📚 Se encontraron {cantidad} alumnos que cumplen con el criterio de grado especificado."
-                    elif "escuela" in user_query.lower() or "total" in user_query.lower():
-                        respuesta_estadistica = f"🏫 La escuela tiene un total de {cantidad} alumnos inscritos."
-                    else:
-                        respuesta_estadistica = f"📊 Total de alumnos encontrados: {cantidad}"
-
-                    # Agregar contexto útil si es relevante
-                    if cantidad > 0:
-                        respuesta_estadistica += f"\n\n💡 Si necesitas ver la lista de estos alumnos, puedes preguntarme: 'muéstrame los alumnos del turno vespertino'"
-
-                    reflexion = {
-                        "espera_continuacion": False,
-                        "tipo_esperado": "none",
-                        "datos_recordar": {
-                            "conteo": cantidad,
-                            "criterio": user_query,
-                            "tipo": "conteo_simple"
-                        },
-                        "razonamiento": f"Se proporcionó un conteo simple de {cantidad} elementos."
-                    }
-
-                    return {
-                        "respuesta_usuario": respuesta_estadistica,
-                        "reflexion_conversacional": reflexion,
-                        "resuelve_consulta": True
-                    }
-
-            # Para distribuciones (con porcentajes)
-            elif estadistica_tipo == "distribucion" and data and len(data) > 0:
-                distribucion = data[0] if isinstance(data, list) else data
-
-                if isinstance(distribucion, dict):
-                    respuesta_estadistica = "📊 Distribución de alumnos:\n\n"
-                    for categoria, info in distribucion.items():
-                        if isinstance(info, dict) and 'cantidad' in info and 'porcentaje' in info:
-                            respuesta_estadistica += f"• {categoria}: {info['cantidad']} alumnos ({info['porcentaje']}%)\n"
-
-                    reflexion = {
-                        "espera_continuacion": False,
-                        "tipo_esperado": "none",
-                        "datos_recordar": {
-                            "distribucion": distribucion,
-                            "total": total_elementos,
-                            "tipo": estadistica_tipo
-                        },
-                        "razonamiento": f"Se proporcionó una distribución con {len(distribucion)} categorías."
-                    }
-
-                    return {
-                        "respuesta_usuario": respuesta_estadistica,
-                        "reflexion_conversacional": reflexion,
-                        "resuelve_consulta": True
-                    }
-
-            # Para promedios simples (ej: promedio general de calificaciones)
-            elif estadistica_tipo == "promedio_simple" and data and len(data) > 0:
-                resultado = data[0] if isinstance(data, list) else data
-
-                if isinstance(resultado, dict):
-                    # Detectar tipo de promedio
-                    if 'promedio_general' in resultado:
-                        promedio = resultado['promedio_general']
-                        respuesta_estadistica = f"📊 El promedio general de calificaciones de la escuela es: **{promedio}**"
-
-                        # Agregar contexto interpretativo
-                        if promedio >= 9.0:
-                            respuesta_estadistica += "\n\n🌟 ¡Excelente rendimiento académico!"
-                        elif promedio >= 8.0:
-                            respuesta_estadistica += "\n\n✅ Buen rendimiento académico general."
-                        elif promedio >= 7.0:
-                            respuesta_estadistica += "\n\n📈 Rendimiento académico satisfactorio."
-                        else:
-                            respuesta_estadistica += "\n\n📚 Hay oportunidades de mejora en el rendimiento académico."
-
-                    elif 'promedio_edad' in resultado:
-                        promedio = resultado['promedio_edad']
-                        respuesta_estadistica = f"📊 La edad promedio de los alumnos es: **{promedio} años**"
-                    else:
-                        # Promedio genérico
-                        campo_promedio = list(resultado.keys())[0]
-                        valor_promedio = resultado[campo_promedio]
-                        respuesta_estadistica = f"📊 Promedio calculado: **{valor_promedio}**"
-
-                    reflexion = {
-                        "espera_continuacion": False,
-                        "tipo_esperado": "none",
-                        "datos_recordar": {
-                            "promedio": resultado,
-                            "tipo": "promedio_simple",
-                            "consulta": user_query
-                        },
-                        "razonamiento": f"Se proporcionó un promedio simple. Consulta resuelta completamente."
-                    }
-
-                    return {
-                        "respuesta_usuario": respuesta_estadistica,
-                        "reflexion_conversacional": reflexion,
-                        "resuelve_consulta": True
-                    }
-
-            # Fallback: usar método normal si no es estadística reconocida
-            return self._validate_and_generate_response(user_query, sql_query, data, row_count)
-
-        except Exception as e:
-            self.logger.error(f"Error generando respuesta estadística: {e}")
-            return None
-
     def _process_continuation_with_master_guidance(self, user_query: str, conversation_stack: list) -> Optional[Dict[str, Any]]:
         """
         🎯 PROCESA CONTINUACIÓN SIGUIENDO INSTRUCCIONES DEL MASTER
@@ -1041,17 +781,67 @@ El Master detectó los siguientes filtros específicos en la consulta:
             alumno_resuelto = detected_entities.get('alumno_resuelto')
             if alumno_resuelto:
                 self.logger.info(f"✅ MASTER RESOLVIÓ ALUMNO: {alumno_resuelto}")
-                return self._execute_action_for_resolved_student(sub_intention, alumno_resuelto, detected_entities)
+                # 🔧 DEVOLVER ACTION_REQUEST, NO RESULTADO EJECUTADO
+                action_request = self._create_action_request_for_resolved_student(sub_intention, alumno_resuelto, detected_entities)
+                self.logger.info(f"🎯 [DEBUG] Action request creado en _process_continuation_with_master_guidance: {action_request}")
+                return action_request
 
-            # 🎯 CASO 2: MASTER DETECTÓ REFERENCIA POSICIONAL
-            contexto_especifico = detected_entities.get('contexto_especifico', '')
-            if 'segundo' in contexto_especifico.lower():
-                self.logger.info("🎯 RESOLVIENDO REFERENCIA POSICIONAL: segundo alumno")
-                return self._resolve_positional_reference(user_query, conversation_stack, 1, sub_intention, detected_entities)  # índice 1 = segundo
+            # 🗑️ ELIMINADO: Lógica hardcodeada de referencias posicionales
+            # RAZÓN: VIOLA PRINCIPIO MASTER-STUDENT - Student no debe tomar decisiones hardcodeadas
+            # El Master ya maneja todas las referencias con LLM semántico
 
-            # 🎯 CASO 3: USAR LÓGICA DE CONTINUACIÓN EXISTENTE
-            self.logger.info("🔄 USANDO LÓGICA DE CONTINUACIÓN TRADICIONAL")
-            return self._process_traditional_continuation(user_query, conversation_stack, sub_intention, detected_entities)
+            # 🎯 CASO 3: USAR BUSCAR_UNIVERSAL CON CONTEXTO PARA CONTINUACIÓN
+            self.logger.info("🔄 USANDO BUSCAR_UNIVERSAL CON CONTEXTO PARA CONTINUACIÓN")
+
+            # Crear action_request directamente para evitar bucle infinito
+            # Usar BUSCAR_UNIVERSAL con los IDs del contexto
+            if conversation_stack:
+                ultimo_nivel = conversation_stack[-1]
+                context_data = ultimo_nivel.get('data', [])
+
+                if context_data:
+                    # Extraer IDs del contexto
+                    ids = []
+                    for item in context_data:
+                        if isinstance(item, dict) and item.get('id'):
+                            ids.append(str(item['id']))
+
+                    if ids:
+                        # 🔧 USAR FILTROS DINÁMICOS DEL MASTER
+                        filtros_master = self._get_master_filters()
+                        filtros_adicionales = self._convert_master_filters_to_sql(filtros_master)
+
+                        # 🔧 OBTENER LÍMITE DEL MASTER
+                        limite_master = self._get_master_limit()
+
+                        action_request = {
+                            'accion_principal': 'BUSCAR_UNIVERSAL',
+                            'estrategia': 'simple',
+                            'parametros': {
+                                'criterio_principal': {
+                                    'tabla': 'alumnos',
+                                    'campo': 'id',
+                                    'operador': 'IN',
+                                    'valor': f"({','.join(ids)})"
+                                }
+                            },
+                            'razonamiento': f"Continuación con contexto: filtrar {len(ids)} alumnos del contexto usando filtros del Master: {filtros_master}"
+                        }
+
+                        # 🔧 AGREGAR FILTROS ADICIONALES SI EXISTEN
+                        if filtros_adicionales:
+                            action_request['parametros']['filtros_adicionales'] = filtros_adicionales
+                            self.logger.info(f"✅ Filtros del Master aplicados: {filtros_adicionales}")
+
+                        # 🔧 AGREGAR LÍMITE SI EXISTE
+                        if limite_master:
+                            action_request['parametros']['limit'] = limite_master
+                            self.logger.info(f"✅ Límite del Master aplicado: {limite_master}")
+
+                        return action_request
+
+            self.logger.warning("No se pudo generar action_request para continuación con contexto")
+            return None
 
         except Exception as e:
             self.logger.error(f"Error procesando continuación con Master: {e}")
@@ -1065,18 +855,70 @@ El Master detectó los siguientes filtros específicos en la consulta:
                 tipo_constancia_raw = detected_entities.get('tipo_constancia', 'estudios')
                 tipo_constancia = 'estudio' if tipo_constancia_raw == 'estudios' else tipo_constancia_raw
 
+                # 🎯 USAR NOMBRE COMPLETO COMO IDENTIFICADOR (Student mapea a BD)
+                # ✅ PRIORIZAR NOMBRE - es más confiable que ID en contexto
+                alumno_identificador = alumno_resuelto.get('nombre')
+
+                if not alumno_identificador:
+                    # Fallback solo si no hay nombre
+                    alumno_id = alumno_resuelto.get('id')
+                    if alumno_id:
+                        alumno_identificador = str(alumno_id)
+                    else:
+                        self.logger.error(f"❌ alumno_resuelto no tiene nombre ni ID: {alumno_resuelto}")
+                        return None
+
                 action_request = {
                     'accion_principal': 'GENERAR_CONSTANCIA_COMPLETA',
                     'estrategia': 'simple',
                     'parametros': {
-                        'alumno_identificador': str(alumno_resuelto.get('id')),
+                        'alumno_identificador': alumno_identificador,
                         'tipo_constancia': tipo_constancia,
                         'incluir_foto': detected_entities.get('incluir_foto', 'false') == 'true',
                         'preview_mode': True
                     },
-                    'razonamiento': f"Master resolvió alumno: {alumno_resuelto.get('nombre')} (ID: {alumno_resuelto.get('id')})"
+                    'razonamiento': f"Master resolvió alumno: {alumno_resuelto.get('nombre')} → usando nombre completo como identificador"
                 }
 
+                return action_request
+
+            elif sub_intention == 'transformacion_pdf':
+                # 🔧 NUEVO: Manejar transformación de PDF
+                self.logger.info("🔄 TRANSFORMACIÓN PDF - Procesando con PDF cargado")
+
+                # Normalizar tipo de constancia
+                tipo_constancia_raw = detected_entities.get('tipo_constancia', 'estudios')
+                tipo_constancia = 'estudio' if tipo_constancia_raw == 'estudios' else tipo_constancia_raw
+
+                action_request = {
+                    'accion_principal': 'TRANSFORMAR_PDF',  # ✅ CORRECTO
+                    'estrategia': 'simple',
+                    'parametros': {
+                        'tipo_constancia': tipo_constancia,
+                        'incluir_foto': detected_entities.get('incluir_foto', 'false') == 'true',
+                        'guardar_alumno': detected_entities.get('guardar_alumno', 'false') == 'true'
+                    },
+                    'razonamiento': f"Transformando PDF cargado a constancia de {tipo_constancia}"
+                }
+
+                return action_request
+
+            elif sub_intention == 'busqueda_simple':
+                # 🎯 NUEVO: Manejar búsqueda simple para alumno específico resuelto
+                self.logger.info("🔍 BÚSQUEDA SIMPLE - Información completa del alumno resuelto")
+                action_request = {
+                    'accion_principal': 'BUSCAR_UNIVERSAL',
+                    'estrategia': 'simple',
+                    'parametros': {
+                        'criterio_principal': {
+                            'tabla': 'alumnos',
+                            'campo': 'id',
+                            'operador': '=',
+                            'valor': str(alumno_resuelto.get('id'))
+                        }
+                    },
+                    'razonamiento': f"Master resolvió alumno específico: {alumno_resuelto.get('nombre')} (ID: {alumno_resuelto.get('id')}) - Obteniendo información completa"
+                }
                 return action_request
 
             else:
@@ -1087,609 +929,12 @@ El Master detectó los siguientes filtros específicos en la consulta:
             self.logger.error(f"Error creando action_request para alumno resuelto: {e}")
             return None
 
-    def _execute_action_for_resolved_student(self, sub_intention: str, alumno_resuelto: Dict, detected_entities: Dict) -> Optional[Dict[str, Any]]:
-        """Ejecuta acción para alumno ya resuelto por Master (MÉTODO LEGACY)"""
-        try:
-            action_request = self._create_action_request_for_resolved_student(sub_intention, alumno_resuelto, detected_entities)
-            if action_request:
-                return self._execute_selected_action(action_request)
-            return None
+    # 🗑️ MÉTODO ELIMINADO: _execute_action_for_resolved_student
+    # RAZÓN: MÉTODO LEGACY que causaba doble ejecución
+    # El flujo normal ya maneja todo correctamente con action_requests
 
-        except Exception as e:
-            self.logger.error(f"Error ejecutando acción para alumno resuelto: {e}")
-            return None
+   
 
-    def _resolve_positional_reference(self, user_query: str, conversation_stack: list, position_index: int, sub_intention: str, detected_entities: Dict) -> Optional[Dict[str, Any]]:
-        """Resuelve referencia posicional (segundo, tercero, etc.)"""
-        try:
-            # Obtener datos del último nivel
-            if not conversation_stack:
-                self.logger.error("No hay contexto disponible para resolver referencia posicional")
-                return None
-
-            ultimo_nivel = conversation_stack[-1]
-            data = ultimo_nivel.get('data', [])
-
-            if not data or len(data) <= position_index:
-                self.logger.error(f"No hay suficientes elementos para posición {position_index + 1}")
-                return None
-
-            # Obtener el alumno en la posición especificada
-            alumno_objetivo = data[position_index]
-            alumno_id = alumno_objetivo.get('id') or alumno_objetivo.get('alumno_id')
-
-            if not alumno_id:
-                self.logger.error("No se pudo obtener ID del alumno en la posición especificada")
-                return None
-
-            self.logger.info(f"✅ RESUELTO: Posición {position_index + 1} = {alumno_objetivo.get('nombre')} (ID: {alumno_id})")
-
-            # Ejecutar acción según sub-intención
-            if sub_intention == 'generar_constancia':
-                action_request = {
-                    'accion_principal': 'GENERAR_CONSTANCIA_COMPLETA',
-                    'estrategia': 'simple',
-                    'parametros': {
-                        'alumno_identificador': str(alumno_id),
-                        'tipo_constancia': detected_entities.get('tipo_constancia', 'estudio'),  # Corregido: 'estudio' no 'estudios'
-                        'incluir_foto': False,
-                        'preview_mode': True
-                    },
-                    'razonamiento': f"Referencia posicional resuelta: {alumno_objetivo.get('nombre')} (posición {position_index + 1})"
-                }
-
-                return self._execute_selected_action(action_request)
-
-            else:
-                self.logger.warning(f"Sub-intención no implementada para referencia posicional: {sub_intention}")
-                return None
-
-        except Exception as e:
-            self.logger.error(f"Error resolviendo referencia posicional: {e}")
-            return None
-
-    def _process_traditional_continuation(self, user_query: str, conversation_stack: list, sub_intention: str, detected_entities: Dict) -> Optional[Dict[str, Any]]:
-        """Procesa continuación usando lógica tradicional como fallback"""
-        try:
-            self.logger.info("🔄 USANDO LÓGICA TRADICIONAL DE CONTINUACIÓN")
-
-            # Usar el flujo normal pero con información del Master
-            categoria = detected_entities.get('categoria', 'busqueda')
-            conversation_context = self._format_conversation_stack_for_llm(conversation_stack)
-
-            # Usar prompt de selección de acciones
-            action_prompt = self.prompt_manager.get_action_selection_prompt(user_query, categoria, conversation_context)
-            response = self.gemini_client.send_prompt_sync(action_prompt)
-
-            if response:
-                action_request = self._parse_action_response(response)
-                if action_request:
-                    return action_request  # ✅ RETORNAR ACTION_REQUEST, NO EJECUTAR AQUÍ
-
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Error en continuación tradicional: {e}")
-            return None
-
-    # 🗑️ MÉTODO ELIMINADO: _detect_continuation_query
-    # RAZÓN: Student ahora obedece decisiones del Master sobre contexto
-    # El Master ya decide si requiere_contexto='true'/'false'
-
-    def _process_intelligent_continuation(self, user_query: str, continuation_info: Dict[str, Any], conversation_stack: list, detected_entities: Dict[str, Any]) -> Optional[InterpretationResult]:
-        """
-        🧠 PROCESADOR INTELIGENTE DE CONTINUACIÓN: Decide automáticamente si usar contexto o expandir búsqueda
-        """
-        try:
-            tipo_continuacion = continuation_info.get('tipo_continuacion', 'none')
-            self.logger.info(f"🧠 PROCESANDO CONTINUACIÓN INTELIGENTE: {tipo_continuacion}")
-
-            # 🎯 GUARDAR CONTEXTO TEMPORALMENTE PARA USO EN MÉTODOS INTERNOS
-            self._temp_context = getattr(self, '_current_context', None)
-
-            # 1. ANALIZAR QUÉ INFORMACIÓN TENGO EN EL CONTEXTO
-            available_data = self._analyze_available_context_data(conversation_stack)
-            self.logger.info(f"🔍 Datos disponibles en contexto: {available_data}")
-
-            # 2. ANALIZAR QUÉ INFORMACIÓN NECESITO PARA LA CONSULTA
-            required_data = self._analyze_required_information(user_query, tipo_continuacion)
-            self.logger.info(f"🎯 Información requerida: {required_data}")
-
-            # 3. DECISIÓN INTELIGENTE: ¿TENGO SUFICIENTE INFORMACIÓN?
-            decision = self._make_intelligent_decision(available_data, required_data, user_query)
-            self.logger.info(f"🧠 DECISIÓN: {decision['action']} - {decision['reason']}")
-
-            # 4. EJECUTAR ACCIÓN SEGÚN DECISIÓN
-            if decision['action'] == 'use_context':
-                # ✅ USAR CONTEXTO: Tengo suficiente información
-                return self._process_continuation_with_context(user_query, continuation_info, conversation_stack)
-
-            elif decision['action'] == 'expand_search':
-                # 🔄 EXPANDIR BÚSQUEDA: Necesito más información
-                return self._process_continuation_with_expansion(user_query, continuation_info, conversation_stack, detected_entities)
-
-            else:
-                # 🧹 SIN FALLBACKS - Si no se puede determinar la acción, que falle claramente
-                self.logger.error(f"❌ Acción no reconocida en continuación: {decision.get('action')}")
-                raise ValueError(f"Acción de continuación no reconocida: {decision.get('action')}")
-
-        except Exception as e:
-            self.logger.error(f"Error en continuación inteligente: {e}")
-            # 🧹 SIN FALLBACKS - Que falle claramente para debugging
-            raise
-        finally:
-            # 🧹 LIMPIAR CONTEXTO TEMPORAL
-            self._temp_context = None
-
-    def _analyze_available_context_data(self, conversation_stack: list) -> Dict[str, Any]:
-        """🔍 ANALIZA QUÉ INFORMACIÓN ESTÁ DISPONIBLE EN EL CONTEXTO"""
-        try:
-            if not conversation_stack:
-                return {"has_data": False, "fields": [], "count": 0}
-
-            # Obtener el último nivel con datos
-            ultimo_nivel = None
-            for level in reversed(conversation_stack):
-                if level.get('data') and len(level.get('data', [])) > 0:
-                    ultimo_nivel = level
-                    break
-
-            if not ultimo_nivel:
-                return {"has_data": False, "fields": [], "count": 0}
-
-            data = ultimo_nivel.get('data', [])
-            if not data:
-                return {"has_data": False, "fields": [], "count": 0}
-
-            # Analizar campos disponibles en el primer elemento
-            first_item = data[0] if isinstance(data, list) else data
-            available_fields = list(first_item.keys()) if isinstance(first_item, dict) else []
-
-            return {
-                "has_data": True,
-                "fields": available_fields,
-                "count": len(data) if isinstance(data, list) else 1,
-                "data_type": "list" if isinstance(data, list) else "single",
-                "sample_data": first_item
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error analizando contexto: {e}")
-            return {"has_data": False, "fields": [], "count": 0}
-
-    def _analyze_required_information(self, user_query: str, tipo_continuacion: str) -> Dict[str, Any]:
-        """🎯 ANALIZA QUÉ INFORMACIÓN SE NECESITA PARA LA CONSULTA"""
-        try:
-            user_lower = user_query.lower()
-
-            # Campos básicos que siempre se necesitan
-            basic_fields = ['nombre', 'curp']
-
-            # Detectar qué información específica se solicita
-            required_fields = basic_fields.copy()
-            detail_level = "basic"
-
-            # Detectar solicitudes de detalles completos
-            detail_keywords = ['detalles', 'información completa', 'todo', 'completo', 'datos completos']
-            if any(keyword in user_lower for keyword in detail_keywords):
-                required_fields.extend(['grado', 'grupo', 'turno', 'matricula', 'fecha_nacimiento'])
-                detail_level = "complete"
-
-            # Detectar solicitudes de constancias (requieren datos completos + calificaciones)
-            constancia_keywords = ['constancia', 'certificado', 'genera', 'generar', 'crear', 'documento']
-            if any(keyword in user_lower for keyword in constancia_keywords):
-                required_fields.extend(['grado', 'grupo', 'turno', 'matricula', 'id'])
-                detail_level = "constancia"
-
-                # Si es constancia de calificaciones, necesita datos de calificaciones
-                if 'calificaciones' in user_lower:
-                    required_fields.append('calificaciones')
-
-            # Detectar solicitudes específicas de campos
-            field_requests = {
-                'curp': ['curp'],
-                'matricula': ['matricula', 'matrícula'],
-                'grado': ['grado'],
-                'grupo': ['grupo'],
-                'turno': ['turno'],
-                'calificaciones': ['calificaciones', 'notas', 'calificación']
-            }
-
-            for field, keywords in field_requests.items():
-                if any(keyword in user_lower for keyword in keywords):
-                    if field not in required_fields:
-                        required_fields.append(field)
-
-            return {
-                "fields": required_fields,
-                "detail_level": detail_level,
-                "needs_database_search": detail_level in ["complete", "constancia"],
-                "query_type": tipo_continuacion
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error analizando requerimientos: {e}")
-            return {"fields": ['nombre', 'curp'], "detail_level": "basic", "needs_database_search": False}
-
-    def _make_intelligent_decision(self, available_data: Dict, required_data: Dict, user_query: str) -> Dict[str, str]:
-        """🧠 TOMA DECISIÓN INTELIGENTE: ¿Usar contexto o expandir búsqueda?"""
-        try:
-            # Si no hay datos disponibles, no se puede usar contexto
-            if not available_data.get("has_data", False):
-                return {
-                    "action": "expand_search",
-                    "reason": "No hay datos disponibles en el contexto"
-                }
-
-            available_fields = set(available_data.get("fields", []))
-            required_fields = set(required_data.get("fields", []))
-
-            # Verificar si tengo todos los campos necesarios
-            missing_fields = required_fields - available_fields
-
-            # DECISIÓN BASADA EN NIVEL DE DETALLE REQUERIDO
-            detail_level = required_data.get("detail_level", "basic")
-
-            if detail_level == "basic":
-                # Para consultas básicas, si tengo nombre y CURP es suficiente
-                if "nombre" in available_fields and ("curp" in available_fields or len(missing_fields) <= 1):
-                    return {
-                        "action": "use_context",
-                        "reason": f"Tengo información suficiente para consulta básica. Campos disponibles: {list(available_fields)}"
-                    }
-
-            elif detail_level == "complete":
-                # Para detalles completos, necesito expandir si faltan campos importantes
-                important_fields = {"grado", "grupo", "turno", "matricula"}
-                missing_important = important_fields - available_fields
-
-                if len(missing_important) > 2:
-                    return {
-                        "action": "expand_search",
-                        "reason": f"Faltan campos importantes para detalles completos: {list(missing_important)}"
-                    }
-                else:
-                    return {
-                        "action": "use_context",
-                        "reason": f"Tengo suficientes campos para detalles. Solo faltan: {list(missing_fields)}"
-                    }
-
-            elif detail_level == "constancia":
-                # Para constancias, siempre expandir para asegurar datos completos
-                return {
-                    "action": "expand_search",
-                    "reason": "Las constancias requieren datos completos y verificados de la base de datos"
-                }
-
-            # DECISIÓN POR DEFECTO: Si faltan pocos campos, usar contexto
-            if len(missing_fields) <= 2:
-                return {
-                    "action": "use_context",
-                    "reason": f"Solo faltan {len(missing_fields)} campos: {list(missing_fields)}"
-                }
-            else:
-                return {
-                    "action": "expand_search",
-                    "reason": f"Faltan demasiados campos: {list(missing_fields)}"
-                }
-
-        except Exception as e:
-            self.logger.error(f"Error en decisión inteligente: {e}")
-            return {
-                "action": "use_context",
-                "reason": "Error en análisis, usando contexto por defecto"
-            }
-
-    def _process_continuation_with_context(self, user_query: str, continuation_info: Dict[str, Any], conversation_stack: list) -> Optional[InterpretationResult]:
-        """✅ PROCESAR USANDO CONTEXTO: Tengo suficiente información
-        🎯 NUEVA LÓGICA: Usar tipo de continuación para decidir el método correcto
-        """
-        self.logger.info("✅ USANDO CONTEXTO: Información suficiente disponible")
-
-        # 🎯 USAR TIPO DE CONTINUACIÓN PARA DECIDIR EL MÉTODO CORRECTO
-        tipo_continuacion = continuation_info.get('tipo_continuacion', 'none')
-
-        if tipo_continuacion == "selection":
-            # ✅ SELECCIÓN: Extraer directamente del conversation_stack
-            self.logger.info("🎯 CONTINUACIÓN DE SELECCIÓN - Extrayendo directamente del contexto")
-            elemento_referenciado = continuation_info.get('elemento_referenciado')
-            return self._process_selection_continuation(user_query, elemento_referenciado, conversation_stack)
-
-        elif conversation_stack and self._is_follow_up_query(user_query):
-            # 🔄 FOLLOW-UP: Usar BUSCAR_UNIVERSAL con composición
-            self.logger.info("🔄 CONSULTA DE SEGUIMIENTO DETECTADA EN CONTEXTO - Usando BUSCAR_UNIVERSAL")
-            return self._execute_search_with_context_composition(user_query, conversation_stack)
-
-        # 🎯 FLUJO TRADICIONAL DE CONTEXTO
-        self.logger.info("💬 Usando flujo tradicional de contexto...")
-        return self._process_continuation_fallback(user_query, continuation_info, conversation_stack)
-
-    def _execute_search_with_context_composition(self, user_query: str, conversation_stack: list) -> Optional[InterpretationResult]:
-        """
-        🔍 EJECUTAR BÚSQUEDA CON COMPOSICIÓN DE CONTEXTO
-        Usa BUSCAR_UNIVERSAL con criterios del contexto + nueva consulta
-        """
-        try:
-            self.logger.info("🔍 [BÚSQUEDA CON COMPOSICIÓN] Iniciando con BUSCAR_UNIVERSAL...")
-
-            # 🎯 CONSTRUIR PARÁMETROS USANDO FILTROS DEL MASTER DIRECTAMENTE
-            from app.core.ai.actions import ActionExecutor
-            action_executor = ActionExecutor(self.sql_executor, self)
-
-            # 🧠 OBTENER FILTROS DEL MASTER DIRECTAMENTE
-            master_filters = self._get_master_filters()
-            self.logger.info(f"🧠 Filtros del Master obtenidos: {master_filters}")
-
-            # Construir parámetros usando filtros del Master + contexto
-            universal_params = action_executor.build_buscar_universal_with_master_filters(
-                user_query, conversation_stack, master_filters
-            )
-
-            # Crear action_request para BUSCAR_UNIVERSAL
-            action_request = {
-                "accion_principal": "BUSCAR_UNIVERSAL",
-                "estrategia": "simple",
-                "razonamiento": f"Consulta de seguimiento detectada. Combinando criterios del contexto con nueva consulta: '{user_query}'",
-                "parametros": universal_params
-            }
-
-            self.logger.info(f"🎯 ESTRATEGIA DE ACCIÓN SELECCIONADA (COMPOSICIÓN):")
-            self.logger.info(f"   - Acción principal: BUSCAR_UNIVERSAL")
-            self.logger.info(f"   - Estrategia: simple")
-            self.logger.info(f"   - Parámetros: {universal_params}")
-
-            # 🆕 EJECUTAR ACCIÓN SELECCIONADA
-            self.logger.info("   ├── EJECUTANDO ACCIÓN CON COMPOSICIÓN...")
-            action_result = self._execute_selected_action(action_request)
-
-            if not action_result or not action_result.get("success"):
-                self.logger.info(f"   └── ❌ Ejecución de acción con composición falló: {action_result.get('message', 'Error desconocido')}")
-                return InterpretationResult(
-                    action="consulta_sql_fallida",
-                    parameters={
-                        "error": action_result.get('message', 'Error ejecutando acción con composición'),
-                        "action_used": action_request.get('accion_principal', 'unknown')
-                    },
-                    confidence=0.2
-                )
-            self.logger.info(f"   └── ✅ Acción con composición ejecutada: {action_result.get('row_count')} resultados")
-
-            # PROMPT 3: Validar + Generar respuesta + Auto-reflexión
-            self.logger.info("   ├── PROMPT 3: Validación + respuesta + auto-reflexión...")
-            response_with_reflection = self._validate_and_generate_response(
-                user_query,
-                action_result.get("sql_executed", ""),
-                action_result.get("data", []),
-                action_result.get("row_count", 0),
-                conversation_stack  # ✅ USAR CONVERSATION_STACK DEL PARÁMETRO
-            )
-
-            if not response_with_reflection:
-                self.logger.info("   └── ❌ Validación con composición falló")
-                return InterpretationResult(
-                    action="consulta_sql_fallida",
-                    parameters={
-                        "error": "La acción con composición no resolvió correctamente la solicitud",
-                        "action_used": action_request.get('accion_principal', 'unknown')
-                    },
-                    confidence=0.2
-                )
-            self.logger.info("   └── ✅ Validación y respuesta con composición completadas")
-
-            # Extraer respuesta y reflexión
-            human_response = response_with_reflection.get("respuesta_usuario", "Respuesta procesada con composición")
-            reflexion = response_with_reflection.get("reflexion_conversacional", {})
-
-            # 🎯 USAR DATOS FILTRADOS si están disponibles en la respuesta
-            filtered_data = response_with_reflection.get("datos_filtrados", action_result.get("data", []))
-            filtered_count = response_with_reflection.get("cantidad_filtrada", action_result.get("row_count", 0))
-
-            # Preparar parámetros con información de auto-reflexión
-            parameters = {
-                "sql_query": action_result.get("sql_executed", ""),
-                "data": filtered_data,  # ✅ USAR DATOS FILTRADOS
-                "row_count": filtered_count,  # ✅ USAR COUNT FILTRADO
-                "message": human_response,
-                "human_response": human_response,
-                "auto_reflexion": reflexion,
-                "flow_type": "search_with_composition",
-                "action_used": action_request.get('accion_principal', 'unknown'),
-                "action_strategy": action_request.get('estrategia', 'simple')
-            }
-
-            self.logger.info(f"📊 [BÚSQUEDA CON COMPOSICIÓN] Completado: {action_result.get('row_count', 0)} resultados")
-            return InterpretationResult(
-                action="consulta_sql_exitosa",
-                parameters=parameters,
-                confidence=0.9
-            )
-
-        except Exception as e:
-            self.logger.error(f"❌ Error en búsqueda con composición: {e}")
-            return InterpretationResult(
-                action="consulta_sql_fallida",
-                parameters={
-                    "error": f"Error interno en búsqueda con composición: {str(e)}",
-                    "flow_type": "search_with_composition"
-                },
-                confidence=0.1
-            )
-
-    def _is_clarification_response(self, context: InterpretationContext) -> bool:
-        """
-        🔄 VERIFICAR SI ES RESPUESTA A ACLARACIÓN
-        Detecta si el usuario está respondiendo a una pregunta de aclaración del Master
-        """
-        try:
-            # Verificar si hay información de aclaración pendiente en el contexto
-            if hasattr(context, 'intention_info') and context.intention_info:
-                waiting_for = context.intention_info.get('waiting_for')
-                if waiting_for == 'clarification':
-                    self.logger.info("🔄 [STUDENT] Detectada respuesta a aclaración")
-                    return True
-
-            # Verificar en conversation_stack si hay aclaración pendiente
-            if hasattr(context, 'conversation_stack') and context.conversation_stack:
-                ultimo_nivel = context.conversation_stack[-1]
-                if ultimo_nivel.get('waiting_for') == 'clarification':
-                    self.logger.info("🔄 [STUDENT] Detectada respuesta a aclaración en stack")
-                    return True
-
-            return False
-
-        except Exception as e:
-            self.logger.error(f"Error verificando respuesta de aclaración: {e}")
-            return False
-
-    def _handle_clarification_response(self, context: InterpretationContext) -> Optional[InterpretationResult]:
-        """
-        🔄 MANEJAR RESPUESTA DE ACLARACIÓN
-        Procesa la respuesta del usuario a una pregunta de aclaración
-        """
-        try:
-            self.logger.info("🔄 [STUDENT] Procesando respuesta de aclaración")
-
-            user_response = context.user_message.strip()
-
-            # Obtener información de la aclaración pendiente
-            clarification_info = self._get_clarification_info(context)
-            if not clarification_info:
-                self.logger.error("❌ No se encontró información de aclaración pendiente")
-                return None
-
-            # Interpretar respuesta del usuario
-            selected_option = self._interpret_user_clarification(user_response, clarification_info)
-            if not selected_option:
-                self.logger.warning("⚠️ No se pudo interpretar la respuesta del usuario")
-                return InterpretationResult(
-                    action="aclaracion_invalida",
-                    parameters={
-                        "message": "No entendí tu respuesta. Por favor, responde con el número de la opción que necesitas.",
-                        "original_options": clarification_info.get("options", [])
-                    },
-                    confidence=0.5
-                )
-
-            # Procesar con la opción seleccionada
-            return self._process_with_clarification(context, clarification_info, selected_option)
-
-        except Exception as e:
-            self.logger.error(f"Error manejando respuesta de aclaración: {e}")
-            return None
-
-    def _get_clarification_info(self, context: InterpretationContext) -> dict:
-        """Obtiene información de la aclaración pendiente"""
-        try:
-            # Buscar en intention_info
-            if hasattr(context, 'intention_info') and context.intention_info:
-                if context.intention_info.get('waiting_for') == 'clarification':
-                    return {
-                        "original_query": context.intention_info.get('original_query'),
-                        "options": context.intention_info.get('ambiguity_options', []),
-                        "ambiguity_type": context.intention_info.get('ambiguity_type')
-                    }
-
-            # Buscar en conversation_stack
-            if hasattr(context, 'conversation_stack') and context.conversation_stack:
-                ultimo_nivel = context.conversation_stack[-1]
-                if ultimo_nivel.get('waiting_for') == 'clarification':
-                    return ultimo_nivel.get('clarification_info', {})
-
-            return {}
-
-        except Exception as e:
-            self.logger.error(f"Error obteniendo información de aclaración: {e}")
-            return {}
-
-    def _interpret_user_clarification(self, user_response: str, clarification_info: dict) -> dict:
-        """Interpreta la respuesta del usuario a la aclaración"""
-        try:
-            options = clarification_info.get("options", [])
-            if not options:
-                return {}
-
-            user_response = user_response.strip().lower()
-
-            # Intentar interpretar como número
-            try:
-                option_number = int(user_response)
-                if 1 <= option_number <= len(options):
-                    selected_option = options[option_number - 1]
-                    self.logger.info(f"✅ Opción seleccionada por número: {selected_option}")
-                    return selected_option
-            except ValueError:
-                pass
-
-            # Intentar interpretar por texto
-            for option in options:
-                label = option.get("label", "").lower()
-                value = option.get("value", "").lower()
-                description = option.get("description", "").lower()
-
-                if (label in user_response or
-                    value in user_response or
-                    any(word in user_response for word in label.split()) or
-                    any(word in user_response for word in description.split())):
-                    self.logger.info(f"✅ Opción seleccionada por texto: {option}")
-                    return option
-
-            return {}
-
-        except Exception as e:
-            self.logger.error(f"Error interpretando respuesta del usuario: {e}")
-            return {}
-
-    def _process_with_clarification(self, context: InterpretationContext, clarification_info: dict, selected_option: dict) -> Optional[InterpretationResult]:
-        """Procesa la consulta original con la aclaración del usuario"""
-        try:
-            self.logger.info(f"🔄 [STUDENT] Procesando con aclaración: {selected_option}")
-
-            # Reconstruir consulta original con aclaración
-            original_query = clarification_info.get("original_query", "")
-            clarified_value = selected_option.get("value", "")
-
-            # Crear nueva intención con la aclaración
-            clarified_intention = {
-                "intention_type": "consulta_alumnos",
-                "sub_intention": "busqueda_con_filtros",
-                "detected_entities": {
-                    "filtros": [clarified_value],
-                    "accion_principal": "buscar"
-                },
-                "categoria": "busqueda",
-                "sub_tipo": "filtros",
-                "complejidad": "baja",
-                "flujo_optimo": "sql_directo"
-            }
-
-            # Actualizar contexto con la nueva intención
-            context.intention_info = clarified_intention
-            context.user_message = f"{original_query} ({selected_option.get('label', '')})"
-
-            # Procesar normalmente con la aclaración
-            conversation_context = ""
-            if hasattr(context, 'conversation_stack') and context.conversation_stack:
-                conversation_context = self._format_conversation_stack_for_llm(context.conversation_stack)
-
-            return self._execute_main_3_prompt_flow(context, clarified_intention, conversation_context)
-
-        except Exception as e:
-            self.logger.error(f"Error procesando con aclaración: {e}")
-            return None
-
-    # 🗑️ MÉTODOS ELIMINADOS: COMUNICACIÓN BIDIRECCIONAL DEL STUDENT
-    # RAZÓN: Student ya no maneja comunicación bidireccional - es responsabilidad exclusiva del Master
-    #
-    # Métodos eliminados:
-    # - _check_for_bidirectional_needs()
-    # - _detect_execution_ambiguity()
-    # - _check_multiple_interpretations()
-    # - _analyze_execution_ambiguity()
-    # - _detect_unexpected_results()
-    # - _create_bidirectional_result()
-    #
-    # El Student ahora SOLO ejecuta y reporta datos al Master.
-    # El Master decide si necesita comunicación bidireccional basado en los resultados.
 
     def _get_master_filters(self) -> list:
         """
@@ -1712,159 +957,73 @@ El Master detectó los siguientes filtros específicos en la consulta:
             self.logger.error(f"Error obteniendo filtros del Master: {e}")
             return []
 
-    def _process_continuation_with_expansion(self, user_query: str, continuation_info: Dict[str, Any], conversation_stack: list, detected_entities: Dict[str, Any]) -> Optional[InterpretationResult]:
-        """🔄 PROCESAR CON EXPANSIÓN: Necesito buscar más información"""
-        self.logger.info("🔄 EXPANDIENDO BÚSQUEDA: Necesito más información de la base de datos")
-
+    def _get_master_limit(self) -> int:
+        """
+        🧠 OBTENER LÍMITE DE RESULTADOS DEL MASTER
+        Accede al límite que el Master detectó (ej: "dame 3 alumnos")
+        """
         try:
-            # 1. IDENTIFICAR ALUMNO DEL CONTEXTO
-            alumno_identificado = self._identify_student_from_context(user_query, conversation_stack)
+            master_intention = getattr(self, 'master_intention', {})
+            if master_intention:
+                detected_entities = master_intention.get('detected_entities', {})
+                limite = detected_entities.get('limite_resultados')
+                if limite and str(limite).isdigit():
+                    limite_num = int(limite)
+                    self.logger.info(f"🧠 Límite del Master encontrado: {limite_num}")
+                    return limite_num
 
-            if not alumno_identificado:
-                self.logger.error("❌ No se pudo identificar alumno del contexto")
-                raise ValueError("No se pudo identificar alumno del contexto para expansión")
-
-            # 2. GENERAR SQL PARA OBTENER INFORMACIÓN COMPLETA
-            sql_query = self._generate_expanded_sql_for_student(alumno_identificado, user_query)
-
-            if not sql_query:
-                self.logger.error("❌ No se pudo generar SQL expandido")
-                raise ValueError("No se pudo generar SQL expandido para el alumno identificado")
-
-            # 3. EJECUTAR CONSULTA EXPANDIDA
-            self.logger.info(f"🔄 Ejecutando consulta expandida: {sql_query[:100]}...")
-            result = self.sql_executor.execute_query(sql_query)
-
-            if not result.success:
-                self.logger.warning(f"❌ Consulta expandida falló: {result.message}")
-                return self._process_continuation_fallback(user_query, continuation_info, conversation_stack)
-
-            # 4. PROCESAR RESULTADOS EXPANDIDOS
-            self.logger.info(f"✅ Consulta expandida exitosa: {result.row_count} resultados")
-
-            # Generar respuesta con datos completos CON CONTEXTO
-            response_with_reflection = self._validate_and_generate_response(
-                user_query, sql_query, result.data, result.row_count, conversation_stack
-            )
-
-            if not response_with_reflection:
-                self.logger.warning("❌ No se pudo generar respuesta expandida")
-                return self._process_continuation_fallback(user_query, continuation_info, conversation_stack)
-
-            # Preparar resultado con información expandida
-            parameters = {
-                "sql_query": result.query_executed,
-                "data": result.data,
-                "row_count": result.row_count,
-                "message": response_with_reflection.get("respuesta_usuario", "Información expandida obtenida"),
-                "human_response": response_with_reflection.get("respuesta_usuario", "Información expandida obtenida"),
-                "auto_reflexion": response_with_reflection.get("reflexion_conversacional", {}),
-                "expansion_type": "intelligent_continuation"
-            }
-
-            return InterpretationResult(
-                action="consulta_sql_exitosa",
-                parameters=parameters,
-                confidence=0.95
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error en expansión de búsqueda: {e}")
-            return self._process_continuation_fallback(user_query, continuation_info, conversation_stack)
-
-    def _generate_expanded_sql_for_student(self, alumno: Dict[str, Any], user_query: str) -> Optional[str]:
-        """🔄 GENERA SQL PARA OBTENER INFORMACIÓN COMPLETA DEL ALUMNO"""
-        try:
-            # Usar nombre o CURP para identificar al alumno
-            nombre = alumno.get('nombre', '')
-            curp = alumno.get('curp', '')
-            alumno_id = alumno.get('id', '')
-
-            if not (nombre or curp or alumno_id):
-                self.logger.warning("❌ No hay información suficiente para generar SQL expandido")
-                return None
-
-            # Construir condición WHERE
-            where_conditions = []
-
-            if alumno_id:
-                where_conditions.append(f"a.id = {alumno_id}")
-            elif curp:
-                where_conditions.append(f"a.curp = '{curp}'")
-            elif nombre:
-                # Buscar por nombre (puede ser parcial)
-                nombre_parts = nombre.upper().split()
-                for part in nombre_parts:
-                    if len(part) > 2:  # Solo usar partes significativas
-                        where_conditions.append(f"a.nombre LIKE '%{part}%'")
-
-            if not where_conditions:
-                return None
-
-            where_clause = " AND ".join(where_conditions)
-
-            # Detectar si necesita calificaciones
-            user_lower = user_query.lower()
-            needs_grades = any(keyword in user_lower for keyword in ['calificaciones', 'notas', 'constancia'])
-
-            if needs_grades:
-                # SQL con JOIN para obtener calificaciones Y datos escolares
-                sql_query = f"""
-                SELECT DISTINCT
-                    a.id, a.curp, a.nombre, a.matricula, a.fecha_nacimiento, a.fecha_registro,
-                    de.grado, de.grupo, de.turno, de.ciclo_escolar, de.escuela, de.cct,
-                    c.id as calificacion_id, c.materia, c.i, c.ii, c.iii, c.promedio
-                FROM alumnos a
-                LEFT JOIN datos_escolares de ON a.id = de.alumno_id
-                LEFT JOIN calificaciones c ON a.id = c.alumno_id
-                WHERE {where_clause}
-                ORDER BY a.nombre, c.materia
-                """
-            else:
-                # SQL con JOIN para datos escolares (sin calificaciones)
-                sql_query = f"""
-                SELECT
-                    a.id, a.curp, a.nombre, a.matricula, a.fecha_nacimiento, a.fecha_registro,
-                    de.grado, de.grupo, de.turno, de.ciclo_escolar, de.escuela, de.cct
-                FROM alumnos a
-                LEFT JOIN datos_escolares de ON a.id = de.alumno_id
-                WHERE {where_clause}
-                LIMIT 1
-                """
-
-            self.logger.debug(f"SQL expandido generado: {sql_query}")
-            return sql_query
-
-        except Exception as e:
-            self.logger.error(f"Error generando SQL expandido: {e}")
+            self.logger.info("🔍 No se encontró límite del Master")
             return None
 
-    def _process_continuation_fallback(self, user_query: str, continuation_info: Dict[str, Any], conversation_stack: list, context=None) -> Optional[InterpretationResult]:
-        """🔧 FALLBACK: Usar método tradicional de continuación"""
+        except Exception as e:
+            self.logger.error(f"Error obteniendo límite del Master: {e}")
+            return None
+
+    def _convert_master_filters_to_sql(self, filtros_master: list) -> list:
+        """
+        🔧 CONVIERTE FILTROS DEL MASTER A FORMATO SQL
+        Mapea filtros como ['grupo: A'] a [{'tabla': 'datos_escolares', 'campo': 'grupo', 'operador': '=', 'valor': 'A'}]
+        """
         try:
-            tipo_continuacion = continuation_info.get('tipo_continuacion', 'none')
-            nivel_referenciado = continuation_info.get('nivel_referenciado')
-            elemento_referenciado = continuation_info.get('elemento_referenciado')
+            filtros_sql = []
 
-            self.logger.debug(f"Procesando continuación fallback tipo: {tipo_continuacion}")
+            for filtro in filtros_master:
+                if ':' in filtro:
+                    campo, valor = filtro.split(':', 1)
+                    campo = campo.strip().lower()
+                    valor = valor.strip()
 
-            if tipo_continuacion == "selection":
-                return self._process_selection_continuation(user_query, elemento_referenciado, conversation_stack)
-            elif tipo_continuacion == "action":
-                return self._process_action_continuation(user_query, nivel_referenciado, conversation_stack, context)
-            elif tipo_continuacion == "confirmation":
-                return self._process_confirmation_continuation(user_query, conversation_stack)
-            elif tipo_continuacion == "specification":
-                return self._process_specification_continuation(user_query, conversation_stack)
-            elif tipo_continuacion == "analysis":
-                return self._process_analysis_continuation(user_query, conversation_stack)
-            else:
-                self.logger.warning(f"Tipo de continuación no reconocido: {tipo_continuacion}")
-                return None
+                    # 🔧 MAPEO DINÁMICO DE CAMPOS USANDO FIELD_MAPPER
+                    mapped_field = self.field_mapper.map_user_field_to_db(campo)
+                    if mapped_field:
+                        tabla = mapped_field.get('tabla', 'datos_escolares')
+                        campo_db = mapped_field.get('campo', campo)
+                        filtros_sql.append({
+                            'tabla': tabla,
+                            'campo': campo_db,
+                            'operador': '=',
+                            'valor': valor.upper() if campo in ['turno', 'grupo'] else valor
+                        })
+                        self.logger.info(f"✅ Campo mapeado dinámicamente: {campo} → {tabla}.{campo_db}")
+                    else:
+                        # Fallback para campos no mapeados
+                        filtros_sql.append({
+                            'tabla': 'datos_escolares',
+                            'campo': campo,
+                            'operador': '=',
+                            'valor': valor.upper()
+                        })
+                        self.logger.warning(f"⚠️ Campo no mapeado, usando fallback: {campo}")
+
+            if filtros_sql:
+                self.logger.info(f"✅ Filtros convertidos a SQL: {filtros_sql}")
+
+            return filtros_sql
 
         except Exception as e:
-            self.logger.error(f"Error procesando continuación fallback: {e}")
-            return None
+            self.logger.error(f"Error convirtiendo filtros del Master a SQL: {e}")
+            return []
+
 
     def _format_conversation_stack_for_llm(self, conversation_stack: list) -> str:
         """Formatea la pila conversacional para el LLM CON IDs PARA SQL"""
@@ -1883,21 +1042,34 @@ NIVEL {i}:
             # 🆕 MOSTRAR IDs ESPECÍFICOS PARA SQL
             if level.get('data') and len(level.get('data', [])) > 0:
                 data_items = level['data']
-                context += f"- Total elementos: {len(data_items)}\n"
-                context += f"- Primeros 3 elementos: {data_items[:3]}\n"
+
+                # 🔧 VERIFICAR TIPO DE DATOS ANTES DE HACER SLICE
+                if isinstance(data_items, list):
+                    context += f"- Total elementos: {len(data_items)}\n"
+                    context += f"- Primeros 3 elementos: {data_items[:3]}\n"
+                elif isinstance(data_items, dict):
+                    context += f"- Datos estructurados: {len(data_items)} campos\n"
+                    context += f"- Campos disponibles: {list(data_items.keys())[:3]}\n"
+                else:
+                    context += f"- Datos: {type(data_items).__name__}\n"
+                    context += f"- Contenido: {str(data_items)[:100]}...\n"
 
                 # 🎯 EXTRAER IDs PARA FILTROS SQL
                 ids = []
-                for item in data_items:
-                    if isinstance(item, dict) and item.get('id'):
-                        ids.append(str(item['id']))
+                if isinstance(data_items, list):
+                    for item in data_items:
+                        if isinstance(item, dict) and item.get('id'):
+                            ids.append(str(item['id']))
+                elif isinstance(data_items, dict) and data_items.get('id'):
+                    # Si data_items es un diccionario con ID directo
+                    ids.append(str(data_items['id']))
 
                 if ids:
                     # 🔧 MOSTRAR TODOS LOS IDs, NO SOLO LOS PRIMEROS 5
                     context += f"- IDs disponibles para filtros SQL: [{', '.join(ids)}]\n"
                     context += f"- Ejemplo SQL con contexto: WHERE a.id IN ({', '.join(ids)})\n"
-                    # 🔍 DEBUG: Logging para verificar cuántos IDs se están enviando
-                    self.logger.info(f"🔍 DEBUG - Nivel {i}: Enviando {len(ids)} IDs al contexto: {ids[:10]}{'...' if len(ids) > 10 else ''}")
+                    # 🎓 [STUDENT] Contexto: IDs disponibles para nivel
+                    self.logger.info(f"🎓 [STUDENT] Contexto: {len(ids)} IDs disponibles para nivel {i}")
 
         return context
 
@@ -1955,30 +1127,21 @@ NIVEL {i}:
             # Obtener el elemento seleccionado (índice base 1)
             elemento_seleccionado = datos[elemento_referenciado - 1]
 
-            # 🎯 VERIFICAR SI ES SOLICITUD DE CONSTANCIA (IGUAL QUE EN ACTION)
-            constancia_keywords = ["constancia", "certificado", "genera", "generar", "crear", "documento"]
-            user_lower = user_query.lower()
-            is_constancia_request = any(keyword in user_lower for keyword in constancia_keywords)
+            # 🔧 ELIMINADO: Detección hardcodeada de constancias
+            # RAZÓN: VIOLA PRINCIPIO - Student no debe interpretar intenciones
+            # El Master ya detectó la intención y tipo de constancia
 
-            if is_constancia_request:
-                self.logger.info("🎯 SELECCIÓN + CONSTANCIA - Procesando DIRECTAMENTE...")
+            # 🎯 USAR INFORMACIÓN DEL MASTER DIRECTAMENTE
+            detected_entities = self.master_intention.get('detected_entities', {})
+            tipo_constancia = detected_entities.get('tipo_constancia', 'estudio')
 
-                # Extraer tipo de constancia del query
-                tipo_constancia = "estudio"  # Por defecto
-                if "calificaciones" in user_lower:
-                    tipo_constancia = "calificaciones"
-                elif "traslado" in user_lower:
-                    tipo_constancia = "traslado"
-                elif "estudios" in user_lower or "estudio" in user_lower:
-                    tipo_constancia = "estudio"
+            self.logger.info(f"🎯 USANDO TIPO DE CONSTANCIA DEL MASTER: {tipo_constancia}")
+            self.logger.info(f"   - Alumno seleccionado: {elemento_seleccionado.get('nombre', 'N/A')}")
 
-                self.logger.info(f"   - Tipo detectado: {tipo_constancia}")
-                self.logger.info(f"   - Alumno seleccionado: {elemento_seleccionado.get('nombre', 'N/A')}")
+            # 🔧 OBTENER DATOS COMPLETOS DEL ALUMNO (incluyendo ID)
+            alumno_completo = self._get_complete_student_data(elemento_seleccionado)
 
-                # 🔧 OBTENER DATOS COMPLETOS DEL ALUMNO (incluyendo ID)
-                alumno_completo = self._get_complete_student_data(elemento_seleccionado)
-
-                if not alumno_completo:
+            if not alumno_completo:
                     return InterpretationResult(
                         action="constancia_error",
                         parameters={
@@ -1988,172 +1151,15 @@ NIVEL {i}:
                         confidence=0.3
                     )
 
-                # 🚀 GENERAR CONSTANCIA DIRECTAMENTE (SIN SQL)
-                self.logger.info("🚀 GENERANDO CONSTANCIA DIRECTAMENTE DESDE SELECCIÓN")
-                return self._generate_constancia_for_student(alumno_completo, tipo_constancia, user_query)
-
-            # Si NO es constancia, usar respuesta unificada normal
-            response_message = self._generate_unified_continuation_response(
-                user_query, "selection", ultimo_nivel, conversation_stack
-            )
-
-            return InterpretationResult(
-                action="seleccion_realizada",
-                parameters={
-                    "message": response_message,
-                    "elemento_seleccionado": elemento_seleccionado,
-                    "posicion": elemento_referenciado,
-                    "consulta_original": ultimo_nivel.get('query', ''),
-                    "tipo": "seleccion"
-                },
-                confidence=0.9
-            )
+            # 🚀 GENERAR CONSTANCIA DIRECTAMENTE (SIN SQL)
+            self.logger.info("🚀 GENERANDO CONSTANCIA DIRECTAMENTE DESDE SELECCIÓN")
+            return self._generate_constancia_for_student(alumno_completo, tipo_constancia, user_query)
 
         except Exception as e:
             self.logger.error(f"Error en selección: {e}")
             return None
 
-    def _process_action_continuation(self, user_query: str, nivel_referenciado: int, conversation_stack: list, context=None) -> Optional[InterpretationResult]:
-        """Procesa continuación de tipo ACCIÓN (ej: 'constancia para él', 'CURP de ese')"""
-        try:
-            # NOTA: nivel_referenciado no se usa actualmente, se mantiene por compatibilidad
-            # Obtener el último alumno seleccionado o el último nivel con datos
-            ultimo_alumno = None
-            ultimo_nivel = None
 
-            for level in reversed(conversation_stack):
-                if level.get('data'):
-                    # Si hay un solo elemento, es una selección previa
-                    if len(level.get('data', [])) == 1:
-                        ultimo_alumno = level['data'][0]
-                        ultimo_nivel = level
-                        break
-                    # Si hay múltiples elementos, buscar si hay selección
-                    elif len(level.get('data', [])) > 1:
-                        ultimo_nivel = level
-                        # Por ahora, tomar el primero como referencia
-                        ultimo_alumno = level['data'][0]
-                        break
-
-            if not ultimo_alumno:
-                return InterpretationResult(
-                    action="continuacion_error",
-                    parameters={
-                        "error": "No hay alumno seleccionado previamente",
-                        "message": "No encuentro un alumno seleccionado previamente. ¿Podrías especificar de qué alumno necesitas información?"
-                    },
-                    confidence=0.3
-                )
-
-            # 🧠 DETECTAR SI NECESITA NUEVA CONSULTA SQL
-            needs_sql = self._detect_if_needs_sql_query(user_query, ultimo_nivel)
-
-            if needs_sql:
-                self.logger.debug("Acción requiere nueva consulta SQL")
-                # Generar nueva consulta SQL basada en datos previos
-                new_sql = self._generate_sql_for_action_continuation(user_query, ultimo_nivel)
-
-                if new_sql:
-                    self.logger.debug(f"SQL generado para continuación: {new_sql[:100]}...")
-
-                    # Ejecutar la nueva consulta
-                    result = self.sql_executor.execute_query(new_sql)
-
-                    if result.success:
-                        # BUSCAR_UNIVERSAL ya filtró correctamente - NO aplicar filtros adicionales
-                        filtered_data = result.data
-
-                        # Generar respuesta con datos reales CON CONTEXTO
-                        final_response = self._validate_and_generate_response(
-                            user_query, new_sql, filtered_data, len(filtered_data), conversation_stack
-                        )
-
-                        if final_response:
-                            return InterpretationResult(
-                                action="consulta_sql_exitosa",
-                                parameters={
-                                    "sql_query": result.query_executed,
-                                    "data": filtered_data,
-                                    "row_count": len(filtered_data),
-                                    "message": final_response.get("respuesta_usuario", "Información obtenida"),
-                                    "human_response": final_response.get("respuesta_usuario", "Información obtenida"),
-                                    "auto_reflexion": final_response.get("reflexion_conversacional", {}),
-                                    "tipo": "accion_con_sql"
-                                },
-                                confidence=0.95
-                            )
-
-            # 🎯 VERIFICAR SI ES SOLICITUD DE CONSTANCIA
-            constancia_keywords = ["constancia", "certificado", "genera", "generar", "crear", "documento"]
-            user_lower = user_query.lower()
-            is_constancia_request = any(keyword in user_lower for keyword in constancia_keywords)
-
-            if is_constancia_request:
-                self.logger.info("🎯 ACCIÓN DE CONTINUACIÓN ES CONSTANCIA - Procesando DIRECTAMENTE...")
-
-                # Extraer tipo de constancia del query
-                tipo_constancia = "estudio"  # Por defecto
-                if "calificaciones" in user_lower:
-                    tipo_constancia = "calificaciones"
-                elif "traslado" in user_lower:
-                    tipo_constancia = "traslado"
-                elif "estudios" in user_lower or "estudio" in user_lower:
-                    tipo_constancia = "estudio"
-
-                self.logger.info(f"   - Tipo detectado: {tipo_constancia}")
-
-                # 🎯 USAR ENTIDADES DEL MASTER PRIMERO, LUEGO CONTEXTO
-                # Usar contexto temporal si está disponible
-                context_to_use = context if context else getattr(self, '_temp_context', None)
-                alumno_seleccionado = self._identify_student_using_master_entities(context_to_use, conversation_stack)
-
-                if not alumno_seleccionado:
-                    self.logger.warning("❌ No se pudo identificar alumno con entidades del Master, usando contexto")
-                    alumno_seleccionado = self._identify_student_from_context(user_query, conversation_stack)
-
-                if not alumno_seleccionado:
-                    self.logger.warning("❌ No se pudo identificar alumno desde el contexto")
-                    alumno_seleccionado = ultimo_alumno  # Fallback al último alumno
-
-                self.logger.info(f"   - Alumno identificado: {alumno_seleccionado.get('nombre', 'N/A')}")
-
-                # 🔧 OBTENER DATOS COMPLETOS DEL ALUMNO (incluyendo ID)
-                alumno_completo = self._get_complete_student_data(alumno_seleccionado)
-
-                if not alumno_completo:
-                    return InterpretationResult(
-                        action="constancia_error",
-                        parameters={
-                            "message": f"❌ No se pudieron obtener los datos completos de {alumno_seleccionado.get('nombre', 'N/A')}",
-                            "error": "incomplete_student_data"
-                        },
-                        confidence=0.3
-                    )
-
-                # 🚀 GENERAR CONSTANCIA DIRECTAMENTE (SIN SQL)
-                self.logger.info("🚀 GENERANDO CONSTANCIA DIRECTAMENTE DESDE CONTEXTO")
-                return self._generate_constancia_for_student(alumno_completo, tipo_constancia, user_query)
-
-            # Si no necesita SQL o falló, usar respuesta LLM unificada
-            self.logger.debug("Acción NO requiere SQL, usando respuesta LLM unificada")
-            response_message = self._generate_unified_continuation_response(
-                user_query, "action", ultimo_nivel, conversation_stack
-            )
-
-            return InterpretationResult(
-                action="accion_realizada",
-                parameters={
-                    "message": response_message,
-                    "alumno": ultimo_alumno,
-                    "accion_solicitada": user_query,
-                    "tipo": "accion"
-                },
-                confidence=0.9
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error en acción: {e}")
-            return None
 
     def _identify_student_using_master_entities(self, context, conversation_stack: list) -> Optional[Dict[str, Any]]:
         """
@@ -2363,60 +1369,6 @@ NIVEL {i}:
             # 🧹 SIN FALLBACKS - Que falle claramente para debugging
             raise
 
-    def _detect_if_needs_sql_query(self, user_query: str, ultimo_nivel: Dict) -> bool:
-        """Detecta si la consulta de continuación necesita ejecutar SQL en lugar de solo usar LLM"""
-        try:
-            user_lower = user_query.lower()
-
-            # 🎯 PRIORIDAD 1: Si es solicitud de CONSTANCIA, NO necesita SQL
-            constancia_keywords = ["constancia", "certificado", "genera", "generar", "crear", "documento"]
-            is_constancia_request = any(keyword in user_lower for keyword in constancia_keywords)
-
-            if is_constancia_request:
-                self.logger.debug(f"Es solicitud de constancia, NO necesita SQL: '{user_query}'")
-                return False
-
-            # Palabras clave que indican necesidad de consulta SQL
-            sql_indicators = [
-                "nombre", "nombres", "curp", "matrícula", "matricula", "grado", "grupo", "turno",
-                "fecha", "dirección", "direccion", "teléfono", "telefono", "padre", "madre",
-                "calificaciones", "promedio", "datos", "información", "informacion",
-                "dame", "muestra", "dime", "cuál", "cual", "quién", "quien"
-            ]
-
-            # Si la consulta contiene indicadores de datos específicos
-            if any(indicator in user_lower for indicator in sql_indicators):
-                self.logger.debug(f"Detectado indicador SQL en: '{user_query}'")
-
-                # Verificar si los datos previos son incompletos para responder
-                previous_data = ultimo_nivel.get('data', [])
-
-                if previous_data:
-                    # Si los datos previos solo tienen fechas pero se piden nombres
-                    if "nombre" in user_lower and all('nombre' not in str(item) for item in previous_data):
-                        self.logger.debug("Datos previos no tienen nombres, necesita SQL")
-                        return True
-
-                    # Si se pide información específica que no está en los datos previos
-                    if any(field in user_lower for field in ["curp", "matrícula", "grado", "grupo", "dirección"]):
-                        # Verificar si esa información ya está disponible
-                        has_requested_info = any(
-                            any(field in str(item).lower() for item in previous_data)
-                            for field in ["curp", "matrícula", "grado", "grupo", "dirección"]
-                            if field in user_lower
-                        )
-                        if not has_requested_info:
-                            self.logger.debug("Información específica no disponible, necesita SQL")
-                            return True
-
-                return True
-
-            return False
-
-        except Exception as e:
-            self.logger.error(f"Error detectando necesidad SQL: {e}")
-            return False
-
     def _generate_sql_for_action_continuation(self, user_query: str, ultimo_nivel: Dict) -> Optional[str]:
         """
         Genera SQL para continuación basándose en datos previos
@@ -2455,425 +1407,7 @@ NIVEL {i}:
             self.logger.error(f"Error generando SQL de continuación: {e}")
             return None
 
-    def _process_confirmation_continuation(self, user_query: str, conversation_stack: list) -> Optional[InterpretationResult]:
-        """
-        CONTINUACIÓN INTELIGENTE: El LLM razona qué acción ejecutar automáticamente
-        """
-        try:
-            # Obtener el último nivel que espera confirmación
-            ultimo_nivel = None
-            for level in reversed(conversation_stack):
-                if level.get('awaiting') in ['confirmation', 'action', 'specification']:
-                    ultimo_nivel = level
-                    break
 
-            if not ultimo_nivel:
-                return InterpretationResult(
-                    action="continuacion_error",
-                    parameters={
-                        "error": "No hay acción pendiente de confirmación",
-                        "message": "No encuentro ninguna acción pendiente de confirmación. ¿En qué puedo ayudarte?"
-                    },
-                    confidence=0.3
-                )
-
-            # 🆕 VERIFICAR SI ES CONFIRMACIÓN DE CONSTANCIA REAL (no solicitud directa)
-            # CORREGIDO: Solo procesar como confirmación si realmente es una confirmación simple
-            is_real_constancia_confirmation = (
-                ultimo_nivel.get("estado") == "vista_previa_generada" and
-                self._is_simple_confirmation(user_query)  # Solo "sí", "ok", "confirmar", etc.
-            )
-
-            if is_real_constancia_confirmation:
-                self.logger.info(f"🎯 CONFIRMACIÓN SIMPLE DE CONSTANCIA DETECTADA")
-                self.logger.info(f"   - Estado: {ultimo_nivel.get('estado', 'N/A')}")
-                self.logger.info(f"   - Awaiting: {ultimo_nivel.get('awaiting', 'N/A')}")
-                self.logger.info(f"   - Tipo constancia: {ultimo_nivel.get('tipo_constancia', 'N/A')}")
-
-                confirmation_type = self._detect_confirmation_type(user_query, ultimo_nivel)
-                self.logger.info(f"   - Tipo confirmación: {confirmation_type}")
-
-                return self._process_constancia_confirmation(user_query, confirmation_type, ultimo_nivel)
-
-            # 🧠 PROMPT INTELIGENTE: LLM decide qué hacer automáticamente
-            intelligent_continuation_prompt = f"""
-Eres el asistente inteligente de la escuela "PROF. MAXIMO GAMIZ FERNANDEZ".
-
-CONTEXTO CONVERSACIONAL:
-- Consulta anterior del usuario: "{ultimo_nivel.get('query', 'N/A')}"
-- Mi respuesta anterior: "{ultimo_nivel.get('message', 'N/A')[:200]}..."
-- Tipo de continuación esperada: {ultimo_nivel.get('awaiting', 'N/A')}
-- Datos disponibles: {ultimo_nivel.get('row_count', 0)} elementos
-
-NUEVA CONSULTA DEL USUARIO: "{user_query}"
-
-🧠 ANÁLISIS INTELIGENTE:
-El usuario está confirmando/continuando con la acción anterior. Debo:
-
-1. RAZONAR sobre qué acción específica ejecutar
-2. GENERAR automáticamente la consulta SQL necesaria
-3. ACTUAR sin preguntar más
-
-EJEMPLOS DE RAZONAMIENTO:
-- Si era "estadísticas" → Generar estadísticas detalladas por grado/turno/calificaciones
-- Si era "lista de alumnos" → Proporcionar más detalles o servicios
-- Si era "búsqueda" → Ofrecer acciones específicas para los resultados
-
-ESTRUCTURA DE LA BASE DE DATOS:
-{self._get_sql_context()}
-
-INSTRUCCIONES:
-1. Analiza qué quiere el usuario basado en el contexto
-2. Genera la consulta SQL apropiada para completar la acción
-3. NO preguntes más, EJECUTA la acción
-
-RESPONDE CON:
-{{
-    "accion_a_ejecutar": "generar_sql|proporcionar_info|ofrecer_servicios",
-    "sql_query": "SELECT ... (si aplica)",
-    "razonamiento": "Por qué esta es la acción correcta",
-    "mensaje_usuario": "Respuesta natural para el usuario"
-}}
-"""
-
-            # Enviar al LLM para decisión inteligente
-            response = self.gemini_client.send_prompt_sync(intelligent_continuation_prompt)
-            continuation_decision = self._parse_json_response(response)
-
-            if not continuation_decision:
-                # Fallback: respuesta básica
-                return InterpretationResult(
-                    action="confirmacion_realizada",
-                    parameters={
-                        "message": f"Perfecto, continuando con la acción basada en: '{ultimo_nivel.get('query', 'consulta anterior')}'",
-                        "accion_confirmada": ultimo_nivel.get('query', ''),
-                        "tipo": "confirmacion"
-                    },
-                    confidence=0.6
-                )
-
-            # Ejecutar la acción decidida por el LLM
-            accion = continuation_decision.get('accion_a_ejecutar', 'proporcionar_info')
-
-            if accion == 'generar_sql' and continuation_decision.get('sql_query'):
-                # 🚀 EJECUTAR SQL AUTOMÁTICAMENTE
-                sql_query = continuation_decision.get('sql_query')
-                self.logger.debug(f"LLM decidió ejecutar SQL: {sql_query[:100]}...")
-
-                result = self.sql_executor.execute_query(sql_query)
-
-                if result.success:
-                    # Generar respuesta final con los nuevos datos CON CONTEXTO
-                    final_response = self._validate_and_generate_response(
-                        f"{ultimo_nivel.get('query', '')} (continuación: {user_query})",
-                        sql_query, result.data, result.row_count, conversation_stack
-                    )
-
-                    if final_response:
-                        return InterpretationResult(
-                            action="consulta_sql_exitosa",
-                            parameters={
-                                "sql_query": result.query_executed,
-                                "data": result.data,
-                                "row_count": result.row_count,
-                                "message": final_response.get("respuesta_usuario", continuation_decision.get('mensaje_usuario', 'Acción completada')),
-                                "human_response": final_response.get("respuesta_usuario", continuation_decision.get('mensaje_usuario', 'Acción completada')),
-                                "auto_reflexion": final_response.get("reflexion_conversacional", {}),
-                                "tipo": "continuacion_inteligente"
-                            },
-                            confidence=0.9
-                        )
-
-            # Si no es SQL o falló, usar respuesta del LLM
-            return InterpretationResult(
-                action="continuacion_inteligente",
-                parameters={
-                    "message": continuation_decision.get('mensaje_usuario', 'Acción completada'),
-                    "razonamiento": continuation_decision.get('razonamiento', ''),
-                    "accion_confirmada": ultimo_nivel.get('query', ''),
-                    "tipo": "continuacion"
-                },
-                confidence=0.8
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error en continuación inteligente: {e}")
-            return None
-
-    def _process_specification_continuation(self, user_query: str, conversation_stack: list) -> Optional[InterpretationResult]:
-        """Procesa continuación de tipo ESPECIFICACIÓN (ej: 'de qué tipo', 'con foto')"""
-        try:
-            # Obtener el último nivel que espera especificación
-            ultimo_nivel = None
-            for level in reversed(conversation_stack):
-                if level.get('awaiting') == 'specification':
-                    ultimo_nivel = level
-                    break
-
-            if not ultimo_nivel:
-                return InterpretationResult(
-                    action="continuacion_error",
-                    parameters={
-                        "error": "No hay especificación pendiente",
-                        "message": "No encuentro ninguna especificación pendiente. ¿Qué información específica necesitas?"
-                    },
-                    confidence=0.3
-                )
-
-            # Generar respuesta de especificación
-            response_message = f"Entendido, procesando especificación '{user_query}' para: '{ultimo_nivel.get('query', 'consulta anterior')}'"
-
-            return InterpretationResult(
-                action="especificacion_realizada",
-                parameters={
-                    "message": response_message,
-                    "especificacion": user_query,
-                    "consulta_original": ultimo_nivel.get('query', ''),
-                    "tipo": "especificacion"
-                },
-                confidence=0.9
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error en especificación: {e}")
-            return None
-
-    def _process_analysis_continuation(self, user_query: str, conversation_stack: list) -> Optional[InterpretationResult]:
-        """
-        🔍 PROCESA CONTINUACIÓN DE TIPO ANALYSIS
-
-        Para consultas como "de todos ellos quienes tienen calificaciones?"
-        que analizan/filtran datos del contexto anterior.
-        """
-        try:
-            self.logger.info("🔍 PROCESANDO CONTINUACIÓN TIPO ANALYSIS")
-
-            # 1. OBTENER DATOS DEL CONTEXTO
-            ultimo_nivel = conversation_stack[-1] if conversation_stack else None
-            if not ultimo_nivel:
-                self.logger.warning("❌ No hay contexto disponible para análisis")
-                return None
-
-            # 🎯 OBTENER TODOS LOS DATOS DEL CONTEXTO (no solo la muestra)
-            context_data = ultimo_nivel.get('data', [])
-            total_context_count = ultimo_nivel.get('row_count', len(context_data))
-
-            # 🚨 PROBLEMA: Solo tenemos muestra de 5, necesitamos todos los datos
-            if len(context_data) < total_context_count:
-                self.logger.warning(f"⚠️ Solo tengo {len(context_data)} elementos en memoria de {total_context_count} totales")
-                self.logger.info("🔄 Necesito obtener todos los datos del contexto desde la base de datos")
-
-                # 🎯 DETECTAR GRADO DEL CONTEXTO AUTOMÁTICAMENTE
-                grado = None
-                if context_data and len(context_data) > 0:
-                    grado = context_data[0].get('grado')
-
-                if grado:
-                    # Re-ejecutar consulta para obtener TODOS los datos del grado
-                    from app.core.ai.actions import ActionExecutor
-                    action_executor = ActionExecutor(self.sql_executor, self)
-
-                    action_request = {
-                        "estrategia": "simple",
-                        "accion_principal": "LISTAR_POR_CRITERIO",
-                        "parametros": {
-                            "criterio_campo": "grado",
-                            "criterio_valor": str(grado),
-                            "filtro_calificaciones": None,
-                            "incluir_datos_completos": True
-                        },
-                        "razonamiento": f"Obtener todos los datos del grado {grado} para análisis completo"
-                    }
-
-                    full_data_result = action_executor.execute_action_request(action_request)
-                    if full_data_result.get("success", False):
-                        context_data = full_data_result.get("data", [])
-                        total_context_count = len(context_data)
-                        self.logger.info(f"✅ Contexto expandido: {total_context_count} elementos del grado {grado}")
-                    else:
-                        self.logger.warning("❌ No se pudieron obtener todos los datos del contexto")
-                else:
-                    self.logger.warning("❌ No se pudo detectar el grado del contexto")
-
-            if not context_data:
-                self.logger.warning("❌ No hay datos en el contexto para analizar")
-                return None
-
-            self.logger.info(f"📊 Analizando {len(context_data)} elementos del contexto (total: {total_context_count})")
-
-            # 2. USAR SISTEMA DE ACCIONES DIRECTAMENTE
-            # Crear ActionExecutor dinámicamente (como en _execute_selected_action)
-            from app.core.ai.actions import ActionExecutor
-            action_executor = ActionExecutor(self.sql_executor, self)
-
-            # 🎯 DETECTAR FILTROS COMBINADOS PRIMERO
-            user_lower = user_query.lower()
-
-            if ("vespertino" in user_lower and
-                ("calificaciones" in user_lower or "que tienen calificaciones" in user_lower)):
-                # 🎯 FILTRAR POR TURNO VESPERTINO + CALIFICACIONES (desde contexto previo)
-                self.logger.info(f"🔍 Filtrando {len(context_data)} estudiantes del contexto por turno vespertino (de los que ya tienen calificaciones)")
-
-                filtered_students = []
-                for student in context_data:
-                    turno = student.get('turno', '').upper()
-                    if turno == 'VESPERTINO':
-                        filtered_students.append(student)
-
-                self.logger.info(f"✅ Filtrado completado: {len(filtered_students)} de {len(context_data)} estudiantes son del turno vespertino")
-
-                # 🎯 GENERAR RESPUESTA CONVERSACIONAL
-                conversational_response = self._generate_contextual_response(
-                    user_query,
-                    total_context_count,
-                    len(filtered_students),
-                    "turno_vespertino_con_calificaciones",
-                    conversation_stack
-                )
-
-                self.logger.info(f"🎯 Respuesta conversacional generada: {conversational_response[:100]}...")
-
-                # Crear resultado simulando la estructura de ActionExecutor
-                action_result = {
-                    "success": True,
-                    "data": filtered_students,
-                    "row_count": len(filtered_students),
-                    "action_used": "FILTRAR_POR_TURNO_VESPERTINO_CON_CALIFICACIONES_CONTEXTO",
-                    "message": conversational_response,
-                    "sql_executed": "-- Filtrado en memoria usando contexto conversacional",
-                    "filtro_aplicado": "turno_vespertino_con_calificaciones_contexto"
-                }
-
-            elif ("matutino" in user_lower and
-                  ("calificaciones" in user_lower or "que tienen calificaciones" in user_lower)):
-                # 🎯 FILTRAR POR TURNO MATUTINO + CALIFICACIONES (desde contexto previo)
-                self.logger.info(f"🔍 Filtrando {len(context_data)} estudiantes del contexto por turno matutino (de los que ya tienen calificaciones)")
-
-                filtered_students = []
-                for student in context_data:
-                    turno = student.get('turno', '').upper()
-                    if turno == 'MATUTINO':
-                        filtered_students.append(student)
-
-                self.logger.info(f"✅ Filtrado completado: {len(filtered_students)} de {len(context_data)} estudiantes son del turno matutino")
-
-                # 🎯 GENERAR RESPUESTA CONVERSACIONAL
-                conversational_response = self._generate_contextual_response(
-                    user_query,
-                    total_context_count,
-                    len(filtered_students),
-                    "turno_matutino_con_calificaciones",
-                    conversation_stack
-                )
-
-                self.logger.info(f"🎯 Respuesta conversacional generada: {conversational_response[:100]}...")
-
-                # Crear resultado simulando la estructura de ActionExecutor
-                action_result = {
-                    "success": True,
-                    "data": filtered_students,
-                    "row_count": len(filtered_students),
-                    "action_used": "FILTRAR_POR_TURNO_MATUTINO_CON_CALIFICACIONES_CONTEXTO",
-                    "message": conversational_response,
-                    "sql_executed": "-- Filtrado en memoria usando contexto conversacional",
-                    "filtro_aplicado": "turno_matutino_con_calificaciones_contexto"
-                }
-
-            # 🚀 FILTRO DINÁMICO UNIVERSAL - ÚNICA IMPLEMENTACIÓN
-            self.logger.info(f"🚀 Aplicando filtro dinámico para: {user_query}")
-
-            # Extraer criterios usando LLM
-            filter_criteria = self._extract_filter_criteria_with_llm(user_query, context_data)
-
-            if filter_criteria and filter_criteria.get('tiene_filtros', False):
-                # Aplicar filtro dinámico
-                filtered_students = self._apply_dynamic_filter(context_data, filter_criteria)
-
-                self.logger.info(f"✅ Filtro dinámico completado: {len(filtered_students)} de {len(context_data)} estudiantes cumplen los criterios")
-
-                # Generar respuesta conversacional dinámica
-                conversational_response = self._generate_dynamic_filter_response(
-                    user_query,
-                    total_context_count,
-                    len(filtered_students),
-                    filter_criteria,
-                    conversation_stack
-                )
-
-                # Crear resultado con filtro dinámico aplicado
-                action_result = {
-                    "success": True,
-                    "data": filtered_students,
-                    "row_count": len(filtered_students),
-                    "action_used": "FILTRAR_CONTEXTO_DINÁMICO",
-                    "message": conversational_response,
-                    "sql_executed": "-- Filtro dinámico aplicado en memoria usando LLM",
-                    "filtro_aplicado": "filtro_dinamico_contexto"
-                }
-            else:
-                # No se detectaron filtros válidos - usar contexto completo
-                self.logger.warning(f"⚠️ No se detectaron criterios de filtro válidos para: {user_query}")
-                filtered_students = context_data
-
-                conversational_response = self._generate_contextual_response(
-                    user_query,
-                    total_context_count,
-                    len(filtered_students),
-                    "sin_filtro",
-                    conversation_stack
-                )
-
-                action_result = {
-                    "success": True,
-                    "data": filtered_students,
-                    "row_count": len(filtered_students),
-                    "action_used": "SIN_FILTRO_CONTEXTO",
-                    "message": conversational_response,
-                    "sql_executed": "-- Sin filtro aplicado, usando contexto completo",
-                    "filtro_aplicado": "sin_filtro_contexto"
-                }
-
-            if not action_result.get("success", False):
-                self.logger.warning(f"❌ Acción falló: {action_result.get('message', 'Error desconocido')}")
-                return None
-
-            # 3. GENERAR RESULTADO CON RESPUESTA CONVERSACIONAL Y ACTUALIZAR CONTEXTO
-            filtered_data = action_result.get("data", [])
-            filtered_count = action_result.get("row_count", 0)
-
-            # 🎯 ACTUALIZAR CONTEXTO CONVERSACIONAL PARA PRÓXIMAS CONTINUACIONES
-            new_context_data = {
-                "espera_continuacion": True,  # Permitir más continuaciones
-                "tipo_esperado": "analysis",
-                "datos_recordar": {
-                    "query": user_query,  # La consulta actual, no la original
-                    "data": filtered_data[:5] if filtered_count > 5 else filtered_data,
-                    "row_count": filtered_count,
-                    "context": f"Lista de {filtered_count} alumnos filtrada disponible",
-                    "filter_applied": action_result.get("filtro_aplicado", "filtro_contexto")
-                },
-                "razonamiento": f"Filtré la lista anterior. El usuario podría querer aplicar más filtros a estos {filtered_count} resultados."
-            }
-
-            return InterpretationResult(
-                action="consulta_sql_exitosa",
-                parameters={
-                    "sql_query": action_result.get("sql_executed", ""),
-                    "data": filtered_data,
-                    "row_count": filtered_count,
-                    "message": action_result.get("message", "Análisis completado"),
-                    "human_response": action_result.get("message", "Análisis completado"),  # 🎯 USAR RESPUESTA CONVERSACIONAL
-                    "auto_reflexion": new_context_data,  # 🎯 CONTEXTO ACTUALIZADO
-                    "flow_type": "analysis_continuation",
-                    "action_used": action_result.get("action_used", "ANALYSIS"),
-                    "action_strategy": "context_analysis"
-                },
-                confidence=0.9
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error procesando análisis de continuación: {e}")
-            return None
 
 
 
@@ -2897,15 +1431,13 @@ RESPONDE CON:
             user_lower = user_query.lower()
             conversation_stack = conversation_stack or []
 
-            # 🧠 DETECTAR SI ES CONSULTA DE SEGUIMIENTO
-            is_follow_up = self._is_follow_up_query(user_query) and len(conversation_stack) > 0
+            is_follow_up = False  # Master ya decidió la estrategia
 
-            # 🔍 DEBUG: Logging de detección de seguimiento
+            # 🔍 DEBUG: Logging simplificado
             self.logger.info(f"🔍 DEBUG - _generate_initial_query_response:")
             self.logger.info(f"   - Query: '{user_query}'")
-            self.logger.info(f"   - is_follow_up: {is_follow_up}")
             self.logger.info(f"   - conversation_stack length: {len(conversation_stack)}")
-            self.logger.info(f"   - _is_follow_up_query result: {self._is_follow_up_query(user_query)}")
+            self.logger.info(f"   - Master ya decidió estrategia, Student obedece")
 
             if is_follow_up and conversation_stack:
                 # 🎯 RESPUESTA PARA CONSULTA DE SEGUIMIENTO CON CONTEXTO
@@ -2929,21 +1461,12 @@ RESPONDE CON:
                 if isinstance(resultado, dict) and 'total' in resultado:
                     cantidad = resultado['total']
 
-                    # Generar respuesta para conteo
-                    if "turno matutino" in user_lower:
-                        response = f"🌄 En el turno matutino hay **{cantidad} alumnos** inscritos."
-                    elif "turno vespertino" in user_lower:
-                        response = f"🌅 En el turno vespertino hay **{cantidad} alumnos** inscritos."
-                    elif "grado" in user_lower:
-                        response = f"📚 Se encontraron **{cantidad} alumnos** que cumplen con el criterio de grado especificado."
-                    elif "total" in user_lower or "cuántos" in user_lower:
-                        response = f"🏫 La escuela tiene un total de **{cantidad} alumnos** inscritos."
-                    else:
-                        response = f"📊 Total de alumnos encontrados: **{cantidad}**"
+                    # 🔧 RESPUESTA COMPLETAMENTE DINÁMICA
+                    response = f"📊 Total de alumnos encontrados: **{cantidad}**"
 
-                    # Agregar sugerencia útil
+                    # Agregar sugerencia útil dinámica
                     if cantidad > 0:
-                        response += f"\n\n💡 Si necesitas ver la lista de estos alumnos, puedes preguntarme: 'muéstrame los alumnos del turno matutino'"
+                        response += f"\n\n💡 Si necesitas ver la lista de estos alumnos, puedes preguntarme: 'muéstrame esos alumnos'"
 
                     return response
 
@@ -2998,52 +1521,7 @@ RESPONDE CON:
             self._sql_context = self.database_analyzer.generate_sql_context()
         return self._sql_context
 
-    # 🗑️ MÉTODO ELIMINADO: _detect_specific_student_intention
-    # RAZÓN: Ahora usamos información consolidada del Master Prompt
-    # La categorización específica viene directamente del Master
 
-    def _detect_student_query_intention_centralized(self, user_query: str, conversation_context: str = "") -> bool:
-        """
-        PROMPT 1 CENTRALIZADO: Detecta si la consulta es sobre alumnos/estudiantes
-        🆕 MEJORADO: Ahora incluye contexto conversacional
-        REEMPLAZA: _detect_student_query_intention() (método eliminado)
-        """
-        try:
-            # 🎯 USAR PROMPT MANAGER CENTRALIZADO CON CONTEXTO CONVERSACIONAL
-            intention_prompt = self.prompt_manager.get_student_query_intention_prompt(user_query, conversation_context)
-
-            # Enviar al LLM
-            response = self.gemini_client.send_prompt_sync(intention_prompt)
-
-            if response:
-                # Parsear respuesta
-                intention_result = self._parse_intention_response(response)
-
-                if intention_result:
-                    is_student_query = intention_result.get('es_consulta_alumnos', False)
-                    query_type = intention_result.get('tipo_detectado', 'otro')
-                    requires_context = intention_result.get('requiere_contexto', False)
-                    continuation_type = intention_result.get('tipo_continuacion', 'nueva_consulta')
-
-                    # Guardar información adicional para uso posterior
-                    self._current_query_type = query_type
-                    self._requires_context = requires_context
-                    self._continuation_type = continuation_type
-
-                    self.logger.info(f"🧠 ANÁLISIS CONVERSACIONAL:")
-                    self.logger.info(f"   - Tipo detectado: {query_type}")
-                    self.logger.info(f"   - Requiere contexto: {requires_context}")
-                    self.logger.info(f"   - Tipo continuación: {continuation_type}")
-
-                    return is_student_query
-                else:
-                    return False
-            else:
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Error detectando intención centralizada: {e}")
-            return False
 
     def _parse_intention_response(self, intention_response: str) -> Optional[Dict[str, Any]]:
         """Parsea la respuesta de detección de intención"""
@@ -3079,33 +1557,6 @@ RESPONDE CON:
         except Exception as e:
             return None
 
-    def _generate_sql_with_strategy_centralized(self, user_query: str, conversation_context: str = "") -> Optional[str]:
-        """
-        PROMPT 2 CENTRALIZADO: Genera estrategia + SQL en un solo paso CON CONTEXTO CONVERSACIONAL
-        REEMPLAZA: _generate_sql_with_strategy() (método eliminado)
-        """
-        try:
-            # 🎯 USAR PROMPT MANAGER CENTRALIZADO CON CONTEXTO CONVERSACIONAL
-            combined_prompt = self.prompt_manager.get_sql_generation_prompt(user_query, conversation_context)
-
-            # Enviar al LLM
-            response = self.gemini_client.send_prompt_sync(combined_prompt)
-
-            if response:
-                # Extraer SQL de la respuesta
-                sql_query = self._extract_sql_from_response(response)
-
-                if sql_query:
-                    return sql_query
-                else:
-                    return None
-            else:
-                return None
-
-        except Exception as e:
-            self.logger.error(f"Error generando SQL centralizado: {e}")
-            return None
-
     def _validate_and_generate_response(self, user_query: str, sql_query: str, data: List[Dict], row_count: int, conversation_stack: list = None) -> Optional[Dict]:
         """
         PROMPT 3 SIMPLIFICADO: BUSCAR_UNIVERSAL ya hizo el trabajo, solo generar respuesta
@@ -3115,11 +1566,7 @@ RESPONDE CON:
             # 🎯 BUSCAR_UNIVERSAL YA FILTRÓ CORRECTAMENTE - NO APLICAR FILTROS ADICIONALES
             filtered_data = data
 
-            self.logger.info(f"✅ BUSCAR_UNIVERSAL completado:")
-            self.logger.info(f"   - Datos obtenidos: {len(data)} registros")
-            self.logger.info(f"   - Acción: BUSCAR_UNIVERSAL (sin filtros adicionales)")
-            self.logger.info(f"   - Datos finales: {len(filtered_data)} registros")
-            self.logger.info(f"   - Estado: Consulta resuelta correctamente")
+            # 🎓 [STUDENT] Búsqueda completada exitosamente
 
             # BUSCAR_UNIVERSAL siempre resuelve la consulta correctamente
             # No aplicar filtros adicionales que puedan interferir
@@ -3129,7 +1576,6 @@ RESPONDE CON:
             final_row_count = len(filtered_data)
 
             # 🎯 AUTO-REFLEXIÓN INTELIGENTE SIN LLM EXTRA (rápida y efectiva)
-            self.logger.info(f"🧠 Generando auto-reflexión inteligente para {final_row_count} resultados...")
 
             # Determinar si espera continuación basado en el tipo de consulta y resultados
             espera_continuacion, tipo_esperado, nota_estrategica = self._determine_continuation_expectation(
@@ -3141,10 +1587,7 @@ RESPONDE CON:
             # self.conversation_stack NO EXISTE en StudentQueryInterpreter
             context_stack = conversation_stack if conversation_stack is not None else []
 
-            # 🔍 DEBUG: Verificar que el context_stack tenga datos
-            self.logger.info(f"🔍 DEBUG - _validate_and_generate_response:")
-            self.logger.info(f"   - conversation_stack recibido: {len(conversation_stack) if conversation_stack else 0} niveles")
-            self.logger.info(f"   - context_stack final: {len(context_stack)} niveles")
+            # 🎓 [STUDENT] Validando y generando respuesta
 
             # 🎯 STUDENT RETORNA DATOS TÉCNICOS PARA EL MASTER
             technical_summary = f"Consulta procesada: {final_row_count} resultados obtenidos"
@@ -3189,8 +1632,6 @@ RESPONDE CON:
             tuple: (espera_continuacion: bool, tipo_esperado: str, nota_estrategica: str)
         """
         try:
-            user_lower = user_query.lower()
-
             # 🎯 GENERAR NOTA ESTRATÉGICA DETALLADA PARA MASTER
 
             # Analizar datos para generar información estratégica
@@ -3221,10 +1662,10 @@ Turnos disponibles: {sorted(turnos_disponibles)}"""
 
                 elif row_count <= 50:
                     nota_estrategica = f"""Mostré {row_count} alumnos (lista mediana). Usuario podría querer:
-- FILTRAR: 'de esos los de segundo grado', 'del turno matutino'
+- FILTRAR: 'de esos los de [grado/grupo/turno específico]'
 - ESTADÍSTICAS: 'cuántos son por grado', 'estadísticas de ese grupo'
 - CONSTANCIA: 'constancia para [criterio específico]'
-- ANÁLISIS: 'distribución por turnos'
+- ANÁLISIS: 'distribución por [criterio]'
 Datos disponibles: grados {sorted(grados_disponibles)}, grupos {sorted(grupos_disponibles)}, turnos {sorted(turnos_disponibles)}"""
                     return (True, "filter", nota_estrategica)
 
@@ -3253,14 +1694,15 @@ Datos disponibles: información completa del alumno"""
 - CAMBIARÁ: estrategia de búsqueda"""
                 return (False, "none", nota_estrategica)
 
-            # Consultas específicas cerradas
-            consultas_cerradas = ['cuántos', 'total', 'estadística', 'promedio', 'suma']
-            if any(keyword in user_lower for keyword in consultas_cerradas):
-                nota_estrategica = f"""Consulta específica resuelta ({row_count} como resultado). Usuario probablemente:
-- SATISFECHO: con la información numérica/estadística
-- PODRÍA: hacer nueva consulta independiente
-- MENOS PROBABLE: continuación sobre este resultado"""
-                return (False, "none", nota_estrategica)
+
+
+            # 🎯 RESPUESTA DINÁMICA BASADA EN RESULTADOS
+            nota_estrategica = f"""Consulta resuelta ({row_count} resultados). Usuario podría:
+- Hacer nueva consulta independiente
+- Continuar con estos resultados si son útiles
+- Solicitar más información específica
+Datos disponibles: {row_count} elementos procesados"""
+            # Permitir continuación por defecto (Master decidirá si es apropiado)
 
             # Caso por defecto
             nota_estrategica = f"""Consulta general con {row_count} resultados. Contexto disponible para:
@@ -3327,41 +1769,6 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
             self.logger.error(f"Error extrayendo SQL: {e}")
             return None
 
-    # 🗑️ MÉTODO DUPLICADO ELIMINADO: _parse_intention_response()
-    # RAZÓN: Ya existe una versión idéntica arriba (línea 976)
-    # MANTENER: Solo la primera versión
-
-
-
-    # 🗑️ MÉTODO ELIMINADO: _intelligent_final_filter()
-    # RAZÓN: Aplicaba filtros redundantes después de BUSCAR_UNIVERSAL
-    # BUSCAR_UNIVERSAL ya hace todo el trabajo correctamente
-
-    # 🗑️ MÉTODO ELIMINADO: _apply_multi_criteria_filter()
-    # RAZÓN: También aplicaba filtros redundantes después de BUSCAR_UNIVERSAL
-    # BUSCAR_UNIVERSAL ya maneja múltiples criterios correctamente
-
-    # 🗑️ MÉTODO ELIMINADO: _extract_filter_criteria_with_llm_enhanced()
-    # RAZÓN: Parte del sistema de filtros redundantes eliminado
-    # BUSCAR_UNIVERSAL ya maneja criterios complejos correctamente
-
-    # 🗑️ MÉTODO ELIMINADO: _normalize_criteria_with_db_info()
-    # RAZÓN: Parte del sistema de filtros redundantes eliminado
-
-    # 🗑️ MÉTODOS ELIMINADOS: _parse_filter_response() y _apply_filter_decision()
-    # RAZÓN: Parte del sistema de filtros redundantes eliminado
-    # BUSCAR_UNIVERSAL ya maneja todo correctamente
-
-
-
-
-
-
-
-
-
-
-
 
     def _process_constancia_as_direct_action(self, context) -> Optional[InterpretationResult]:
         """
@@ -3420,10 +1827,6 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
                 parameters={"message": "Error interno procesando la constancia"},
                 confidence=0.1
             )
-
-    # 🗑️ CÓDIGO OBSOLETO ELIMINADO COMPLETAMENTE
-    # El método _process_constancia_request fue reemplazado por _process_constancia_as_direct_action
-    # que es más eficiente y elimina duplicación de código
 
 
     def _normalize_constancia_type(self, tipo_raw: str) -> str:
@@ -3584,66 +1987,6 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
 
         return list(set(variaciones))  # Eliminar duplicados
 
-    def _filter_by_name_similarity(self, nombre_buscado: str, alumnos: List[Dict]) -> List[Dict]:
-        """Filtra alumnos por similitud de nombre usando algoritmo simple"""
-        try:
-            candidatos_con_score = []
-            nombre_buscado_lower = nombre_buscado.lower()
-
-            for alumno in alumnos:
-                nombre_alumno = alumno.get('nombre', '').lower()
-
-                # Calcular similitud simple
-                score = self._calculate_name_similarity(nombre_buscado_lower, nombre_alumno)
-
-                # Solo incluir si tiene similitud razonable (>= 0.6)
-                if score >= 0.6:
-                    candidatos_con_score.append((alumno, score))
-
-            # Ordenar por score descendente
-            candidatos_con_score.sort(key=lambda x: x[1], reverse=True)
-
-            # Devolver solo los alumnos (sin scores)
-            return [alumno for alumno, score in candidatos_con_score]
-
-        except Exception as e:
-            self.logger.error(f"Error filtrando por similitud: {e}")
-            return alumnos
-
-    def _calculate_name_similarity(self, nombre1: str, nombre2: str) -> float:
-        """Calcula similitud entre dos nombres usando algoritmo simple"""
-        try:
-            # Algoritmo simple de similitud basado en caracteres comunes
-            if not nombre1 or not nombre2:
-                return 0.0
-
-            # Convertir a conjuntos de caracteres
-            chars1 = set(nombre1.replace(' ', ''))
-            chars2 = set(nombre2.replace(' ', ''))
-
-            # Calcular intersección y unión
-            interseccion = len(chars1.intersection(chars2))
-            union = len(chars1.union(chars2))
-
-            # Similitud de Jaccard
-            if union == 0:
-                return 0.0
-
-            jaccard = interseccion / union
-
-            # Bonus por palabras comunes
-            palabras1 = set(nombre1.split())
-            palabras2 = set(nombre2.split())
-            palabras_comunes = len(palabras1.intersection(palabras2))
-
-            # Score final combinado
-            score = jaccard + (palabras_comunes * 0.2)
-            return min(score, 1.0)  # Máximo 1.0
-
-        except Exception as e:
-            self.logger.error(f"Error calculando similitud: {e}")
-            return 0.0
-
     def _handle_multiple_students(self, alumnos: List, nombre_buscado: str) -> Optional[Dict[str, Any]]:
         """Maneja múltiples coincidencias de estudiantes de forma inteligente"""
         try:
@@ -3701,89 +2044,6 @@ DATOS OBTENIDOS: {data if row_count <= 15 else data[:10]}
                 return primer_alumno.to_dict() if hasattr(primer_alumno, 'to_dict') else primer_alumno
             return None
 
-    def _is_external_pdf_loaded(self, pdf_panel) -> bool:
-        """Determina si el PDF cargado es externo (no generado por vista previa)"""
-        try:
-            if not pdf_panel or not hasattr(pdf_panel, 'original_pdf'):
-                return False
-
-            pdf_path = pdf_panel.original_pdf
-
-            # 🎯 CRITERIOS PARA DETECTAR PDF EXTERNO:
-            # 1. NO está en directorio temporal del sistema
-            # 2. NO contiene palabras de vista previa en el nombre
-            # 3. Fue cargado por el usuario (no generado automáticamente)
-
-            import tempfile
-
-            temp_dir = tempfile.gettempdir()
-
-            # Verificar si está en directorio temporal
-            is_in_temp = pdf_path.startswith(temp_dir)
-
-            # Verificar si contiene palabras de vista previa
-            preview_keywords = ['preview', 'constancia_preview', 'vista_previa', 'temp_constancia']
-            has_preview_keywords = any(keyword in pdf_path.lower() for keyword in preview_keywords)
-
-            # Verificar si tiene atributo de origen (si el panel lo soporta)
-            is_user_loaded = getattr(pdf_panel, 'is_user_loaded', True)  # Por defecto True si no existe el atributo
-
-            self.logger.debug(f"🔍 ANÁLISIS PDF EXTERNO:")
-            self.logger.debug(f"   - Ruta: {pdf_path}")
-            self.logger.debug(f"   - En directorio temporal: {is_in_temp}")
-            self.logger.debug(f"   - Tiene palabras de vista previa: {has_preview_keywords}")
-            self.logger.debug(f"   - Cargado por usuario: {is_user_loaded}")
-
-            # Es externo si NO está en temp Y NO tiene palabras de preview Y fue cargado por usuario
-            is_external = not is_in_temp and not has_preview_keywords and is_user_loaded
-
-            self.logger.debug(f"   - RESULTADO: Es PDF externo = {is_external}")
-            return is_external
-
-        except Exception as e:
-            self.logger.error(f"Error verificando PDF externo: {e}")
-            # En caso de error, asumir que es externo para ser conservadores
-            return True
-
-    def _is_transformation_request(self, constancia_info: Dict, detected_entities: Dict) -> bool:
-        """Determina si la solicitud es para transformar un PDF existente"""
-        try:
-            # 🎯 CRITERIOS PARA DETECTAR TRANSFORMACIÓN:
-            # 1. Sub-intención es "transformar_pdf"
-            # 2. Acción principal contiene "transformar"
-            # 3. Fuente de datos es "pdf_cargado"
-            # 4. Contexto específico es "conversion_formato"
-
-            sub_intention = detected_entities.get('sub_intention', '')
-            accion_principal = detected_entities.get('accion_principal', '')
-            fuente_datos = detected_entities.get('fuente_datos', '')
-            contexto_especifico = detected_entities.get('contexto_especifico', '')
-
-            # También verificar en constancia_info por compatibilidad
-            fuente_info = constancia_info.get('fuente_datos', '') if constancia_info else ''
-
-            is_transform_sub = sub_intention == 'transformar_pdf'
-            is_transform_action = 'transformar' in accion_principal.lower()
-            is_pdf_source = fuente_datos == 'pdf_cargado' or fuente_info == 'pdf_cargado'
-            is_conversion_context = 'conversion' in contexto_especifico.lower()
-
-            self.logger.debug(f"🔍 ANÁLISIS TRANSFORMACIÓN:")
-            self.logger.debug(f"   - Sub-intención transformar: {is_transform_sub}")
-            self.logger.debug(f"   - Acción transformar: {is_transform_action}")
-            self.logger.debug(f"   - Fuente PDF: {is_pdf_source}")
-            self.logger.debug(f"   - Contexto conversión: {is_conversion_context}")
-
-            # Es transformación si cumple al menos 2 criterios
-            transformation_score = sum([is_transform_sub, is_transform_action, is_pdf_source, is_conversion_context])
-            is_transformation = transformation_score >= 2
-
-            self.logger.debug(f"   - RESULTADO: Es transformación = {is_transformation} (score: {transformation_score}/4)")
-            return is_transformation
-
-        except Exception as e:
-            self.logger.error(f"Error verificando transformación: {e}")
-            # En caso de error, asumir que NO es transformación
-            return False
 
     def _generate_constancia_response_with_reflection(self, alumno: Dict, tipo_constancia: str, data: Dict) -> Optional[Dict]:
         """Genera respuesta con auto-reflexión específica para constancias"""
@@ -3842,1197 +2102,79 @@ FORMATO DE RESPUESTA:
             self.logger.error(f"Error generando respuesta de constancia: {e}")
             return None
 
-    def _is_simple_confirmation(self, user_query: str) -> bool:
-        """Detecta si es una confirmación simple (sí, ok, confirmar) vs solicitud específica"""
+    
+    def _create_standardized_report(self, action_executed: str, result: Dict[str, Any],
+                                   user_query: str, error_info: Dict = None) -> Dict[str, Any]:
+        """
+        🔧 CREA REPORTE ESTANDARIZADO PARA EL MASTER
+
+        Formato consistente que el Master puede interpretar fácilmente
+        """
         try:
-            user_lower = user_query.lower().strip()
+            # Determinar tipo de datos
+            data = result.get('data', [])
+            data_type = self._determine_data_type(action_executed, data)
 
-            # Confirmaciones simples
-            simple_confirmations = [
-                "sí", "si", "ok", "vale", "confirmar", "confirmo", "adelante",
-                "procede", "continúa", "continua", "hazlo", "genérala", "generala"
-            ]
-
-            # Si es solo una palabra de confirmación simple
-            if user_lower in simple_confirmations:
-                return True
-
-            # Si contiene palabras específicas de constancia, NO es confirmación simple
-            constancia_keywords = [
-                "constancia", "certificado", "documento", "estudios",
-                "calificaciones", "traslado", "generar", "crear"
-            ]
-
-            for keyword in constancia_keywords:
-                if keyword in user_lower:
-                    return False  # Es solicitud específica, no confirmación simple
-
-            return False
-
-        except Exception as e:
-            self.logger.error(f"Error detectando confirmación simple: {e}")
-            return False
-
-    def _detect_confirmation_type(self, user_query: str, context_item: Dict) -> str:
-        """Detecta el tipo específico de confirmación para constancias"""
-        try:
-            user_lower = user_query.lower().strip()
-
-            # Confirmaciones para guardar/finalizar
-            if any(word in user_lower for word in ["confirmar", "sí", "si", "está bien", "correcto", "guardar", "finalizar"]):
-                return "confirm"
-
-            # Confirmaciones para abrir en navegador
-            elif any(word in user_lower for word in ["abrir", "navegador", "browser", "ver", "mostrar"]):
-                return "open"
-
-            # Confirmaciones para cancelar
-            elif any(word in user_lower for word in ["cancelar", "no", "cerrar", "salir", "descartar"]):
-                return "cancel"
-
-            # Por defecto, asumir confirmación
-            else:
-                return "confirm"
-
-        except Exception as e:
-            self.logger.error(f"Error detectando tipo de confirmación: {e}")
-            return "confirm"
-
-    def _process_constancia_confirmation(self, user_query: str, confirmation_type: str, context_item: Dict) -> Optional[InterpretationResult]:
-        """Procesa confirmación específica para constancias con vista previa"""
-        try:
-            alumno = context_item.get("alumno", {})
-            tipo_constancia = context_item.get("tipo_constancia", "estudio")
-            archivo_temporal = context_item.get("archivo_temporal", "")
-
-            self.logger.debug(f"Procesando confirmación de constancia: {confirmation_type}")
-
-            if confirmation_type == "confirm":
-                # Confirmar y generar constancia definitiva
-                return self._confirm_constancia_final(alumno, tipo_constancia, archivo_temporal)
-
-            elif confirmation_type == "open":
-                # Abrir en navegador
-                return self._open_constancia_in_browser(alumno, tipo_constancia, archivo_temporal)
-
-            elif confirmation_type == "cancel":
-                # Cancelar y limpiar archivos temporales
-                return self._cancel_constancia(archivo_temporal)
-
-            else:
-                # Confirmación genérica
-                return self._confirm_constancia_final(alumno, tipo_constancia, archivo_temporal)
-
-        except Exception as e:
-            self.logger.error(f"Error procesando confirmación de constancia: {e}")
-            return None
-
-    def _confirm_constancia_final(self, alumno: Dict, tipo_constancia: str, archivo_temporal: str) -> InterpretationResult:
-        """Confirma y genera constancia definitiva"""
-        try:
-            from app.core.service_provider import ServiceProvider
-            service_provider = ServiceProvider.get_instance()
-            constancia_service = service_provider.constancia_service
-
-            # Generar constancia definitiva (no preview)
-            success, message, data = constancia_service.generar_constancia_para_alumno(
-                alumno.get("id"), tipo_constancia, False, preview_mode=False
-            )
-
-            if success:
-                response_text = f"✅ Constancia de {tipo_constancia} para {alumno.get('nombre')} generada y guardada exitosamente."
-
-                return InterpretationResult(
-                    action="constancia_confirmada",
-                    parameters={
-                        "message": response_text,
-                        "alumno": alumno,
-                        "tipo_constancia": tipo_constancia,
-                        "archivo_final": data.get("ruta_archivo") if data else None,
-                        "estado": "confirmada"
-                    },
-                    confidence=0.95
-                )
-            else:
-                return InterpretationResult(
-                    action="constancia_error",
-                    parameters={
-                        "message": f"❌ Error generando constancia definitiva: {message}",
-                        "error": "generation_failed"
-                    },
-                    confidence=0.3
-                )
-
-        except Exception as e:
-            self.logger.error(f"Error confirmando constancia: {e}")
-            return InterpretationResult(
-                action="constancia_error",
-                parameters={
-                    "message": "❌ Error interno confirmando constancia",
-                    "error": "internal_error"
+            # Crear reporte estandarizado
+            report = {
+                "status": "error" if error_info else "success",
+                "action_executed": action_executed,
+                "technical_result": {
+                    "data": data,
+                    "row_count": result.get('row_count', len(data) if isinstance(data, list) else 1),
+                    "sql_executed": result.get('sql_executed', ''),
+                    "execution_time": result.get('execution_time', 'N/A')
                 },
-                confidence=0.1
-            )
-
-    def _open_constancia_in_browser(self, alumno: Dict, tipo_constancia: str, archivo_temporal: str) -> InterpretationResult:
-        """Abre constancia en navegador"""
-        try:
-            import webbrowser
-            import os
-
-            if archivo_temporal and os.path.exists(archivo_temporal):
-                webbrowser.open(f"file://{os.path.abspath(archivo_temporal)}")
-                response_text = f"🌐 Constancia de {tipo_constancia} para {alumno.get('nombre')} abierta en el navegador."
-            else:
-                response_text = f"❌ No se pudo abrir la constancia. Archivo no encontrado."
-
-            return InterpretationResult(
-                action="constancia_abierta",
-                parameters={
-                    "message": response_text,
-                    "alumno": alumno,
-                    "tipo_constancia": tipo_constancia,
-                    "archivo": archivo_temporal,
-                    "estado": "abierta"
-                },
-                confidence=0.9
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error abriendo constancia: {e}")
-            return InterpretationResult(
-                action="constancia_error",
-                parameters={
-                    "message": "❌ Error abriendo constancia en navegador",
-                    "error": "open_failed"
-                },
-                confidence=0.3
-            )
-
-    def _cancel_constancia(self, archivo_temporal: str) -> InterpretationResult:
-        """Cancela constancia y limpia archivos temporales"""
-        try:
-            import os
-
-            # Limpiar archivo temporal si existe
-            if archivo_temporal and os.path.exists(archivo_temporal):
-                try:
-                    os.remove(archivo_temporal)
-                    self.logger.debug(f"Archivo temporal eliminado: {archivo_temporal}")
-                except Exception as e:
-                    self.logger.warning(f"No se pudo eliminar archivo temporal: {e}")
-
-            response_text = "❌ Generación de constancia cancelada. Vista previa eliminada."
-
-            return InterpretationResult(
-                action="constancia_cancelada",
-                parameters={
-                    "message": response_text,
-                    "estado": "cancelada"
-                },
-                confidence=0.9
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error cancelando constancia: {e}")
-            return InterpretationResult(
-                action="constancia_error",
-                parameters={
-                    "message": "❌ Error cancelando constancia",
-                    "error": "cancel_failed"
-                },
-                confidence=0.3
-            )
-
-    def _process_constancia_from_pdf(self, constancia_info: Dict[str, Any], pdf_panel, context: Dict[str, Any]) -> InterpretationResult:
-        """Procesa constancia desde PDF cargado (transformación)"""
-        try:
-            self.logger.info(f"🔄 Procesando transformación de PDF: {pdf_panel.original_pdf}")
-
-            # Obtener información de la transformación
-            tipo_constancia = constancia_info.get("tipo_constancia", "estudio")
-            incluir_foto = constancia_info.get("incluir_foto", False)
-
-            # Usar el servicio de constancias para transformar
-            from app.core.service_provider import ServiceProvider
-            service_provider = ServiceProvider.get_instance()
-            constancia_service = service_provider.constancia_service
-
-            # Crear directorio temporal para preview
-            import tempfile
-            temp_dir = tempfile.mkdtemp(prefix="transformation_preview_")
-
-            # Ejecutar transformación en modo preview
-            success, message, data = constancia_service.generar_constancia_desde_pdf(
-                pdf_path=pdf_panel.original_pdf,
-                tipo_constancia=tipo_constancia,
-                incluir_foto=incluir_foto,
-                guardar_alumno=False,  # No guardar en BD en preview
-                preview_mode=True,
-                output_dir=temp_dir
-            )
-
-            if success and data:
-                # 🛠️ OBTENER INFORMACIÓN DEL ALUMNO - MANEJO SEGURO
-                alumno_info = data.get("alumno", {})
-
-                # 🆕 VERIFICAR QUE ALUMNO_INFO SEA UN DICCIONARIO
-                if not isinstance(alumno_info, dict):
-                    self.logger.warning(f"⚠️ alumno_info no es diccionario: {type(alumno_info)}, convirtiendo...")
-                    # Si es una lista, tomar el primer elemento si existe
-                    if isinstance(alumno_info, list) and len(alumno_info) > 0:
-                        alumno_info = alumno_info[0] if isinstance(alumno_info[0], dict) else {}
-                    else:
-                        # Si no es lista o está vacía, usar diccionario vacío
-                        alumno_info = {}
-
-                # Actualizar contexto del panel para transformación
-                if hasattr(pdf_panel, 'set_transformation_completed_context'):
-                    pdf_panel.set_transformation_completed_context(
-                        original_data=pdf_panel.pdf_data,
-                        transformed_data=data,
-                        alumno_data=alumno_info
-                    )
-
-                # 🎯 USAR MENSAJE SIMPLE - DEJAR QUE EL MASTER GENERE EL MENSAJE CONVERSACIONAL
-                return InterpretationResult(
-                    action="transformation_preview",
-                    parameters={
-                        "message": f"Vista previa de transformación generada",  # ← MENSAJE SIMPLE
-                        "data": data,
-                        "files": [data.get("ruta_archivo")] if data.get("ruta_archivo") else [],
-                        "alumno": alumno_info,
-                        "tipo_constancia": tipo_constancia,
-                        "transformation_info": {
-                            "original_pdf": pdf_panel.original_pdf,
-                            "transformed_pdf": data.get("ruta_archivo"),
-                            "tipo_transformacion": tipo_constancia,
-                            "alumno": alumno_info  # ← AGREGAR ALUMNO AQUÍ TAMBIÉN
-                        }
-                    },
-                    confidence=0.95
-                )
-            else:
-                return InterpretationResult(
-                    action="transformation_error",
-                    parameters={
-                        "message": f"Error transformando PDF: {message}",
-                        "error": "transformation_failed",
-                        "service_message": message
-                    },
-                    confidence=0.3
-                )
-
-        except Exception as e:
-            self.logger.error(f"Error en transformación de PDF: {e}")
-            return InterpretationResult(
-                action="transformation_error",
-                parameters={
-                    "message": "Error interno procesando la transformación. Intenta nuevamente.",
-                    "error": "internal_error",
-                    "exception": str(e)
-                },
-                confidence=0.1
-            )
-
-    # ✅ SISTEMA DE MEMORIA ELIMINADO - USAR SOLO FLUJO PRINCIPAL DE 4 PROMPTS
-
-    # 🚀 MÉTODOS DE FILTRO DINÁMICO UNIVERSAL - NUEVA FUNCIONALIDAD REVOLUCIONARIA
-
-    def _extract_filter_criteria_with_llm(self, user_query: str, context_data: List[Dict]) -> Optional[Dict[str, Any]]:
-        """
-        🧠 EXTRAE CRITERIOS DE FILTRO USANDO LLM ESPECIALIZADO
-        MANTIENE FILOSOFÍA: LLM ELIGE HERRAMIENTAS (ahora para filtros)
-
-        Args:
-            user_query: Consulta del usuario (ej: "del grupo A con promedio mayor a 8")
-            context_data: Datos del contexto para analizar campos disponibles
-
-        Returns:
-            Dict con criterios extraídos o None si no hay filtros
-        """
-        try:
-            # Obtener campos disponibles del contexto
-            available_fields = []
-            if context_data:
-                sample_student = context_data[0]
-                available_fields = list(sample_student.keys())
-
-            # Crear prompt especializado para extracción de criterios
-            filter_prompt = f"""
-TAREA: Extraer criterios de filtro de la consulta del usuario.
-
-CONSULTA DEL USUARIO: "{user_query}"
-
-CAMPOS DISPONIBLES EN LOS DATOS:
-{available_fields}
-
-CAMPOS ESPECIALES CALCULADOS:
-- promedio_general: Promedio de todas las materias (calculado dinámicamente)
-- matematicas_promedio: Promedio solo de matemáticas (calculado dinámicamente)
-- español_promedio: Promedio solo de español (calculado dinámicamente)
-- espanol_promedio: Promedio solo de español (calculado dinámicamente)
-
-OPERADORES SOPORTADOS:
-- igual: Igualdad exacta
-- diferente: No igual
-- mayor_que: Valor numérico mayor
-- menor_que: Valor numérico menor
-- entre: Valor entre dos números
-- contiene: Texto que contiene substring
-- empieza_con: Texto que empieza con
-- termina_con: Texto que termina con
-
-EXTRAE los criterios en formato JSON:
-{{
-    "tiene_filtros": true|false,
-    "criterios": [
-        {{"campo": "grupo", "operador": "igual", "valor": "A"}},
-        {{"campo": "promedio_general", "operador": "mayor_que", "valor": 8.0}},
-        {{"campo": "turno", "operador": "igual", "valor": "MATUTINO"}}
-    ],
-    "logica": "AND"
-}}
-
-EJEMPLOS DE EXTRACCIÓN:
-- "del grupo A" → {{"campo": "grupo", "operador": "igual", "valor": "A"}}
-- "con promedio mayor a 8" → {{"campo": "promedio_general", "operador": "mayor_que", "valor": 8.0}}
-- "buenos en matemáticas" → {{"campo": "matematicas_promedio", "operador": "mayor_que", "valor": 7.5}}
-- "del turno matutino" → {{"campo": "turno", "operador": "igual", "valor": "MATUTINO"}}
-- "nacidos en 2017" → {{"campo": "fecha_nacimiento", "operador": "contiene", "valor": "2017"}}
-
-IMPORTANTE:
-- Si no detectas filtros claros, devuelve "tiene_filtros": false
-- Convierte valores a tipos apropiados (números para promedios, texto en mayúsculas para campos como turno/grupo)
-- Para promedios académicos, usa umbrales razonables (7.5+ para "buenos", 8.5+ para "excelentes")
-"""
-
-            # Enviar al LLM
-            response = self.gemini_client.send_prompt_sync(filter_prompt)
-
-            if response:
-                # Parsear respuesta JSON
-                filter_criteria = self._parse_json_response(response)
-
-                if filter_criteria:
-                    self.logger.info(f"🧠 Criterios extraídos: {filter_criteria}")
-                    return filter_criteria
-                else:
-                    self.logger.warning("❌ No se pudo parsear respuesta de criterios")
-                    return {"tiene_filtros": False}
-            else:
-                self.logger.warning("❌ No se recibió respuesta del LLM para extracción de criterios")
-                return {"tiene_filtros": False}
-
-        except Exception as e:
-            self.logger.error(f"Error extrayendo criterios con LLM: {e}")
-            return {"tiene_filtros": False}
-
-    def _apply_dynamic_filter(self, students: List[Dict], filter_criteria: Dict[str, Any]) -> List[Dict]:
-        """
-        🔧 APLICADOR UNIVERSAL DE FILTROS DINÁMICOS
-        FUNCIONA CON CUALQUIER CAMPO Y OPERADOR
-
-        Args:
-            students: Lista de estudiantes a filtrar
-            filter_criteria: Criterios extraídos por LLM
-
-        Returns:
-            Lista filtrada de estudiantes
-        """
-        try:
-            if not filter_criteria.get('tiene_filtros', False):
-                return students
-
-            criterios = filter_criteria.get('criterios', [])
-            logica = filter_criteria.get('logica', 'AND')
-
-            filtered_students = []
-
-            for student in students:
-                if self._meets_all_criteria(student, criterios, logica):
-                    filtered_students.append(student)
-
-            self.logger.info(f"🔧 Filtro aplicado: {len(filtered_students)}/{len(students)} estudiantes cumplen criterios")
-            return filtered_students
-
-        except Exception as e:
-            self.logger.error(f"Error aplicando filtro dinámico: {e}")
-            return students  # Devolver datos originales en caso de error
-
-    def _meets_all_criteria(self, student: Dict, criterios: List[Dict], logica: str = 'AND') -> bool:
-        """
-        🎯 EVALÚA SI UN ESTUDIANTE CUMPLE TODOS LOS CRITERIOS
-
-        Args:
-            student: Datos del estudiante
-            criterios: Lista de criterios a evaluar
-            logica: 'AND' o 'OR'
-
-        Returns:
-            True si cumple los criterios según la lógica especificada
-        """
-        try:
-            if not criterios:
-                return True
-
-            results = []
-
-            for criterio in criterios:
-                result = self._evaluate_single_criterion(student, criterio)
-                results.append(result)
-
-            # Aplicar lógica AND/OR
-            if logica.upper() == 'AND':
-                return all(results)
-            else:  # OR
-                return any(results)
-
-        except Exception as e:
-            self.logger.error(f"Error evaluando criterios: {e}")
-            return False
-
-    def _evaluate_single_criterion(self, student: Dict, criterio: Dict) -> bool:
-        """
-        🔍 EVALÚA UN CRITERIO ESPECÍFICO DINÁMICAMENTE
-
-        Args:
-            student: Datos del estudiante
-            criterio: Criterio individual a evaluar
-
-        Returns:
-            True si el estudiante cumple el criterio
-        """
-        try:
-            campo = criterio.get('campo', '')
-            operador = criterio.get('operador', 'igual')
-            valor_esperado = criterio.get('valor', '')
-
-            # Obtener valor del estudiante
-            if campo == "promedio_general":
-                student_value = self._calculate_general_average(student)
-            elif campo.endswith("_promedio"):  # matematicas_promedio, español_promedio
-                materia = campo.replace("_promedio", "").upper()
-                if materia == "ESPANOL":
-                    materia = "ESPAÑOL"  # Normalizar
-                student_value = self._get_subject_average(student, materia)
-            else:
-                student_value = student.get(campo, "")
-
-            # Aplicar operador
-            if operador == "igual":
-                return str(student_value).upper() == str(valor_esperado).upper()
-            elif operador == "diferente":
-                return str(student_value).upper() != str(valor_esperado).upper()
-            elif operador == "mayor_que":
-                try:
-                    return float(student_value) > float(valor_esperado)
-                except (ValueError, TypeError):
-                    return False
-            elif operador == "menor_que":
-                try:
-                    return float(student_value) < float(valor_esperado)
-                except (ValueError, TypeError):
-                    return False
-            elif operador == "entre":
-                try:
-                    if isinstance(valor_esperado, list) and len(valor_esperado) == 2:
-                        min_val, max_val = valor_esperado
-                        return float(min_val) <= float(student_value) <= float(max_val)
-                    return False
-                except (ValueError, TypeError):
-                    return False
-            elif operador == "contiene":
-                return str(valor_esperado).upper() in str(student_value).upper()
-            elif operador == "empieza_con":
-                return str(student_value).upper().startswith(str(valor_esperado).upper())
-            elif operador == "termina_con":
-                return str(student_value).upper().endswith(str(valor_esperado).upper())
-            else:
-                self.logger.warning(f"Operador no reconocido: {operador}")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Error evaluando criterio {criterio}: {e}")
-            return False
-
-    def _calculate_general_average(self, student: Dict) -> float:
-        """
-        📊 CALCULA PROMEDIO GENERAL DE TODAS LAS MATERIAS
-
-        Args:
-            student: Datos del estudiante
-
-        Returns:
-            Promedio general o 0.0 si no hay calificaciones
-        """
-        try:
-            calificaciones_str = student.get('calificaciones', '')
-            if not calificaciones_str or calificaciones_str in ['', '[]']:
-                return 0.0
-
-            import json
-            calificaciones = json.loads(calificaciones_str)
-
-            if not calificaciones:
-                return 0.0
-
-            total_promedio = 0.0
-            materias_count = 0
-
-            for materia in calificaciones:
-                promedio = materia.get('promedio', 0)
-                if promedio > 0:
-                    total_promedio += promedio
-                    materias_count += 1
-
-            return total_promedio / materias_count if materias_count > 0 else 0.0
-
-        except Exception as e:
-            self.logger.error(f"Error calculando promedio general: {e}")
-            return 0.0
-
-    def _get_subject_average(self, student: Dict, materia_nombre: str) -> float:
-        """
-        📚 OBTIENE PROMEDIO DE UNA MATERIA ESPECÍFICA
-
-        Args:
-            student: Datos del estudiante
-            materia_nombre: Nombre de la materia (ej: "MATEMATICAS", "ESPAÑOL")
-
-        Returns:
-            Promedio de la materia o 0.0 si no existe
-        """
-        try:
-            calificaciones_str = student.get('calificaciones', '')
-            if not calificaciones_str or calificaciones_str in ['', '[]']:
-                return 0.0
-
-            import json
-            calificaciones = json.loads(calificaciones_str)
-
-            # Buscar la materia específica
-            for materia in calificaciones:
-                nombre_materia = materia.get('nombre', '').upper()
-
-                # Coincidencia exacta o parcial
-                if (materia_nombre.upper() in nombre_materia or
-                    nombre_materia in materia_nombre.upper()):
-                    return materia.get('promedio', 0.0)
-
-            return 0.0
-
-        except Exception as e:
-            self.logger.error(f"Error obteniendo promedio de {materia_nombre}: {e}")
-            return 0.0
-
-
-
-    def _parse_json_response(self, response: str) -> Optional[Dict[str, Any]]:
-        """
-        🔧 PARSEA RESPUESTA JSON DEL LLM
-
-        Args:
-            response: Respuesta del LLM
-
-        Returns:
-            Dict parseado o None si falla
-        """
-        try:
-            import json
-            import re
-
-            # Limpiar la respuesta
-            clean_response = response.strip()
-
-            # Buscar JSON en la respuesta
-            json_patterns = [
-                r'```json\s*(.*?)\s*```',
-                r'```\s*(.*?)\s*```',
-                r'(\{.*?\})'
-            ]
-
-            for pattern in json_patterns:
-                matches = re.findall(pattern, clean_response, re.DOTALL)
-                if matches:
-                    try:
-                        parsed_json = json.loads(matches[0])
-                        return parsed_json
-                    except json.JSONDecodeError:
-                        continue
-
-            # Si no encuentra JSON, intentar parsear directamente
-            try:
-                parsed_json = json.loads(clean_response)
-                return parsed_json
-            except json.JSONDecodeError:
-                return None
-
-        except Exception as e:
-            self.logger.error(f"Error parseando JSON: {e}")
-            return None
-
-    def _generate_follow_up_response(self, user_query: str, row_count: int,
-                                   data: List[Dict], conversation_stack: list) -> str:
-        """
-        🎯 GENERA RESPUESTA ESPECÍFICA PARA CONSULTAS DE SEGUIMIENTO
-
-        Args:
-            user_query: Consulta del usuario
-            row_count: Cantidad de resultados actuales
-            data: Datos encontrados
-            conversation_stack: Pila conversacional
-
-        Returns:
-            Respuesta conversacional que hace referencia al contexto anterior
-        """
-        try:
-            # Obtener información del contexto anterior
-            ultimo_nivel = conversation_stack[-1] if conversation_stack else {}
-            consulta_anterior = ultimo_nivel.get('query', 'la consulta anterior')
-            total_anterior = ultimo_nivel.get('row_count', 0)
-
-            # Extraer criterios de la consulta actual
-            user_lower = user_query.lower()
-
-            # 🧠 USAR SISTEMA LLM INTELIGENTE PARA DETECTAR FILTROS
-            filtros_detectados = []
-
-            # Usar el sistema LLM existente para extracción inteligente
-            filter_criteria = self._extract_filter_criteria_with_llm(user_query, data)
-
-            if filter_criteria and filter_criteria.get('tiene_filtros', False):
-                criterios = filter_criteria.get('criterios', [])
-                for criterio in criterios:
-                    campo = criterio.get('campo', '')
-                    valor = criterio.get('valor', '')
-                    operador = criterio.get('operador', '')
-
-                    # Convertir criterios LLM a descripciones amigables
-                    if campo == 'grado':
-                        filtros_detectados.append(f'{valor}° grado')
-                    elif campo == 'grupo':
-                        filtros_detectados.append(f'grupo {valor}')
-                    elif campo == 'turno':
-                        filtros_detectados.append(f'turno {valor.lower()}')
-                    elif campo == 'promedio_general' and operador == 'mayor_que':
-                        filtros_detectados.append('promedio alto')
-                    elif campo == 'promedio_general' and operador == 'menor_que':
-                        filtros_detectados.append('promedio bajo')
-                    elif 'calificaciones' in campo:
-                        filtros_detectados.append('con calificaciones')
-                    else:
-                        # Descripción genérica para otros criterios
-                        filtros_detectados.append(f'{campo}: {valor}')
-
-            # 🔍 DEBUG: Logging de filtros detectados
-            self.logger.info(f"🔍 DEBUG - Filtros detectados en '{user_query}': {filtros_detectados}")
-            self.logger.info(f"🔍 DEBUG - Contexto anterior: '{consulta_anterior}' con {total_anterior} elementos")
-
-            # 🎯 GENERAR RESPUESTA CONTEXTUAL
-            if filtros_detectados:
-                filtros_texto = ' y '.join(filtros_detectados)
-
-                if row_count == total_anterior:
-                    response = f"De los **{total_anterior} estudiantes** de {self._extract_context_description(consulta_anterior)}, **todos ({row_count}) estudian en {filtros_texto}**. ✅"
-                elif row_count > 0:
-                    otros = total_anterior - row_count
-                    response = f"De los **{total_anterior} estudiantes** de {self._extract_context_description(consulta_anterior)}, encontré que **{row_count} estudian en {filtros_texto}** y {otros} en otros turnos/grupos. 🔍"
-                else:
-                    response = f"De los **{total_anterior} estudiantes** de {self._extract_context_description(consulta_anterior)}, **ninguno estudia en {filtros_texto}**. 🤔"
-            else:
-                # Filtro genérico
-                if row_count > 0:
-                    response = f"De los **{total_anterior} estudiantes** de {self._extract_context_description(consulta_anterior)}, **{row_count} cumplen con los criterios** que especificaste. ✅"
-                else:
-                    response = f"De los **{total_anterior} estudiantes** de {self._extract_context_description(consulta_anterior)}, **ninguno cumple con los criterios** especificados. 🤔"
-
-            # Agregar sugerencias contextuales
-            if row_count > 0:
-                if row_count == 1:
-                    response += "\n\n¿Te gustaría generar una constancia para este alumno? 📄"
-                elif row_count <= 5:
-                    response += "\n\n¿Necesitas más información sobre alguno de estos alumnos o quieres aplicar más filtros? 🤔"
-                else:
-                    response += "\n\n¿Quieres que filtre más esta lista o necesitas información específica de algún alumno? 🔍"
-            else:
-                response += "\n\n¿Te ayudo con otra consulta o quieres probar con criterios diferentes? 💭"
-
-            return response
-
-        except Exception as e:
-            self.logger.error(f"Error generando respuesta de seguimiento: {e}")
-            # Fallback a respuesta básica
-            return f"✅ Encontré {row_count} alumnos que cumplen con los criterios especificados."
-
-    def _extract_context_description(self, consulta_anterior: str) -> str:
-        """
-        🔍 EXTRAE DESCRIPCIÓN AMIGABLE DEL CONTEXTO ANTERIOR (MEJORADO)
-
-        Args:
-            consulta_anterior: Consulta anterior del usuario
-
-        Returns:
-            Descripción amigable del contexto
-        """
-        try:
-            consulta_lower = consulta_anterior.lower()
-            descripcion_partes = []
-
-            # Detectar año de nacimiento
-            for word in consulta_anterior.split():
-                if word.isdigit() and len(word) == 4:
-                    return f"estudiantes nacidos en {word}"
-
-            # 🧠 USAR SISTEMA LLM INTELIGENTE PARA EXTRAER DESCRIPCIÓN
-            # Crear datos dummy para el LLM (solo necesitamos los campos)
-            dummy_data = [{'grado': 1, 'grupo': 'A', 'turno': 'MATUTINO', 'nombre': 'DUMMY'}]
-
-            # Usar el sistema LLM para extraer criterios de la consulta anterior
-            filter_criteria = self._extract_filter_criteria_with_llm(consulta_anterior, dummy_data)
-
-            if filter_criteria and filter_criteria.get('tiene_filtros', False):
-                criterios = filter_criteria.get('criterios', [])
-                for criterio in criterios:
-                    campo = criterio.get('campo', '')
-                    valor = criterio.get('valor', '')
-
-                    # Convertir criterios a descripciones amigables
-                    if campo == 'grado':
-                        descripcion_partes.append(f"{valor}° grado")
-                    elif campo == 'grupo':
-                        descripcion_partes.append(f"grupo {valor}")
-                    elif campo == 'turno':
-                        descripcion_partes.append(f"turno {valor.lower()}")
-                    elif campo == 'nombre':
-                        descripcion_partes.append(f"apellido {valor}")
-
-            # Fallback: detectar patrones simples si el LLM no encuentra nada
-            if not descripcion_partes:
-                # Solo patrones muy específicos y seguros
-                if 'garcia' in consulta_lower:
-                    descripcion_partes.append("apellido García")
-                elif 'martinez' in consulta_lower:
-                    descripcion_partes.append("apellido Martínez")
-                elif 'lopez' in consulta_lower:
-                    descripcion_partes.append("apellido López")
-
-            # Construir descripción final
-            if descripcion_partes:
-                return " ".join(descripcion_partes)
-            else:
-                return "la consulta anterior"
-
-        except Exception as e:
-            self.logger.error(f"Error extrayendo descripción del contexto: {e}")
-            return "la consulta anterior"
-
-    def _generate_specific_context_response(self, user_query: str, row_count: int, data: List[Dict]) -> str:
-        """
-        🎯 GENERA RESPUESTA ESPECÍFICA BASADA EN EL CONTEXTO DE LA CONSULTA
-
-        Args:
-            user_query: Consulta del usuario
-            row_count: Cantidad de resultados
-            data: Datos encontrados
-
-        Returns:
-            Respuesta específica con contexto detectado
-        """
-        try:
-            user_lower = user_query.lower()
-
-            # 🎯 DETECTAR AÑO DE NACIMIENTO
-            año_detectado = None
-            for word in user_query.split():
-                if word.isdigit() and len(word) == 4 and word.startswith('20'):
-                    año_detectado = word
-                    break
-
-            if año_detectado:
-                return f"Encontré **{row_count} estudiantes nacidos en {año_detectado}**. 📅"
-
-            # 🎯 DETECTAR MÚLTIPLES CRITERIOS COMBINADOS (GRADO + GRUPO + TURNO)
-            criterios_detectados = []
-
-            # Detectar grado
-            if "grado" in user_lower or any(g in user_lower for g in ["1er", "2do", "3er", "4to", "5to", "6to"]):
-                grado_detectado = "ese grado"
-                for palabra in user_lower.split():
-                    if "primer" in palabra or "1" in palabra:
-                        grado_detectado = "primer grado"
-                    elif "segundo" in palabra or "2" in palabra:
-                        grado_detectado = "segundo grado"
-                    elif "tercer" in palabra or "3" in palabra:
-                        grado_detectado = "tercer grado"
-                    elif "cuarto" in palabra or "4" in palabra:
-                        grado_detectado = "cuarto grado"
-                    elif "quinto" in palabra or "5" in palabra:
-                        grado_detectado = "quinto grado"
-                    elif "sexto" in palabra or "6" in palabra:
-                        grado_detectado = "sexto grado"
-                criterios_detectados.append(grado_detectado)
-
-            # Detectar grupo específico (CORREGIDO: más específico)
-            if "grupo a" in user_lower:
-                criterios_detectados.append("grupo A")
-            elif "grupo b" in user_lower:
-                criterios_detectados.append("grupo B")
-            elif "grupo c" in user_lower:
-                criterios_detectados.append("grupo C")
-            # Solo detectar letras aisladas si están claramente referenciando grupos
-            elif re.search(r'\bgrupo\s+[abc]\b', user_lower):
-                match = re.search(r'\bgrupo\s+([abc])\b', user_lower)
-                if match:
-                    criterios_detectados.append(f"grupo {match.group(1).upper()}")
-
-            # Detectar turno
-            if "vespertino" in user_lower:
-                criterios_detectados.append("turno vespertino")
-            elif "matutino" in user_lower:
-                criterios_detectados.append("turno matutino")
-
-            # Si se detectaron criterios múltiples, generar respuesta combinada
-            if criterios_detectados:
-                if len(criterios_detectados) == 1:
-                    return f"Encontré **{row_count} alumnos de {criterios_detectados[0]}**. 🎓"
-                else:
-                    criterios_texto = " del ".join(criterios_detectados)
-                    return f"Encontré **{row_count} alumnos de {criterios_texto}**. 🎓"
-
-            # 🎯 DETECTAR TURNO INDIVIDUAL (solo si no se detectaron criterios múltiples arriba)
-            if "vespertino" in user_lower:
-                self.logger.info(f"🔍 DEBUG - _generate_specific_context_response: Detectado turno vespertino individual")
-                return f"Encontré **{row_count} estudiantes del turno vespertino**. 🌇"
-            elif "matutino" in user_lower:
-                self.logger.info(f"🔍 DEBUG - _generate_specific_context_response: Detectado turno matutino individual")
-                return f"Encontré **{row_count} estudiantes del turno matutino**. 🌅"
-
-            # 🎯 DETECTAR PROMEDIO (PRIORIDAD ALTA)
-            if "promedio" in user_lower:
-                if "mayor" in user_lower or ">" in user_lower:
-                    # Extraer número
-                    import re
-                    numbers = re.findall(r'\d+(?:\.\d+)?', user_lower)
-                    if numbers:
-                        valor = numbers[0]
-                        return f"Encontré **{row_count} estudiantes con promedio mayor a {valor}**. 📊"
-                elif "menor" in user_lower or "<" in user_lower:
-                    import re
-                    numbers = re.findall(r'\d+(?:\.\d+)?', user_lower)
-                    if numbers:
-                        valor = numbers[0]
-                        return f"Encontré **{row_count} estudiantes con promedio menor a {valor}**. 📊"
-                else:
-                    return f"Encontré **{row_count} estudiantes** según el criterio de promedio especificado. 📊"
-
-            # 🎯 DETECTAR GRUPO (PRIORIDAD MENOR)
-            if "grupo a" in user_lower and "promedio" not in user_lower:
-                return f"Encontré **{row_count} estudiantes del grupo A**. 📚"
-            elif "grupo b" in user_lower and "promedio" not in user_lower:
-                return f"Encontré **{row_count} estudiantes del grupo B**. 📚"
-            elif "grupo c" in user_lower and "promedio" not in user_lower:
-                return f"Encontré **{row_count} estudiantes del grupo C**. 📚"
-
-            # 🎯 DETECTAR BÚSQUEDA POR NOMBRE
-            if any(keyword in user_lower for keyword in ["nombre", "llamado", "llama"]):
-                return f"Encontré **{row_count} estudiantes** que coinciden con el nombre especificado. 👤"
-
-            # 🎯 DETECTAR BÚSQUEDA POR CALIFICACIONES CON CRITERIOS ESPECÍFICOS
-            if any(keyword in user_lower for keyword in ["calificaciones", "notas", "promedio", "buenos"]):
-                # Extraer criterios específicos de la consulta
-                criterios_detectados = []
-
-                # Detectar grado
-                for grado in ["1", "2", "3", "4", "5", "6"]:
-                    if f"{grado}do" in user_lower or f"grado {grado}" in user_lower:
-                        criterios_detectados.append(f"{grado}° grado")
-                        break
-
-                # Detectar grupo (CORREGIDO: más específico)
-                if "grupo a" in user_lower:
-                    criterios_detectados.append("grupo A")
-                elif "grupo b" in user_lower:
-                    criterios_detectados.append("grupo B")
-                elif "grupo c" in user_lower:
-                    criterios_detectados.append("grupo C")
-                # Solo detectar letras aisladas si están claramente referenciando grupos
-                elif re.search(r'\bgrupo\s+[abc]\b', user_lower):
-                    match = re.search(r'\bgrupo\s+([abc])\b', user_lower)
-                    if match:
-                        criterios_detectados.append(f"grupo {match.group(1).upper()}")
-
-                # Detectar turno
-                if "matutino" in user_lower:
-                    criterios_detectados.append("turno matutino")
-                elif "vespertino" in user_lower:
-                    criterios_detectados.append("turno vespertino")
-
-                # Detectar estado de calificaciones
-                if "sin calificaciones" in user_lower or "no tengan calificaciones" in user_lower:
-                    criterios_detectados.append("sin calificaciones registradas")
-                elif "con calificaciones" in user_lower or "tengan calificaciones" in user_lower:
-                    criterios_detectados.append("con calificaciones registradas")
-
-                # Construir respuesta específica
-                if criterios_detectados:
-                    criterios_texto = ", ".join(criterios_detectados)
-                    return f"Encontré **{row_count} estudiantes de {criterios_texto}**. 📊"
-                else:
-                    return f"Encontré **{row_count} estudiantes** que cumplen con los criterios de calificaciones. 📊"
-
-            # 🎯 FALLBACK GENÉRICO MEJORADO
-            # Intentar extraer criterios básicos para respuesta más específica
-            criterios_basicos = []
-
-            # Detectar grado en fallback
-            for grado in ["1", "2", "3", "4", "5", "6"]:
-                if f"{grado}do" in user_lower or f"grado {grado}" in user_lower:
-                    criterios_basicos.append(f"{grado}° grado")
-                    break
-
-            # Detectar grupo en fallback (CORREGIDO: más específico)
-            if "grupo a" in user_lower:
-                criterios_basicos.append("grupo A")
-            elif "grupo b" in user_lower:
-                criterios_basicos.append("grupo B")
-            elif "grupo c" in user_lower:
-                criterios_basicos.append("grupo C")
-            # Solo detectar letras aisladas si están claramente referenciando grupos
-            elif re.search(r'\bgrupo\s+[abc]\b', user_lower):
-                match = re.search(r'\bgrupo\s+([abc])\b', user_lower)
-                if match:
-                    criterios_basicos.append(f"grupo {match.group(1).upper()}")
-
-            # Detectar turno en fallback
-            if "matutino" in user_lower:
-                criterios_basicos.append("turno matutino")
-            elif "vespertino" in user_lower:
-                criterios_basicos.append("turno vespertino")
-
-            if criterios_basicos:
-                criterios_texto = ", ".join(criterios_basicos)
-                return f"Encontré **{row_count} alumnos de {criterios_texto}**. ✅"
-            else:
-                return f"Encontré **{row_count} alumnos** que coinciden con tu búsqueda. ✅"
-
-        except Exception as e:
-            self.logger.error(f"Error generando respuesta específica: {e}")
-            return f"Encontré **{row_count} alumnos** que coinciden con tu búsqueda. ✅"
-
-    def _log_detailed_technical_context(self):
-        """🔍 MOSTRAR CONTEXTO TÉCNICO COMPLETO EN LOGS - COMO SECRETARIO ACADÉMICO"""
-        try:
-            self.logger.info("=" * 80)
-            self.logger.info("🔍 [STUDENT] CONTEXTO TÉCNICO COMPLETO:")
-            self.logger.info("=" * 80)
-
-            # 1. ESTRUCTURA DE BASE DE DATOS
-            self.logger.info("🗄️ 1. ESTRUCTURA DE BASE DE DATOS:")
-            try:
-                # Obtener estructura real de la BD
-                db_structure = self.database_analyzer.get_database_structure()
-                tables = db_structure.get("tables", {})
-
-                for table_name, table_info in tables.items():
-                    self.logger.info(f"   📋 TABLA: {table_name}")
-                    columns = table_info.get("columns", {})
-                    count = table_info.get("count", 0)
-
-                    for col_name, col_type in columns.items():
-                        self.logger.info(f"      ├── {col_name}: {col_type}")
-
-                    self.logger.info(f"      └── Total registros: {count}")
-
-                # Campos especiales críticos
-                self.logger.info("")
-                self.logger.info("⚠️ CAMPOS ESPECIALES CRÍTICOS:")
-                self.logger.info("      ├── promedio: ❌ NO EXISTE como campo directo")
-                self.logger.info("      ├── calificaciones: ✅ JSON con promedio por materia")
-                self.logger.info("      └── Para promedio: usar JSON_EXTRACT o filtros dinámicos")
-
-                # Ejemplos de registros reales
-                self.logger.info("")
-                self.logger.info("📄 EJEMPLOS DE REGISTROS REALES:")
-                try:
-                    # Obtener un ejemplo de cada tabla
-                    import sqlite3
-                    with sqlite3.connect(self.db_path) as conn:
-                        cursor = conn.cursor()
-
-                        # Ejemplo COMPLETO de alumno con TODOS los campos
-                        cursor.execute("SELECT * FROM alumnos LIMIT 1")
-                        alumno_ejemplo = cursor.fetchone()
-                        if alumno_ejemplo:
-                            self.logger.info("      📋 EJEMPLO COMPLETO ALUMNO:")
-                            self.logger.info(f"         ├── ID: {alumno_ejemplo[0]}")
-                            self.logger.info(f"         ├── CURP: {alumno_ejemplo[1]}")
-                            self.logger.info(f"         ├── Nombre: {alumno_ejemplo[2]}")
-                            self.logger.info(f"         ├── Matrícula: {alumno_ejemplo[3]}")
-                            self.logger.info(f"         ├── Fecha Nacimiento: {alumno_ejemplo[4]}")
-                            self.logger.info(f"         └── Fecha Registro: {alumno_ejemplo[5]}")
-
-                        # Ejemplo COMPLETO de datos escolares con TODOS los campos
-                        cursor.execute("SELECT * FROM datos_escolares WHERE calificaciones IS NOT NULL AND calificaciones != '[]' LIMIT 1")
-                        datos_ejemplo = cursor.fetchone()
-                        if datos_ejemplo:
-                            self.logger.info("      📊 EJEMPLO COMPLETO DATOS ESCOLARES:")
-                            self.logger.info(f"         ├── ID: {datos_ejemplo[0]}")
-                            self.logger.info(f"         ├── Alumno_ID: {datos_ejemplo[1]} (FK → alumnos.id)")
-                            self.logger.info(f"         ├── Ciclo Escolar: {datos_ejemplo[2]}")
-                            self.logger.info(f"         ├── Grado: {datos_ejemplo[3]}")
-                            self.logger.info(f"         ├── Grupo: {datos_ejemplo[4]}")
-                            self.logger.info(f"         ├── Turno: {datos_ejemplo[5]}")
-                            self.logger.info(f"         ├── Escuela: {datos_ejemplo[6]}")
-                            self.logger.info(f"         ├── CCT: {datos_ejemplo[7]}")
-                            self.logger.info(f"         └── Calificaciones: [JSON - ver estructura abajo]")
-
-                            # Mostrar estructura COMPLETA de calificaciones JSON
-                            if datos_ejemplo[8]:  # calificaciones
-                                import json
-                                try:
-                                    califs = json.loads(datos_ejemplo[8])
-                                    if califs and len(califs) > 0:
-                                        self.logger.info("      🎯 ESTRUCTURA COMPLETA JSON CALIFICACIONES:")
-                                        primer_materia = califs[0]
-                                        self.logger.info(f"         ├── Materia: {primer_materia.get('nombre', 'N/A')}")
-                                        self.logger.info(f"         ├── Bimestre I: {primer_materia.get('i', 'N/A')}")
-                                        self.logger.info(f"         ├── Bimestre II: {primer_materia.get('ii', 'N/A')}")
-                                        self.logger.info(f"         ├── Bimestre III: {primer_materia.get('iii', 'N/A')}")
-                                        self.logger.info(f"         ├── Promedio: {primer_materia.get('promedio', 'N/A')}")
-                                        self.logger.info(f"         └── Total materias: {len(califs)}")
-
-                                        # Mostrar RELACIÓN entre tablas
-                                        self.logger.info("      🔗 RELACIÓN ENTRE TABLAS:")
-                                        self.logger.info(f"         ├── alumnos.id = {alumno_ejemplo[0] if alumno_ejemplo else 'N/A'}")
-                                        self.logger.info(f"         ├── datos_escolares.alumno_id = {datos_ejemplo[1]}")
-                                        self.logger.info(f"         ├── RELACIÓN: alumnos.id = datos_escolares.alumno_id")
-                                        self.logger.info(f"         └── JOIN: LEFT JOIN datos_escolares de ON a.id = de.alumno_id")
-                                except:
-                                    self.logger.info("         └── Error parseando JSON de calificaciones")
-
-                except Exception as e:
-                    self.logger.info(f"      ❌ Error obteniendo ejemplos: {e}")
-
-            except Exception as e:
-                self.logger.info(f"      ❌ Error obteniendo estructura: {e}")
-
-            # 2. ACCIONES DISPONIBLES
-            self.logger.info("")
-            self.logger.info("🔧 2. ACCIONES DISPONIBLES:")
-            acciones_info = {
-                "BUSCAR_UNIVERSAL": {
-                    "proposito": "Búsqueda flexible con criterios múltiples",
-                    "entrada": "criterios dinámicos",
-                    "salida": "lista de alumnos",
-                    "uso": "Cuando se necesita búsqueda con 1-3 criterios"
-                },
-                "OBTENER_ALUMNO_EXACTO": {
-                    "proposito": "Obtener UN alumno específico",
-                    "entrada": "identificador único (CURP, matrícula, ID)",
-                    "salida": "datos completos de un alumno",
-                    "uso": "Cuando se busca una persona específica"
-                },
-                "CALCULAR_ESTADISTICA": {
-                    "proposito": "Cálculos y análisis de datos",
-                    "entrada": "tipo de estadística, filtros opcionales",
-                    "salida": "números, promedios, distribuciones",
-                    "uso": "Para análisis numéricos y reportes"
-                },
-                "GENERAR_CONSTANCIA_COMPLETA": {
-                    "proposito": "Generación de documentos oficiales",
-                    "entrada": "datos del alumno, tipo de constancia",
-                    "salida": "archivo PDF",
-                    "uso": "Para documentos oficiales"
+                "error_info": error_info,
+                "metadata": {
+                    "data_type": data_type,
+                    "requires_user_action": self._requires_user_action(action_executed),
+                    "original_query": user_query,
+                    "context_ready": True
                 }
             }
 
-            for accion, info in acciones_info.items():
-                self.logger.info(f"   🎯 {accion}:")
-                self.logger.info(f"      ├── Propósito: {info['proposito']}")
-                self.logger.info(f"      ├── Entrada: {info['entrada']}")
-                self.logger.info(f"      ├── Salida: {info['salida']}")
-                self.logger.info(f"      └── Uso: {info['uso']}")
-
-            # 3. PLANTILLAS SQL DISPONIBLES
-            self.logger.info("")
-            self.logger.info("📋 3. PLANTILLAS SQL OPTIMIZADAS:")
-            try:
-                # Verificar si SQLTemplateManager está disponible (MOVIDO A future_implementations)
-                from future_implementations.sql_templates.template_manager import SQLTemplateManager
-                template_manager = SQLTemplateManager()
-                templates = template_manager.get_available_templates()
-
-                self.logger.info(f"      📊 Total plantillas disponibles: {len(templates)}")
-                for template in templates:
-                    template_info = template_manager.get_template_info(template)
-                    if template_info:
-                        self.logger.info(f"      ├── {template}: {template_info.description}")
-
-                # Plantillas más importantes
-                self.logger.info("")
-                self.logger.info("      🎯 PLANTILLAS PRINCIPALES (NO USADAS EN FLUJO ACTUAL):")
-                self.logger.info("      ├── buscar_alumno: Búsqueda por nombre con información completa")
-                self.logger.info("      ├── filtrar_grado_grupo: Para filtros de grado y grupo específicos")
-                self.logger.info("      ├── buscar_por_curp: Para identificadores únicos")
-                self.logger.info("      └── contar_alumnos_total: Para estadísticas básicas")
-                self.logger.info("      ⚠️ NOTA: Sistema actual usa SQL dinámico, no plantillas")
-
-            except Exception as e:
-                self.logger.info(f"      ❌ Plantillas SQL no disponibles (movidas a future_implementations): {e}")
-
-            # 4. GUÍAS DE RAZONAMIENTO ESTRATÉGICO
-            self.logger.info("")
-            self.logger.info("🧠 4. GUÍAS DE RAZONAMIENTO ESTRATÉGICO:")
-            guias = {
-                "García": "apellido común → varios resultados → mostrar todos + preguntar",
-                "CURP específico": "identificador único → un resultado → mostrar directo",
-                "promedio > 8": "requiere JSON_EXTRACT → usar plantilla especial",
-                "constancia para Juan": "documento oficial → verificar datos + generar PDF",
-                "alumnos de 2do A": "filtro específico → usar criterios directos"
-            }
-
-            for caso, estrategia in guias.items():
-                self.logger.info(f"      ├── '{caso}' → {estrategia}")
-
-            # 5. COMPONENTES ESPECIALIZADOS
-            self.logger.info("")
-            self.logger.info("⚙️ 5. COMPONENTES ESPECIALIZADOS INICIALIZADOS:")
-            componentes = {
-                "DatabaseAnalyzer": "✅ Análisis de estructura de BD",
-                "SQLExecutor": "✅ Ejecución de consultas SQL",
-                "ResponseParser": "✅ Parseo de respuestas LLM",
-                "PromptManager": "✅ Gestión de prompts especializados",
-                "ContinuationDetector": "✅ Detección de continuaciones",
-                "StudentIdentifier": "✅ Identificación de alumnos",
-                "ConstanciaProcessor": "✅ Procesamiento de constancias",
-                "DataNormalizer": "✅ Normalización de datos",
-                "ResponseGenerator": "✅ Generación de respuestas",
-                "JSONParser": "✅ Parseo de JSON"
-            }
-
-            for componente, estado in componentes.items():
-                self.logger.info(f"      ├── {componente}: {estado}")
-
-            # 6. PROCESO DE RAZONAMIENTO
-            self.logger.info("")
-            self.logger.info("🎯 6. PROCESO DE RAZONAMIENTO ESTRATÉGICO:")
-            self.logger.info("      ├── ANÁLISIS: ¿Qué quiere realmente el usuario?")
-            self.logger.info("      ├── PLANIFICACIÓN: ¿Qué acciones necesito y en qué orden?")
-            self.logger.info("      ├── EJECUCIÓN: ¿Cómo combinar resultados?")
-            self.logger.info("      └── COMUNICACIÓN: ¿Cómo explicar lo que encontré?")
-
-            # 7. CAPACIDADES CONVERSACIONALES
-            self.logger.info("")
-            self.logger.info("💬 7. CAPACIDADES CONVERSACIONALES:")
-            self.logger.info("      ├── Conversation_stack: ✅ Manejo de contexto conversacional")
-            self.logger.info("      ├── Continuation_detector: ✅ Detección inteligente de seguimientos")
-            self.logger.info("      ├── Auto-reflexión: ✅ Análisis de continuaciones esperadas")
-            self.logger.info("      └── Memoria contextual: ✅ Recordar interacciones previas")
-
-            self.logger.info("=" * 80)
-            self.logger.info("🎯 [STUDENT] CONTEXTO TÉCNICO CARGADO Y VERIFICADO")
-            self.logger.info("=" * 80)
+            self.logger.info(f"📊 [STUDENT REPORT] {action_executed}: {report['status']} - {report['technical_result']['row_count']} resultados")
+            return report
 
         except Exception as e:
-            self.logger.error(f"❌ Error mostrando contexto técnico detallado: {e}")
+            self.logger.error(f"Error creando reporte estandarizado: {e}")
+            return {
+                "status": "error",
+                "action_executed": action_executed,
+                "error_info": {"type": "report_creation_error", "message": str(e)},
+                "metadata": {"data_type": "error", "requires_user_action": False}
+            }
+
+    def _determine_data_type(self, action: str, data: Any = None) -> str:
+        """Determina el tipo de datos para el Master"""
+        if action in ["BUSCAR_UNIVERSAL", "BUSCAR_Y_FILTRAR"]:
+            return "student_list"
+        elif action in ["CALCULAR_ESTADISTICA", "CONTAR_UNIVERSAL"]:
+            return "statistics"
+        elif action in ["GENERAR_CONSTANCIA_COMPLETA"]:
+            return "constancia_preview"
+        elif action in ["TRANSFORMAR_PDF"]:
+            return "transformation_preview"
+        else:
+            return "generic_data"
+
+    def _requires_user_action(self, action: str) -> bool:
+        """Determina si la acción requiere interacción del usuario"""
+        return action in ["BUSCAR_UNIVERSAL", "CALCULAR_ESTADISTICA", "CONTAR_UNIVERSAL", "BUSCAR_Y_FILTRAR"]
+
+    def _debug_pause(self, title: str, data: dict):
+        """Método de debug para mostrar información en --debug-pauses"""
+        import os
+        if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
+            print(f"\n🛑 {title}")
+            for key, value in data.items():
+                if isinstance(value, list) and len(value) > 3:
+                    print(f"    ├── {key}: {value[:3]}... ({len(value)} total)")
+                elif isinstance(value, str) and len(value) > 50:
+                    print(f"    ├── {key}: {value[:50]}...")
+                else:
+                    print(f"    ├── {key}: {value}")
+            print(f"    └── Presiona ENTER para continuar...")
+            input()
+

@@ -4,7 +4,7 @@ Proporciona información estructural en tiempo real para los LLMs
 """
 
 import sqlite3
-import json
+import json 
 import logging
 from typing import Dict, List, Any, Optional
 from pathlib import Path
@@ -95,12 +95,16 @@ class DatabaseAnalyzer:
         structure = self.get_database_structure()
         materias = self.get_available_materias()
         
+        # Obtener valores dinámicos desde configuración escolar
+        from app.core.school_config import SchoolConfig
+        config = SchoolConfig()
+
         return {
             "campos_disponibles": list(structure.get("tables", {}).get("datos_escolares", {}).get("columns", {}).keys()),
             "materias_disponibles": materias,
-            "valores_turno": ["MATUTINO", "VESPERTINO"],
-            "grados_disponibles": list(range(1, 7)),
-            "grupos_disponibles": ["A", "B", "C"]
+            "valores_turno": config.available_shifts,
+            "grados_disponibles": config.available_grades,
+            "grupos_disponibles": config.available_groups
         }
     
     def _analyze_structure(self) -> Dict[str, Any]:
@@ -180,6 +184,10 @@ class DatabaseAnalyzer:
         structure = self.get_database_structure()
         materias = self.get_available_materias()
         
+        # Obtener valores dinámicos desde configuración escolar
+        from app.core.school_config import SchoolConfig
+        config = SchoolConfig()
+
         return f"""
 ESTRUCTURA REAL DE LA BASE DE DATOS:
 
@@ -189,10 +197,10 @@ ESTRUCTURA REAL DE LA BASE DE DATOS:
 📚 MATERIAS REALES DISPONIBLES:
 {', '.join(materias)}
 
-🎯 VALORES VÁLIDOS:
-- turno: MATUTINO, VESPERTINO
-- grado: 1, 2, 3, 4, 5, 6
-- grupo: A, B, C
+🎯 VALORES VÁLIDOS (DINÁMICOS):
+- turno: {', '.join(config.available_shifts)}
+- grado: {', '.join(map(str, config.available_grades))}
+- grupo: {', '.join(config.available_groups)}
 
 ⚠️ IMPORTANTE:
 - Las calificaciones están en formato JSON

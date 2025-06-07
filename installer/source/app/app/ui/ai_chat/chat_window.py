@@ -404,10 +404,9 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             # Estamos esperando una respuesta sobre qué hacer con el archivo transformado
             self._handle_save_confirmation_response(message_text)
             return
-        elif self.waiting_for_constancia_confirmation and self.temp_constancia_file:
-            # Estamos esperando confirmación sobre qué hacer con la constancia generada
-            self._handle_constancia_confirmation_response(message_text)
-            return
+        # 🗑️ ELIMINADO: Lógica de confirmación de constancias
+        # RAZÓN: El panel ya es suficientemente claro para que el usuario maneje todo
+        # La IA debe generar la vista previa y desligarse inmediatamente
         # 🔧 ELIMINAR LÓGICA DE CONFIRMACIÓN PARA CONSTANCIAS
         # elif self.waiting_for_file_open_response and self.last_generated_file:
         #     # Estamos esperando una respuesta sobre si abrir un archivo
@@ -1367,20 +1366,15 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
 
     def _show_constancia_preview_options(self):
         """
-        🗑️ FUNCIÓN DESHABILITADA: Las opciones ya están en el panel derecho
+        🗑️ FUNCIÓN COMPLETAMENTE ELIMINADA: No necesitamos confirmación
 
-        Anteriormente mostraba opciones duplicadas:
-        - "Confirmar" - Guardar la constancia definitivamente
-        - "Abrir en navegador" - Ver/imprimir sin guardar
-        - "Cancelar" - Descartar la constancia
-
-        Ahora solo usamos la respuesta humanizada del Student que menciona el panel.
+        El panel ya es suficientemente claro para que el usuario maneje todo.
+        La IA debe generar la vista previa y desligarse inmediatamente.
         """
-        # 🎯 SOLO MARCAR QUE ESTAMOS ESPERANDO CONFIRMACIÓN
-        # No mostrar mensaje adicional - el Student ya generó respuesta humanizada
-        self.waiting_for_constancia_confirmation = True
+        # 🗑️ ELIMINADO: No establecer estado de confirmación
+        # RAZÓN: El usuario maneja todo desde el panel, no necesita confirmación por chat
 
-        self.logger.info("🎯 [CONSTANCIA] Esperando confirmación del usuario (sin mensaje adicional)")
+        self.logger.info("🎯 [CONSTANCIA] Vista previa generada - Usuario maneja desde panel")
 
     def _show_transformation_options(self):
         """
@@ -1408,25 +1402,8 @@ Escribe "ayuda" para ver todas las funciones disponibles."""
             self._get_current_time()
         )
 
-    def _handle_constancia_confirmation_response(self, message_text):
-        """Maneja la respuesta del usuario sobre qué hacer con la constancia generada"""
-        normalized_text = message_text.lower().strip()
-
-        if normalized_text in ["confirmar", "sí", "si", "yes", "guardar", "confirmo", "ok"]:
-            self._save_constancia_definitively()
-        elif normalized_text in ["abrir", "abrir en navegador", "ver", "imprimir"]:
-            self._open_constancia_file()
-        elif normalized_text in ["cancelar", "no", "descartar", "cancel"]:
-            self._cancel_constancia()
-        else:
-            self.chat_list.add_assistant_message(
-                "No entendí tu respuesta. Por favor responde 'confirmar', 'abrir en navegador' o 'cancelar'.",
-                self._get_current_time()
-            )
-            return  # No restablecer el estado para permitir otro intento
-
-        # Restablecer el estado de confirmación
-        self.waiting_for_constancia_confirmation = False
+    # 🗑️ MÉTODO ELIMINADO: _handle_constancia_confirmation_response
+    # RAZÓN: No necesitamos confirmación por chat, el usuario maneja todo desde el panel
 
     def _save_constancia_definitively(self):
         """Guarda la constancia definitivamente"""

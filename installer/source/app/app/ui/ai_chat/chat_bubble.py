@@ -141,11 +141,7 @@ class ChatBubble(QWidget):
             if text.count('\n') > 15:
                 detected_patterns.append("contenido_largo")
 
-            print(f"🔍 [CHATBUBBLE] Detectado contenido técnico:")
-            print(f"    ├── Tipo: {', '.join(detected_patterns) if detected_patterns else 'genérico'}")
-            print(f"    ├── Líneas: {text.count(chr(10))}")
-            print(f"    ├── Separadores ═: {text.count('═')}")
-            print(f"    └── Emojis técnicos: 📊={text.count('📊')}, 🎓={text.count('🎓')}, 📋={text.count('📋')}")
+            # 🔍 Contenido técnico detectado (log eliminado para flujo limpio)
 
         return is_technical
 
@@ -421,24 +417,11 @@ class ChatBubble(QWidget):
         # 🎯 HABILITAR SOPORTE HTML PARA FORMATEO MEJORADO
         # Convertir saltos de línea a HTML para mejor renderizado
         if '\n' in self.text:
-            # 🔍 DEBUG: Ver texto original
-            print(f"🔍 [DEBUG] CHATBUBBLE - Texto con \\n detectado:")
-            print(f"    ├── Longitud: {len(self.text)} chars")
-            print(f"    ├── Primeros 100 chars: '{self.text[:100]}...'")
-            print(f"    └── Cantidad de \\n: {self.text.count(chr(10))}")
-
             # Convertir saltos de línea a <br> para HTML
             html_text = self.text.replace('\n', '<br>')
-            print(f"🔍 [DEBUG] CHATBUBBLE - Después de conversión:")
-            print(f"    ├── Primeros 100 chars: '{html_text[:100]}...'")
-            print(f"    └── Cantidad de <br>: {html_text.count('<br>')}")
-
             self.content_label.setText(html_text)
         else:
             # Si no hay saltos de línea, usar el texto original
-            print(f"🔍 [DEBUG] CHATBUBBLE - SIN saltos de línea:")
-            print(f"    ├── Longitud: {len(self.text)} chars")
-            print(f"    └── Texto: '{self.text[:100]}...'")
             self.content_label.setText(self.text)
 
         # Siempre usar RichText para consistencia

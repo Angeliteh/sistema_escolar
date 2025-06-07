@@ -5,6 +5,7 @@ Elimina duplicación y centraliza contexto común siguiendo la filosofía del si
 
 from typing import Dict, List, Optional
 from .base_prompt_manager import BasePromptManager
+from app.core.ai.student_action_catalog import StudentActionCatalog
 
 
 class StudentQueryPromptManager(BasePromptManager):
@@ -39,13 +40,18 @@ class StudentQueryPromptManager(BasePromptManager):
         para garantizar consistencia total
         """
         if self._school_context_cache is None:
-            self._school_context_cache = """
+            # 🎯 CONTEXTO DINÁMICO: Se adapta automáticamente a cualquier escuela
+            school_name = self.school_config.get_school_name()
+            education_level = self.school_config.get_education_level().lower()
+            total_students = self.school_config.get_total_students()
+
+            self._school_context_cache = f"""
 CONTEXTO COMPLETO DEL SISTEMA:
-- Sistema de gestión escolar para la escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ"
+- Sistema de gestión escolar para la escuela {education_level} "{school_name}"
 - Maneja datos de alumnos, información académica y generación de constancias
 - Los usuarios son personal administrativo que necesita información precisa
 - TODO el sistema ES la escuela - no hay nada más
-- TODA la base de datos SON los alumnos de esta escuela (211 estudiantes)
+- TODA la base de datos SON los alumnos de esta escuela ({total_students} estudiantes)
 - TODAS las estadísticas, datos, información de "la escuela" SON sobre los alumnos
 
 RAZONAMIENTO INTELIGENTE ESCOLAR:
@@ -62,7 +68,7 @@ ACCESO TOTAL AUTORIZADO:
 - El personal escolar tiene acceso total a los datos estudiantiles
 
 ESTRUCTURA DISPONIBLE:
-- 211 alumnos registrados en grados 1° a 6°
+{self.school_config.get_data_scope_text()}
 - Datos académicos: grados, grupos, turnos, calificaciones
 - Información personal: nombres, CURPs, matrículas, fechas
 - Registros de constancias generadas
@@ -167,7 +173,7 @@ VALORES VÁLIDOS:
         template = continuation_templates.get(continuation_type, continuation_templates["action"])
 
         return f"""
-Eres el asistente oficial de la escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ".
+{self.get_unified_prompt_header("asistente oficial de continuación")}
 
 {self.school_context}
 
@@ -416,6 +422,43 @@ REGLAS CRÍTICAS:
 RESPONDE ÚNICAMENTE con el SQL optimizado:
 """
 
+    def _get_centralized_action_guide(self) -> str:
+        """
+        🎯 OBTIENE GUÍA CENTRALIZADA DE ACCIONES
+
+        Reemplaza la información dispersa con la guía centralizada
+        del StudentActionCatalog.
+        """
+        return StudentActionCatalog.generate_student_prompt_section()
+
+    def _format_actions_from_catalog(self, sub_intention_mapping: Dict) -> str:
+        """
+        🎯 FORMATEAR ACCIONES DESDE CATÁLOGO CENTRALIZADO
+
+        Convierte el mapeo de sub-intenciones en formato legible para el prompt.
+        """
+        formatted_actions = []
+
+        for sub_intention, config in sub_intention_mapping.items():
+            primary_action = config["primary_action"]
+            description = config["description"]
+
+            formatted_actions.append(f"""
+📋 **{primary_action}** (para {sub_intention})
+   ├── Descripción: {description}
+   └── Parámetros: {config.get('parameters', 'Dinámicos según consulta')}""")
+
+            # Agregar acción de fallback si existe
+            if "fallback_action" in config:
+                fallback_action = config["fallback_action"]
+                fallback_criteria = config.get("fallback_criteria", "Casos especiales")
+                formatted_actions.append(f"""
+📋 **{fallback_action}** (fallback para {sub_intention})
+   ├── Descripción: {fallback_criteria}
+   └── Uso: Solo cuando {primary_action} no es suficiente""")
+
+        return "\n".join(formatted_actions)
+
     def clear_cache(self):
         """
         Limpia el cache de contextos
@@ -445,6 +488,35 @@ RESPONDE ÚNICAMENTE con el SQL optimizado:
             "school_context_length": len(self.school_context) if self._school_context_cache else 0,
             "database_context_length": len(self.get_database_context())
         }
+
+    def _format_action_descriptions_for_reasoning(self, sub_intention_mapping: dict) -> str:
+        """
+        🧠 FORMATEA DESCRIPCIONES DE ACCIONES PARA RAZONAMIENTO ANALÍTICO
+        Similar a como Master usa descripciones de intenciones
+        """
+        descriptions = []
+
+        for sub_intention, config in sub_intention_mapping.items():
+            primary_action = config["primary_action"]
+            description = config["description"]
+
+            descriptions.append(f"""
+📋 **{sub_intention}** → {primary_action}
+   ├── Descripción: {description}
+   └── Cuándo usar: {self._get_usage_logic(sub_intention)}""")
+
+        return "\n".join(descriptions)
+
+    def _get_usage_logic(self, sub_intention: str) -> str:
+        """Proporciona lógica de uso para cada sub-intención"""
+        usage_logic = {
+            "busqueda_simple": "Para buscar alumnos específicos. Si quiere 'información completa' → NO usar campos_solicitados",
+            "busqueda_compleja": "Para búsquedas con múltiples criterios o filtros",
+            "estadisticas": "Para conteos, distribuciones y análisis numéricos",
+            "generar_constancia": "Para generar constancias oficiales de cualquier tipo",
+            "transformacion_pdf": "Para transformar PDFs a formato estándar"
+        }
+        return usage_logic.get(sub_intention, "Usar según descripción de la acción")
 
     def get_validation_and_response_prompt(self, user_query: str, sql_query: str,
                                          data_summary: str, filter_decision: dict,
@@ -646,18 +718,9 @@ SUGERENCIAS INTELIGENTES DE CONSTANCIAS:
 - Si mostré muchos alumnos (6+): Esperar refinamiento de búsqueda
 - Si mostré estadísticas: No sugerir constancias
 
-🔮 PREDICCIÓN DE PRÓXIMA CONSULTA:
-Basándote en tu respuesta, predice qué podría preguntar el usuario a continuación:
-- "¿Podría pedir constancia para [alumno específico]?"
-- "¿Podría referenciar un elemento de la lista?"
-- "¿Podría pedir más detalles o información adicional?"
-- "¿Podría confirmar una acción sugerida?"
-
-DECISIÓN CONVERSACIONAL:
-Si tu respuesta espera continuación, especifica:
-- Tipo esperado: "selection" (selección de lista), "action" (acción sobre alumno), "confirmation" (confirmación), "specification" (especificación), "constancia_suggestion" (sugerir constancia)
-- Datos a recordar: información relevante para futuras referencias
-- Razonamiento: por qué esperas esta continuación y cómo el contexto ayudará al próximo prompt
+🎯 REPORTE TÉCNICO AL MASTER:
+Genera un reporte técnico simple sobre los resultados obtenidos.
+El Master se encargará de toda la interacción conversacional con el usuario.
 
 FORMATO DE RESPUESTA COMPLETA:
 {{
@@ -730,12 +793,9 @@ Ejemplo 3 - Consulta estadística (SIN CONTEXTO CONVERSACIONAL):
 CONTEXTO CONVERSACIONAL DISPONIBLE:
 {conversation_context}
 
-🧠 ANÁLISIS CONVERSACIONAL:
-Si hay contexto conversacional disponible, analiza si la consulta actual hace referencia a información anterior:
-- Referencias directas: "ese alumno", "el tercero", "para él", "número 5"
-- Referencias implícitas: "sí", "ok", "generar", "constancia"
-- Continuaciones: "también", "además", "y qué tal", "más información"
-- Especificaciones: "de estudios", "con foto", "completa"
+ℹ️ INFORMACIÓN CONTEXTUAL:
+El Master ya analizó toda la información conversacional.
+Esta información es solo para referencia técnica.
 
 """ if conversation_context.strip() else ""
 
@@ -801,12 +861,21 @@ EJEMPLOS CONTEXTUALES MEJORADOS:
         - Reutilización de estrategias probadas
         """
 
-        # Importar catálogo de acciones
-        from app.core.ai.actions import ActionCatalog
-        catalog = ActionCatalog()
+        # 🎯 USAR CATÁLOGO CENTRALIZADO DE STUDENT COMO PRINCIPAL
+        from app.core.ai.student_action_catalog import StudentActionCatalog
 
-        # Obtener acciones disponibles para la categoría
-        actions_formatted = catalog.format_actions_for_prompt(categoria)
+        # 🧠 OBTENER DESCRIPCIONES DINÁMICAS DE ACCIONES
+        sub_intention_mapping = StudentActionCatalog.get_sub_intention_mapping()
+        action_descriptions = self._format_action_descriptions_for_reasoning(sub_intention_mapping)
+
+        # Obtener guía centralizada de acciones (PRINCIPAL)
+        centralized_guide = StudentActionCatalog.generate_student_prompt_section()
+
+        # Obtener acciones técnicas disponibles desde el catálogo centralizado
+        sub_intention_mapping = StudentActionCatalog.get_sub_intention_mapping()
+
+        # Formatear acciones disponibles
+        actions_formatted = self._format_actions_from_catalog(sub_intention_mapping)
 
         context_section = f"""
 CONTEXTO CONVERSACIONAL DISPONIBLE:
@@ -830,30 +899,60 @@ Si el contexto contiene IDs de alumnos y la consulta se refiere a "esos", "de el
         master_section = ""
         if master_info:
             detected_entities = master_info.get('detected_entities', {})
-            campo_solicitado = detected_entities.get('campo_solicitado')
+            sub_intention = master_info.get('sub_intention', 'busqueda_simple')
+
+            # 🎯 INFORMACIÓN ESENCIAL DEL MASTER (SIN REDUNDANCIAS)
+            nombres = detected_entities.get('nombres', [])
             filtros = detected_entities.get('filtros', [])
+            limite_resultados = detected_entities.get('limite_resultados')
+            alumno_resuelto = detected_entities.get('alumno_resuelto')
 
             master_section = f"""
-🧠 INFORMACIÓN CRÍTICA DEL MASTER:
-El Master ya analizó la consulta y detectó:
+🧠 INFORMACIÓN ESENCIAL DEL MASTER:
+El Master analizó la consulta y detectó:
+
+🎯 SUB-INTENCIÓN: {sub_intention}
 """
-            if campo_solicitado:
+
+            if nombres:
                 master_section += f"""
-🎯 CAMPO ESPECÍFICO SOLICITADO: "{campo_solicitado}"
-⚠️ IMPORTANTE: El usuario solo quiere este campo específico, NO todos los datos.
-✅ CONFIGURAR: Usar parámetro "campos_solicitados": ["{campo_solicitado}"] en la acción.
+👤 ALUMNOS ESPECÍFICOS: {nombres}
+✅ USAR: Buscar por nombre específico
 """
 
             if filtros:
                 master_section += f"""
 🔍 FILTROS DETECTADOS: {filtros}
-✅ USAR: Estos filtros como criterios en la acción.
+✅ USAR: Estos filtros como criterios en la acción
+"""
+
+            if limite_resultados:
+                master_section += f"""
+📊 LÍMITE DE RESULTADOS: {limite_resultados}
+✅ USAR: Aplicar LIMIT en la consulta
+"""
+
+            if alumno_resuelto:
+                master_section += f"""
+🎯 ALUMNO RESUELTO DEL CONTEXTO: {alumno_resuelto.get('nombre', 'N/A')}
+✅ USAR: Para constancias o acciones específicas
 """
 
             master_section += "\n"
 
         return f"""
 Soy el ESTRATEGA DE ACCIONES para consultas de alumnos.
+
+🚨 **ORDEN DIRECTA DEL MASTER:**
+CATEGORÍA: {categoria}
+
+🎯 **MI ÚNICA TAREA:**
+Mapear la sub-intención a la acción más apropiada usando razonamiento analítico.
+El Master ya analizó el contexto y detectó la sub-intención.
+Yo analizo las acciones disponibles y elijo la mejor.
+
+🧠 **CATÁLOGO DE ACCIONES DISPONIBLES:**
+{action_descriptions}
 
 ESTRUCTURA DE LA BASE DE DATOS:
 {database_context}
@@ -863,11 +962,32 @@ ESTRUCTURA DE LA BASE DE DATOS:
 {context_section}
 
 CONSULTA DEL USUARIO: "{user_query}"
-CATEGORÍA DETECTADA: {categoria}
 
+{centralized_guide}
+
+ACCIONES TÉCNICAS DISPONIBLES:
 {actions_formatted}
 
-🎯 MI TAREA: Elegir la ACCIÓN más eficiente para resolver esta consulta.
+🎯 MI TAREA: Mapear SUB-INTENCIÓN a ACCIÓN usando razonamiento analítico.
+
+🧠 RAZONAMIENTO ANALÍTICO (como Master con intenciones):
+
+**PASO 1: ANALIZAR SUB-INTENCIÓN RECIBIDA**
+- Recibí del Master: "{categoria}" con sub-intención específica
+- Cada sub-intención tiene un propósito claro y acciones asociadas
+
+**PASO 2: CONSULTAR CATÁLOGO DE ACCIONES**
+- Revisar descripciones de acciones disponibles para esta sub-intención
+- Entender QUÉ hace cada acción y CUÁNDO usarla
+
+**PASO 3: RAZONAR ANALÍTICAMENTE**
+- "busqueda_simple" → BUSCAR_UNIVERSAL (descripción: "Búsqueda de alumnos específicos")
+- Si usuario quiere "información completa" → NO restringir campos (usar todos)
+- Si usuario quiere "solo CURP" → SÍ restringir campos (usar campos_solicitados)
+
+**PASO 4: DECIDIR PARÁMETROS LÓGICAMENTE**
+- Basarme en la DESCRIPCIÓN de la acción, no en ejemplos literales
+- Usar lógica humana: "información completa" = todos los campos
 
 🧠 MAPEO INTELIGENTE UNIVERSAL DE CAMPOS:
 
@@ -910,30 +1030,51 @@ Análisis: Campo 'calificaciones' es JSON, "sin" significa lista vacía
 Mapeo: {{"tabla": "datos_escolares", "campo": "calificaciones", "operador": "=", "valor": "[]"}}
 
 ESTRATEGIAS DISPONIBLES:
-1. 🎯 SIMPLE: Una sola acción resuelve todo
-2. 🔄 COMBINADA: Múltiples acciones trabajando juntas
-3. 📋 SECUENCIAL: Acciones en secuencia (resultado de una alimenta la siguiente)
+1. 🎯 SIMPLE: Una sola acción resuelve todo (USAR SIEMPRE)
+
+⚠️ IMPORTANTE: USAR ÚNICAMENTE ESTRATEGIA "simple" - Las estrategias "combinada" y "secuencial" NO están implementadas.
+BUSCAR_UNIVERSAL puede manejar múltiples criterios usando criterio_principal + filtros_adicionales.
 
 EJEMPLOS DE ESTRATEGIAS:
 
-EJEMPLOS ESENCIALES:
-- "buscar garcia" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "alumnos", "campo": "nombre", "operador": "LIKE", "valor": "garcia"}})
-- "alumnos de 2do grado" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "datos_escolares", "campo": "grado", "operador": "=", "valor": "2"}})
-- "dame la matrícula de Juan" → BUSCAR_UNIVERSAL (criterio_principal: {{"tabla": "alumnos", "campo": "nombre", "operador": "LIKE", "valor": "Juan"}}, campos_solicitados: ["matricula"])
+🧠 PROCESO DE RAZONAMIENTO ANALÍTICO OBLIGATORIO:
+
+**PASO 1: ANALIZAR SUB-INTENCIÓN**
+- Recibí: "busqueda_simple"
+- Acción correspondiente: BUSCAR_UNIVERSAL
+- Propósito: Búsqueda de alumnos específicos
+
+**PASO 2: ANALIZAR CONSULTA DEL USUARIO**
+- ¿Qué tipo de información solicita?
+- ¿Es información completa o campo específico?
+- ¿Cuántos resultados quiere?
+
+**PASO 3: APLICAR LÓGICA DE CAMPOS**
+🚨 **REGLA CRÍTICA PARA CAMPOS:**
+- "información completa", "datos completos", "toda la información", "información de X" → **NO usar campos_solicitados**
+- "CURP de X", "matrícula de X", "solo el nombre" → **SÍ usar campos_solicitados: ["curp"], ["matricula"], ["nombre"]**
+
+**PASO 4: RAZONAMIENTO ESPECÍFICO**
+Para "información completa de franco alexander":
+1. Sub-intención: busqueda_simple → BUSCAR_UNIVERSAL ✅
+2. Usuario quiere: "información completa" → NO es campo específico ✅
+3. Decisión: NO usar campos_solicitados (traer todos los campos) ✅
+4. Resultado: criterio_principal: nombre=franco alexander, SIN campos_solicitados ✅
 
 SIMPLE - ESTADÍSTICAS Y CONTEOS (APLICANDO MAPEO INTELIGENTE):
-- "cuántos alumnos hay por grado" → CALCULAR_ESTADISTICA (tipo: conteo, agrupar_por: grado)
-- "distribución por turno" → CALCULAR_ESTADISTICA (tipo: distribucion, agrupar_por: turno)
-- "estadísticas generales" → CALCULAR_ESTADISTICA (tipo: conteo, agrupar_por: grado)
-- "cuántos alumnos del turno vespertino" → CALCULAR_ESTADISTICA (tipo: conteo, filtro: turno=vespertino)
-- "total de estudiantes" → CONTAR_ALUMNOS (sin filtros)
-- "cuántos alumnos sin calificaciones" → CONTAR_UNIVERSAL (criterio_principal: {{"tabla": "datos_escolares", "campo": "calificaciones", "operador": "=", "valor": "[]"}})
-- "cuántos tienen notas" → CONTAR_UNIVERSAL (criterio_principal: {{"tabla": "datos_escolares", "campo": "calificaciones", "operador": "!=", "valor": "[]"}})
+- "cuántos alumnos hay por grado" → CALCULAR_ESTADISTICA (parametros: {{"tipo": "conteo", "agrupar_por": "grado"}})
+- "distribución por turno" → CALCULAR_ESTADISTICA (parametros: {{"tipo": "distribucion", "agrupar_por": "turno"}})
+- "estadísticas generales" → CALCULAR_ESTADISTICA (parametros: {{"tipo": "conteo", "agrupar_por": "grado"}})
+- "cuántos alumnos del turno vespertino" → CALCULAR_ESTADISTICA (parametros: {{"tipo": "conteo", "filtro": {{"turno": "vespertino"}}}})
+- "total de estudiantes" → CALCULAR_ESTADISTICA (parametros: {{"tipo": "conteo"}})
+- "cuántos alumnos hay en la escuela" → CALCULAR_ESTADISTICA (parametros: {{"tipo": "conteo"}})
+- "cuántos alumnos sin calificaciones" → CONTAR_UNIVERSAL (parametros: {{"criterio_principal": {{"tabla": "datos_escolares", "campo": "calificaciones", "operador": "=", "valor": "[]"}}}})
+- "cuántos tienen notas" → CONTAR_UNIVERSAL (parametros: {{"criterio_principal": {{"tabla": "datos_escolares", "campo": "calificaciones", "operador": "!=", "valor": "[]"}}}})
 
 REGLA CLAVE PARA ESTADÍSTICAS:
 - Si pide AGRUPACIÓN (por grado, por turno, por grupo) → CALCULAR_ESTADISTICA
 - Si pide DISTRIBUCIÓN o PORCENTAJES → CALCULAR_ESTADISTICA
-- Si pide CONTEO SIMPLE sin agrupación → CONTAR_ALUMNOS
+- Si pide CONTEO SIMPLE sin agrupación → CALCULAR_ESTADISTICA (tipo: conteo)
 - 🎯 Si pide CONTEO CON MÚLTIPLES CRITERIOS → CONTAR_UNIVERSAL
 - Si pide ESTADÍSTICAS GENERALES → CALCULAR_ESTADISTICA
 
@@ -950,22 +1091,71 @@ CONTEXTO CONVERSACIONAL:
 
 RESPONDE ÚNICAMENTE con un JSON:
 {{
-    "estrategia": "simple|combinada|secuencial",
+    "estrategia": "simple",
     "accion_principal": "NOMBRE_ACCION",
     "parametros": {{
         "param1": "valor1",
         "param2": "valor2"
     }},
-    "acciones_adicionales": [
-        {{
-            "accion": "OTRA_ACCION",
-            "parametros": {{}},
-            "orden": 2,
-            "usa_resultado_anterior": true
-        }}
-    ],
-    "razonamiento": "Por qué elegí esta estrategia y estas acciones específicas"
+    "acciones_adicionales": [],
+    "razonamiento": "Por qué elegí esta acción específica"
 }}
+
+🚨 EJEMPLOS EXACTOS DE ESTRUCTURA JSON CORRECTA:
+
+EJEMPLO 1 - Búsqueda con múltiples criterios:
+{{
+    "estrategia": "simple",
+    "accion_principal": "BUSCAR_UNIVERSAL",
+    "parametros": {{
+        "criterio_principal": {{"tabla": "datos_escolares", "campo": "grado", "operador": "=", "valor": "4"}},
+        "filtros_adicionales": [{{"tabla": "datos_escolares", "campo": "grupo", "operador": "=", "valor": "A"}}]
+    }},
+    "acciones_adicionales": [],
+    "razonamiento": "Búsqueda de alumnos que cumplan grado=4 Y grupo=A usando criterio principal + filtros adicionales"
+}}
+
+EJEMPLO 2 - Conteo simple:
+{{
+    "estrategia": "simple",
+    "accion_principal": "CALCULAR_ESTADISTICA",
+    "parametros": {{
+        "tipo": "conteo"
+    }},
+    "acciones_adicionales": [],
+    "razonamiento": "Conteo total de alumnos"
+}}
+
+EJEMPLO 3 - Conteo con filtro:
+{{
+    "estrategia": "simple",
+    "accion_principal": "CALCULAR_ESTADISTICA",
+    "parametros": {{
+        "tipo": "conteo",
+        "filtro": {{"grado": "5"}}
+    }},
+    "acciones_adicionales": [],
+    "razonamiento": "Conteo de alumnos de 5to grado"
+}}
+
+EJEMPLO 4 - Distribución:
+{{
+    "estrategia": "simple",
+    "accion_principal": "CALCULAR_ESTADISTICA",
+    "parametros": {{
+        "tipo": "distribucion",
+        "agrupar_por": "grado"
+    }},
+    "acciones_adicionales": [],
+    "razonamiento": "Distribución de alumnos por grado"
+}}
+
+⚠️ CRÍTICO: Los parámetros van DIRECTAMENTE en "parametros", NO anidados en sub-objetos.
+
+🚨 **REGLAS CRÍTICAS PARA CAMPOS_SOLICITADOS:**
+- "información completa", "datos completos", "información de X" → **NO usar campos_solicitados**
+- "CURP de X", "matrícula de X", "solo el nombre" → **SÍ usar campos_solicitados: ["curp"], ["matricula"], ["nombre"]**
+- **NUNCA inventar campos como "informacion_completa" - NO existe en la BD**
 
 REGLAS IMPORTANTES:
 1. 🆕 PRIORIZAR BUSCAR_UNIVERSAL para todas las búsquedas (es más flexible y dinámico)

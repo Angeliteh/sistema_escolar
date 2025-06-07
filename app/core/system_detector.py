@@ -3,7 +3,7 @@ Sistema de detección de configuración para el sistema híbrido
 Detecta si el sistema está configurado o necesita configuración inicial
 """
 
-import os
+import os 
 import json
 import logging
 from typing import Dict, Optional, Tuple

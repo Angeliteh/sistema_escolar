@@ -26,6 +26,7 @@ class ActionDefinition:
     usage_example: str
     sql_template: Optional[str] = None
     requires_combination: bool = False
+    decision_guide: Optional[str] = None
 
 class ActionCatalog:
     """
@@ -69,10 +70,10 @@ class ActionCatalog:
             sql_template="Generado dinámicamente basado en criterios y estructura de BD"
         )
 
-        # 🎯 ACCIÓN UNIVERSAL DE CONTEO (NUEVA)
+        # 🎯 ACCIÓN UNIVERSAL DE CONTEO (SOLO PARA CASOS MUY COMPLEJOS)
         actions["CONTAR_UNIVERSAL"] = ActionDefinition(
             name="CONTAR_UNIVERSAL",
-            description="Conteo universal con múltiples criterios y operadores avanzados - usa la misma flexibilidad que BUSCAR_UNIVERSAL pero devuelve solo el número",
+            description="🔧 CONTEO ULTRA-AVANZADO con operadores complejos. USA SOLO cuando CALCULAR_ESTADISTICA no pueda manejar la complejidad.",
             category="estadistica",
             input_params={
                 "criterio_principal": "Criterio principal: {'tabla': 'alumnos|datos_escolares', 'campo': 'campo_dinamico', 'operador': '=|LIKE|>|<|>=|<=|BETWEEN|IS_NULL|IS_NOT_NULL|STARTS_WITH|ENDS_WITH|IN|NOT_IN', 'valor': 'valor_buscar'}",
@@ -80,23 +81,11 @@ class ActionCatalog:
                 "join_logic": "Tipo de JOIN (INNER|LEFT) - opcional, por defecto LEFT"
             },
             output_type="numero_total",
-            usage_example="Para conteos con múltiples criterios: 'cuántos hay en 3° A', 'cuántos alumnos nacidos entre 2015-2018', 'cuántos nombres que empiecen con MAR'"
+            usage_example="🎯 USAR SOLO PARA: 'cuántos nacidos ENTRE 2015-2016 Y del turno matutino Y con nombres que EMPIECEN con MAR'",
+            decision_guide="✅ USA SOLO si: operadores BETWEEN/IN/NOT_IN, múltiples filtros complejos que CALCULAR_ESTADISTICA no puede manejar. ❌ NO uses para: conteos normales"
         )
 
-        # 📊 ACCIONES DE ESTADÍSTICA
-        actions["CONTAR_ALUMNOS"] = ActionDefinition(
-            name="CONTAR_ALUMNOS",
-            description="Cuenta alumnos que cumplen criterios específicos",
-            category="estadistica",
-            input_params={
-                "criterio_campo": "Campo a filtrar (opcional)",
-                "criterio_valor": "Valor del criterio (opcional)",
-                "agrupar_por": "Campo para agrupar resultados (opcional)"
-            },
-            output_type="numero_o_tabla_conteos",
-            usage_example="Para 'cuántos alumnos hay' o 'cuántos hay en cada grado'",
-            sql_template="SELECT COUNT(*) as total FROM alumnos a JOIN datos_escolares de ON a.id = de.alumno_id WHERE de.{criterio_campo} = '{criterio_valor}'"
-        )
+        # 📊 ACCIONES DE ESTADÍSTICA - SIMPLIFICADAS
 
         actions["FILTRAR_POR_CALIFICACIONES"] = ActionDefinition(
             name="FILTRAR_POR_CALIFICACIONES",
@@ -159,21 +148,36 @@ class ActionCatalog:
             requires_combination=False
         )
 
+        actions["TRANSFORMAR_PDF"] = ActionDefinition(
+            name="TRANSFORMAR_PDF",
+            description="Transforma un PDF cargado a una constancia del tipo especificado",
+            category="transformacion",
+            input_params={
+                "tipo_constancia": "Tipo de constancia destino (estudio, calificaciones, traslado)",
+                "incluir_foto": "Si incluir foto del alumno (true/false)",
+                "guardar_alumno": "Si guardar datos del alumno en BD (true/false)"
+            },
+            output_type="constancia_transformada",
+            usage_example="Para 'transformar PDF a constancia de traslado' o 'convertir a formato estándar'",
+            requires_combination=False
+        )
+
         actions["CALCULAR_ESTADISTICA"] = ActionDefinition(
             name="CALCULAR_ESTADISTICA",
-            description="Calcula estadísticas AGREGADAS: distribuciones, promedios, rankings. USAR para comparaciones tipo 'X vs Y' (ej: con calificaciones vs sin calificaciones)",
+            description="📊 ACCIÓN PRINCIPAL PARA CONTEOS Y ESTADÍSTICAS. Maneja desde conteos simples hasta análisis complejos.",
             category="estadistica",
             input_params={
-                "tipo": "Tipo de estadística (distribucion, promedio, ranking, comparacion). Usar 'distribucion' para comparar grupos como 'con/sin calificaciones'",
-                "agrupar_por": "Campo para agrupar (grado, grupo, turno, ciclo_escolar, calificaciones) - REQUERIDO para distribuciones",
-                "campo": "Campo a analizar (calificaciones, edad, matricula) - OPCIONAL para conteos",
+                "tipo": "Tipo: 'conteo' (total simple), 'distribucion' (por grupos), 'promedio' (calificaciones), 'comparacion' (con vs sin)",
+                "agrupar_por": "Campo para agrupar: grado, grupo, turno, ciclo_escolar - REQUERIDO para distribuciones",
+                "campo": "Campo a analizar: calificaciones, edad - OPCIONAL para conteos",
                 "filtro": "Criterios de filtrado como dict - OPCIONAL",
                 "orden": "Orden para rankings (asc, desc) - OPCIONAL",
                 "limite": "Límite de resultados para rankings - OPCIONAL",
                 "incluir_detalles": "Si incluir datos detallados o solo resumen - OPCIONAL"
             },
             output_type="estadistica_calculada",
-            usage_example="Para 'distribución por turno', 'cuántos tienen calificaciones vs cuántos no', 'promedio por grado', 'ranking de estudiantes'",
+            usage_example="🎯 USA PARA TODO CONTEO: 'cuántos alumnos hay' (tipo=conteo), 'cuántos de 3er grado' (tipo=conteo, filtro={grado:3}), 'distribución por grado' (tipo=distribucion), 'promedio de calificaciones'",
+            decision_guide="✅ PRIMERA OPCIÓN para: cualquier conteo, distribuciones, promedios, estadísticas. ❌ NO uses para: búsquedas de alumnos específicos",
             requires_combination=False
         )
 
@@ -194,19 +198,9 @@ class ActionCatalog:
             requires_combination=True
         )
 
-        actions["ANALIZAR_Y_REPORTAR"] = ActionDefinition(
-            name="ANALIZAR_Y_REPORTAR",
-            description="Combina análisis estadístico con reporte detallado",
-            category="combinada",
-            input_params={
-                "tipo_analisis": "Tipo de análisis a realizar",
-                "criterios_reporte": "Criterios para el reporte detallado",
-                "formato_salida": "Formato del reporte (tabla, resumen, etc.)"
-            },
-            output_type="reporte_analitico",
-            usage_example="Para 'estadísticas de 2do grado con detalles' o 'análisis completo por turno'",
-            requires_combination=True
-        )
+        # ❌ ELIMINADO: ANALIZAR_Y_REPORTAR - No implementada, usar CALCULAR_ESTADISTICA
+        # actions["ANALIZAR_Y_REPORTAR"] = ActionDefinition(...)
+        # RAZÓN: CALCULAR_ESTADISTICA ya hace análisis estadístico con reportes detallados
 
         return actions
 
@@ -269,7 +263,7 @@ class ActionCatalog:
             "GENERAR_CONSTANCIA_COMPLETA": ["alumno_identificador", "tipo_constancia"],
             "CALCULAR_ESTADISTICA": ["tipo"],  # Solo tipo es requerido
             "BUSCAR_Y_FILTRAR": [],  # 🔧 CORREGIDO: Sin parámetros requeridos (acepta múltiples formatos)
-            "ANALIZAR_Y_REPORTAR": ["tipo_analisis"],
+            # "ANALIZAR_Y_REPORTAR": ["tipo_analisis"],  # ❌ ELIMINADO - No implementada
             "GENERAR_LISTADO_COMPLETO": [],
             "FILTRAR_POR_CALIFICACIONES": ["tiene_calificaciones"]
         }
@@ -280,3 +274,79 @@ class ActionCatalog:
                 return False, f"Parámetro requerido '{param_name}' no proporcionado"
 
         return True, "Solicitud válida"
+
+    @staticmethod
+    def get_action_by_name(action_name: str) -> Optional[ActionDefinition]:
+        """Obtiene una acción específica por nombre"""
+        actions = ActionCatalog.get_all_actions()
+        return actions.get(action_name)
+
+    @staticmethod
+    def get_decision_guide_for_student() -> str:
+        """
+        🎯 GUÍA DE DECISIÓN PARA STUDENT
+
+        Proporciona reglas claras sobre qué acción usar para qué tipo de consulta.
+        Elimina la confusión del Student sobre cuál elegir.
+        """
+        return """
+🎯 GUÍA DE DECISIÓN SIMPLIFICADA - STUDENT SIGUE ESTAS REGLAS:
+
+═══════════════════════════════════════════════════════════════════════════════
+📊 PARA CONTEOS Y ESTADÍSTICAS:
+═══════════════════════════════════════════════════════════════════════════════
+
+🥇 PRIMERA OPCIÓN - CALCULAR_ESTADISTICA (USA PARA TODO CONTEO):
+✅ "cuántos alumnos hay" → CALCULAR_ESTADISTICA (tipo: "conteo")
+✅ "cuántos alumnos hay en total" → CALCULAR_ESTADISTICA (tipo: "conteo")
+✅ "cuántos hay en 3er grado" → CALCULAR_ESTADISTICA (tipo: "conteo", filtro: {"grado": "3"})
+✅ "cuántos del turno matutino" → CALCULAR_ESTADISTICA (tipo: "conteo", filtro: {"turno": "MATUTINO"})
+✅ "distribución por grado" → CALCULAR_ESTADISTICA (tipo: "distribucion", agrupar_por: "grado")
+✅ "cuántos por turno" → CALCULAR_ESTADISTICA (tipo: "distribucion", agrupar_por: "turno")
+✅ "promedio de calificaciones" → CALCULAR_ESTADISTICA (tipo: "promedio")
+
+🥉 ÚLTIMA OPCIÓN - CONTAR_UNIVERSAL (SOLO para casos ultra-complejos):
+✅ "cuántos nacidos ENTRE 2015-2016 Y del turno matutino Y nombres que EMPIECEN con MAR" → CONTAR_UNIVERSAL
+❌ NO usar para conteos normales
+
+═══════════════════════════════════════════════════════════════════════════════
+🔍 PARA BÚSQUEDAS DE ALUMNOS:
+═══════════════════════════════════════════════════════════════════════════════
+
+🥇 PRIMERA OPCIÓN - BUSCAR_UNIVERSAL:
+✅ "buscar García" → BUSCAR_UNIVERSAL
+✅ "información de Juan Pérez" → BUSCAR_UNIVERSAL
+✅ "alumnos de 3er grado" → BUSCAR_UNIVERSAL
+✅ "estudiantes del turno vespertino" → BUSCAR_UNIVERSAL
+
+═══════════════════════════════════════════════════════════════════════════════
+📄 PARA CONSTANCIAS:
+═══════════════════════════════════════════════════════════════════════════════
+
+🥇 PRIMERA OPCIÓN - GENERAR_CONSTANCIA_COMPLETA:
+✅ "constancia de estudios para Juan" → GENERAR_CONSTANCIA_COMPLETA
+✅ "certificado de calificaciones" → GENERAR_CONSTANCIA_COMPLETA
+
+═══════════════════════════════════════════════════════════════════════════════
+🔄 PARA TRANSFORMACIONES:
+═══════════════════════════════════════════════════════════════════════════════
+
+🥇 ÚNICA OPCIÓN - TRANSFORMAR_PDF:
+✅ "transformar PDF a constancia" → TRANSFORMAR_PDF
+✅ "convertir PDF a formato estándar" → TRANSFORMAR_PDF
+
+═══════════════════════════════════════════════════════════════════════════════
+🚨 REGLAS OBLIGATORIAS SIMPLIFICADAS PARA STUDENT:
+═══════════════════════════════════════════════════════════════════════════════
+
+1. **PARA CUALQUIER CONTEO** → SIEMPRE usar CALCULAR_ESTADISTICA primero
+2. **PARA BÚSQUEDAS** → BUSCAR_UNIVERSAL
+3. **PARA CONSTANCIAS** → GENERAR_CONSTANCIA_COMPLETA
+4. **PARA TRANSFORMACIONES** → TRANSFORMAR_PDF
+
+🎯 REGLA DE ORO: CALCULAR_ESTADISTICA maneja el 95% de conteos y estadísticas.
+Solo usa CONTAR_UNIVERSAL si CALCULAR_ESTADISTICA no puede manejar la complejidad.
+
+❌ NO usar CONTAR_UNIVERSAL para conteos normales
+❌ NO confundir búsquedas con conteos
+"""

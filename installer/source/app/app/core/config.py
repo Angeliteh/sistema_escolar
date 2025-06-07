@@ -39,10 +39,13 @@ class Config:
     def get_current_year(cls):
         return cls.get_school_config().current_year
 
-    # Valores por defecto para alumnos
+    # Valores por defecto para alumnos (dinámicos)
     DEFAULT_GRADE = 1
     DEFAULT_GROUP = "A"
     DEFAULT_SHIFT = "MATUTINO"
+
+    # Configuración dinámica para adaptabilidad
+    BASIC_DISPLAY_FIELDS = ['nombre', 'curp']  # Campos básicos a mostrar siempre
 
     # Versión del sistema
     VERSION = "1.0.0"

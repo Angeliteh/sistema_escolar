@@ -28,17 +28,18 @@ DisableProgramGroupPage=yes
 LicenseFile=scripts\license.txt
 InfoBeforeFile=scripts\readme.txt
 
-; Privilegios
+; Privilegios y arquitectura
 PrivilegesRequired=admin
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+UsedUserAreasWarning=no
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1
+Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
 ; Aplicación principal (archivos Python)
@@ -52,8 +53,9 @@ Source: "source\dependencies\vcredist_x64.exe"; DestDir: "{tmp}"; Flags: deletea
 Source: "source\dependencies\wkhtmltopdf.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "source\dependencies\python-3.12.5-amd64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
-; Script de launcher
+; Scripts de launcher y dependencias
 Source: "scripts\launcher.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "scripts\install_dependencies.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Sistema de Constancias"; Filename: "{app}\launcher.bat"
@@ -73,8 +75,11 @@ Filename: "{tmp}\vcredist_x64.exe"; Parameters: "/quiet /norestart"; StatusMsg: 
 ; Instalar wkhtmltopdf
 Filename: "{tmp}\wkhtmltopdf.exe"; Parameters: "/S"; StatusMsg: "Instalando wkhtmltopdf..."; Flags: waituntilterminated
 
-; Instalar dependencias Python
-Filename: "python"; Parameters: "-m pip install -r ""{app}\requirements.txt"""; WorkingDir: "{app}"; StatusMsg: "Instalando dependencias Python..."; Flags: waituntilterminated
+; Instalar dependencias Python usando ruta completa
+Filename: "{pf}\Python312\python.exe"; Parameters: "-m pip install -r ""{app}\requirements.txt"""; WorkingDir: "{app}"; StatusMsg: "Instalando dependencias Python..."; Flags: waituntilterminated
+
+; Script de instalación de dependencias como fallback
+Filename: "{app}\install_dependencies.bat"; StatusMsg: "Verificando dependencias Python..."; Flags: waituntilterminated
 
 ; Ejecutar aplicación al finalizar
 Filename: "{app}\launcher.bat"; Description: "{cm:LaunchProgram,Sistema de Constancias}"; Flags: nowait postinstall skipifsilent

@@ -29,7 +29,60 @@
       "MATUTINO",
       "VESPERTINO"
     ],
-    "education_level": "PRIMARIA"
+    "education_level": "PRIMARIA",
+    "materias_por_grado": {
+      "1": [
+        "LENGUAJES",
+        "SABERES Y PENSAMIENTO CIENTÍFICO",
+        "ÉTICA NATURALEZA Y SOCIEDADES",
+        "DE LO HUMANO Y LO COMUNITARIO"
+      ],
+      "2": [
+        "LENGUAJES",
+        "SABERES Y PENSAMIENTO CIENTÍFICO",
+        "ÉTICA NATURALEZA Y SOCIEDADES",
+        "DE LO HUMANO Y LO COMUNITARIO"
+      ],
+      "3": [
+        "LENGUAJES",
+        "SABERES Y PENSAMIENTO CIENTÍFICO",
+        "ÉTICA NATURALEZA Y SOCIEDADES",
+        "DE LO HUMANO Y LO COMUNITARIO"
+      ],
+      "4": [
+        "LENGUAJES",
+        "SABERES Y PENSAMIENTO CIENTÍFICO",
+        "ÉTICA NATURALEZA Y SOCIEDADES",
+        "DE LO HUMANO Y LO COMUNITARIO"
+      ],
+      "5": [
+        "LENGUAJES",
+        "SABERES Y PENSAMIENTO CIENTÍFICO",
+        "ÉTICA NATURALEZA Y SOCIEDADES",
+        "DE LO HUMANO Y LO COMUNITARIO"
+      ],
+      "6": [
+        "LENGUAJES",
+        "SABERES Y PENSAMIENTO CIENTÍFICO",
+        "ÉTICA NATURALEZA Y SOCIEDADES",
+        "DE LO HUMANO Y LO COMUNITARIO"
+      ]
+    },
+    "evaluacion_config": {
+      "periodos": [
+        "Periodo 1",
+        "Periodo 2",
+        "Periodo 3"
+      ],
+      "escala_calificaciones": {
+        "minima": 5.0,
+        "maxima": 10.0,
+        "aprobatoria": 6.0,
+        "decimales": 1
+      },
+      "mostrar_promedio_general": true,
+      "calcular_promedio_automatico": true
+    }
   },
   "location_info": {
     "city": "VICTORIA DE DURANGO",

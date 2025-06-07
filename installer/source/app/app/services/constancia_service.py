@@ -330,9 +330,14 @@ class ConstanciaService:
                     filename_prefix="preview_"
                 )
 
+                # 🔧 OBTENER DATOS COMPLETOS DEL ALUMNO (incluyendo datos escolares)
+                from app.services.alumno_service import AlumnoService
+                alumno_service = AlumnoService(self.conn)
+                alumno_completo = alumno_service.get_alumno(alumno.id)
+
                 # No guardar en la base de datos, solo devolver la ruta
                 return True, "Vista previa generada correctamente", {
-                    "alumno": alumno.to_dict(),
+                    "alumno": alumno_completo or alumno.to_dict(),  # ✅ Datos completos con escolares
                     "ruta_archivo": output_path
                 }
             else:
@@ -350,8 +355,13 @@ class ConstanciaService:
                 )
                 constancia = self.constancia_repository.save(constancia)
 
+                # 🔧 OBTENER DATOS COMPLETOS DEL ALUMNO (incluyendo datos escolares)
+                from app.services.alumno_service import AlumnoService
+                alumno_service = AlumnoService(self.conn)
+                alumno_completo = alumno_service.get_alumno(alumno.id)
+
                 return True, "Constancia generada correctamente", {
-                    "alumno": alumno.to_dict(),
+                    "alumno": alumno_completo or alumno.to_dict(),  # ✅ Datos completos con escolares
                     "constancia": constancia.to_dict(),
                     "ruta_archivo": output_path
                 }

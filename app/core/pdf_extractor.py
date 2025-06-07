@@ -73,10 +73,10 @@ class PDFExtractor:
         """Extrae los datos básicos comunes a todos los tipos de constancias"""
         datos = {
             "tipo_constancia": self.tipo_constancia,
-            "escuela": Config.get_school_name(),  # Valor por defecto desde configuración
-            "cct": Config.get_school_cct(),  # Valor por defecto desde configuración
-            "ciclo": "2024-2025",  # Valor por defecto
-            "director": Config.get_director_name(),  # Valor por defecto
+            "escuela": Config.get_school_name(),  # Valor dinámico desde configuración
+            "cct": Config.get_school_cct(),  # Valor dinámico desde configuración
+            "ciclo": Config.get_current_year(),  # Valor dinámico desde configuración
+            "director": Config.get_director_name(),  # Valor dinámico desde configuración
             "fecha_actual": Config.get_current_date_formatted(),
         }
 

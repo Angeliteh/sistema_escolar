@@ -506,3 +506,137 @@ EJEMPLOS REALES QUE FUNCIONAN:
         }
 
         return examples_map.get(tutorial_type, "Ejemplos generales del sistema")
+
+    def get_help_mapping_prompt(self, user_query: str, conversation_stack: list = None) -> str:
+        """
+        PROMPT 2: Mapeo inteligente de consulta de ayuda (equivalente al mapeo SQL del Student)
+
+        Args:
+            user_query: Consulta del usuario
+            conversation_stack: Contexto conversacional
+
+        Returns:
+            Prompt para mapear consulta a tipo de ayuda y contenido
+        """
+        unified_header = self.get_unified_prompt_header("especialista en mapeo de ayuda")
+
+        context_section = ""
+        if conversation_stack:
+            context_section = f"""
+CONTEXTO CONVERSACIONAL:
+{self._format_conversation_context(conversation_stack)}
+"""
+
+        return f"""
+{unified_header}
+
+{context_section}
+CONSULTA DEL USUARIO: "{user_query}"
+
+🎯 TU TAREA: Mapear esta consulta al tipo de ayuda apropiado y generar el contenido correspondiente.
+
+TIPOS DE AYUDA DISPONIBLES:
+1. **sobre_creador**: Información sobre Angel y su visión de IA
+2. **auto_consciencia**: Qué es el sistema, su identidad y propósito
+3. **limitaciones_honestas**: Qué no puede hacer (transparencia)
+4. **explicacion_general**: Capacidades generales del sistema
+5. **tutorial_funciones**: Cómo usar funcionalidades específicas
+6. **ventajas_sistema**: Por qué usar IA vs métodos tradicionales
+7. **casos_avanzados**: Funcionalidades impresionantes y avanzadas
+
+INSTRUCCIONES DE MAPEO:
+1. ANALIZA la consulta y determina qué tipo de ayuda necesita
+2. GENERA contenido específico y útil para ese tipo
+3. CONSIDERA el contexto conversacional si existe
+4. INCLUYE ejemplos prácticos cuando sea apropiado
+5. MANTÉN el tono profesional pero cercano
+
+FORMATO DE RESPUESTA JSON:
+{{
+    "tipo_ayuda": "sobre_creador|auto_consciencia|limitaciones_honestas|explicacion_general|tutorial_funciones|ventajas_sistema|casos_avanzados",
+    "contenido_principal": "Contenido detallado y específico para este tipo de ayuda",
+    "puntos_clave": ["punto1", "punto2", "punto3"],
+    "ejemplos_practicos": ["ejemplo1", "ejemplo2"],
+    "tono_sugerido": "profesional|casual|técnico|persuasivo",
+    "llamada_accion": "Sugerencia de qué puede hacer el usuario después",
+    "contexto_usado": "Cómo se usó el contexto conversacional (si aplica)"
+}}
+
+RESPONDE ÚNICAMENTE CON EL JSON, sin explicaciones adicionales.
+"""
+
+    def get_help_response_preparation_prompt(self, user_query: str, help_content: dict, conversation_stack: list = None) -> str:
+        """
+        PROMPT 3: Preparación de respuesta técnica con auto-reflexión (equivalente al Student)
+
+        Args:
+            user_query: Consulta original del usuario
+            help_content: Contenido de ayuda generado en PROMPT 2
+            conversation_stack: Contexto conversacional
+
+        Returns:
+            Prompt para preparar respuesta técnica con reflexión
+        """
+        unified_header = self.get_unified_prompt_header("especialista en preparación de respuestas de ayuda")
+
+        return f"""
+{unified_header}
+
+CONSULTA ORIGINAL: "{user_query}"
+CONTENIDO GENERADO: {help_content}
+
+🎯 TU TAREA: Preparar respuesta técnica estructurada para que el Master genere la respuesta final.
+
+INSTRUCCIONES:
+1. ESTRUCTURA el contenido de manera clara y útil
+2. INCLUYE auto-reflexión sobre posibles continuaciones
+3. SUGIERE qué podría querer hacer el usuario después
+4. MANTÉN formato técnico (el Master lo humanizará)
+
+🧠 AUTO-REFLEXIÓN REQUERIDA:
+Analiza como especialista en ayuda:
+- ¿Esta respuesta podría generar preguntas de seguimiento?
+- ¿Mencioné funcionalidades que el usuario podría querer explorar?
+- ¿Debería recordar algo para futuras consultas?
+- ¿Qué tipo de continuación es más probable?
+
+FORMATO DE RESPUESTA JSON:
+{{
+    "respuesta_tecnica": {{
+        "tipo_ayuda": "{help_content.get('tipo_ayuda', 'general')}",
+        "contenido_estructurado": "Contenido organizado y claro",
+        "puntos_principales": ["punto1", "punto2", "punto3"],
+        "ejemplos_incluidos": ["ejemplo1", "ejemplo2"],
+        "informacion_adicional": "Detalles complementarios si son necesarios"
+    }},
+    "auto_reflexion": {{
+        "espera_continuacion": true|false,
+        "tipo_continuacion_probable": "tutorial_detallado|ejemplo_practico|exploracion_funcionalidad|pregunta_especifica|none",
+        "razonamiento": "Por qué esperas o no esperas continuación",
+        "datos_recordar": {{
+            "tema_explicado": "tema principal cubierto",
+            "nivel_detalle": "basico|intermedio|avanzado",
+            "funcionalidades_mencionadas": ["func1", "func2"]
+        }}
+    }},
+    "sugerencias_master": {{
+        "tono_recomendado": "profesional|casual|entusiasta|técnico",
+        "enfasis_en": "aspecto más importante a destacar",
+        "llamada_accion": "qué sugerir al usuario que haga después"
+    }}
+}}
+
+RESPONDE ÚNICAMENTE CON EL JSON, sin explicaciones adicionales.
+"""
+
+    def _format_conversation_context(self, conversation_stack: list) -> str:
+        """Formatea el contexto conversacional para los prompts"""
+        if not conversation_stack:
+            return "No hay contexto conversacional previo."
+
+        context = "Conversación reciente:\n"
+        for i, entry in enumerate(conversation_stack[-3:], 1):  # Últimas 3 interacciones
+            query = entry.get('query', '')[:100] + "..." if len(entry.get('query', '')) > 100 else entry.get('query', '')
+            context += f"{i}. Usuario: {query}\n"
+
+        return context

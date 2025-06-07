@@ -233,9 +233,7 @@ class ResponseFormatter:
         else:
             return text
 
-    def _format_general_response(self, text: str) -> str:
-        """Formatea respuestas generales (método legacy)"""
-        return self._format_enhanced_general_response(text)
+
 
     def _convert_bullet_lists(self, text: str) -> str:
         """Convierte listas con * en HTML SIN sobrescribir colores del ChatBubble"""

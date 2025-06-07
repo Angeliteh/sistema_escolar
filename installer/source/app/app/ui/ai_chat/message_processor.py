@@ -67,6 +67,7 @@ class MessageProcessor:
         }
 
         self.logger.info("✅ MessageProcessor inicializado con MasterInterpreter cargado")
+
     def should_display_data(self, action: str, data_count: int) -> bool:
         """
         🎯 DECISIÓN INTELIGENTE: ¿Mostrar datos estructurados?
@@ -149,10 +150,10 @@ class MessageProcessor:
 
             command_data["parametros"] = parametros
 
-        # NUEVO FLUJO DIRECTO: Sin CommandExecutor, directo a MasterInterpreter
-        return self._execute_with_master_interpreter(command_data)
+        # Ejecutar con MasterInterpreter
+        return self._execute_with_master_interpreter(command_data, current_pdf=current_pdf)
 
-    def _execute_with_master_interpreter(self, command_data):
+    def _execute_with_master_interpreter(self, command_data, current_pdf=None):
         """Ejecuta comando con sistema de plantillas SQL (simplificado)"""
         try:
             accion = command_data.get("accion", "")
@@ -206,10 +207,46 @@ class MessageProcessor:
             # 🎯 PROCESAMIENTO CON CONTEXTO CONVERSACIONAL ACTIVADO
             conversation_stack = self.conversation_stack  # ← USAR PILA REAL
 
+            # 🛑 PAUSA ESTRATÉGICA #6: CONVERSATION_STACK ANTES DE PROCESAR
+            import os
+            if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
+                print(f"\n🛑 [CONVERSATION_STACK] ESTADO ANTES DE PROCESAR:")
+                print(f"    ├── 📝 Consulta: '{consulta_para_procesar}'")
+                print(f"    ├── 📊 Niveles en stack: {len(conversation_stack)}")
+                print(f"    ├── 🧠 Nueva Arquitectura: MASTER decide TODO sobre contexto")
+
+                if conversation_stack:
+                    print(f"    ├── 📋 CONTEXTO DISPONIBLE PARA MASTER:")
+                    for i, nivel in enumerate(conversation_stack, 1):
+                        query = nivel.get('query', 'N/A')
+                        data_count = nivel.get('row_count', 0)
+                        awaiting = nivel.get('awaiting', 'N/A')
+                        action_type = nivel.get('action_type', 'N/A')
+                        query_type = nivel.get('query_type', 'N/A')
+
+                        print(f"    │   NIVEL {i}: '{query}'")
+                        print(f"    │   ├── Elementos: {data_count}")
+                        print(f"    │   ├── Esperando: {awaiting}")
+                        print(f"    │   ├── Tipo acción: {action_type}")
+                        print(f"    │   ├── Tipo query: {query_type}")
+
+                        if nivel.get('data') and len(nivel['data']) <= 3:
+                            print(f"    │   └── Datos disponibles:")
+                            for j, item in enumerate(nivel['data'][:3], 1):
+                                nombre = item.get('nombre', 'N/A')
+                                id_alumno = item.get('id', item.get('alumno_id', 'N/A'))
+                                print(f"    │       {j}. {nombre} (ID: {id_alumno})")
+                        elif nivel.get('data') and len(nivel['data']) > 3:
+                            print(f"    │   └── Lista grande: {data_count} elementos (regenerable)")
+                        print(f"    │")
+                else:
+                    print(f"    └── Stack VACÍO - Primera consulta")
+
+                print(f"    └── Presiona ENTER para que Master analice contexto...")
+                input()
+
             # 🔧 CRÍTICO: Agregar conversation_stack al context para que llegue al Student
             context.conversation_stack = conversation_stack
-
-
 
             if conversation_stack:
                 self.logger.info(f"🎯 CONTEXTO ACTIVO - {len(conversation_stack)} niveles disponibles")
@@ -218,44 +255,60 @@ class MessageProcessor:
 
 
 
-            result = self.master_interpreter.interpret(context, conversation_stack)
+            result = self.master_interpreter.interpret(context, conversation_stack, current_pdf=current_pdf)
 
             if result:
-
+                # 🔍 [DEBUG] RASTREO COMPLETO DEL FLUJO
+                self.logger.info(f"🔍 [DEBUG] Resultado recibido: action='{result.action}'")
 
                 # 🎯 DECISIÓN INTELIGENTE BASADA EN CONFIGURACIÓN DE ACCIONES
                 data = result.parameters.get("data", [])
                 data_count = len(data) if isinstance(data, list) else 0
+                self.logger.info(f"🔍 [DEBUG] Datos extraídos: {data_count} elementos")
 
                 if self.should_display_data(result.action, data_count):
+                    self.logger.info(f"🔍 [DEBUG] Entrando en should_display_data=True para '{result.action}'")
                     message = result.parameters.get("human_response",
                                                    result.parameters.get("message", "Consulta procesada"))
 
-                    # NUEVO: Procesar auto-reflexión del LLM
-                    # Para BUSCAR_UNIVERSAL, la auto-reflexión está en 'reflexion_conversacional'
-                    auto_reflexion = result.parameters.get("reflexion_conversacional",
-                                                          result.parameters.get("auto_reflexion", {}))
-
-                    # 🔧 DEBUG: Verificar si auto-reflexión está llegando
-                    self.logger.info(f"🧠 DEBUG - Auto-reflexión recibida: {auto_reflexion}")
+                    # 🎓 [STUDENT] Reporte procesado - Master decide contexto
 
 
 
-                    # 🎯 CONTEXTO ACTIVADO - Evaluar auto-reflexión para conversation_stack
-                    if auto_reflexion.get("espera_continuacion", False):
-                        tipo_esperado = auto_reflexion.get("tipo_esperado", "analysis")
-                        datos_recordar = auto_reflexion.get("datos_recordar", {})
+                    # 🧠 NUEVA ARQUITECTURA: MASTER COMO CEREBRO CENTRAL DEL CONTEXTO
+                    # ================================================================
+                    # - MASTER decide TODO sobre el conversation_stack
+                    # - Student solo reporta lo que hizo
+                    # - Master usa contexto completo para análisis inicial y respuesta final
+                    # - Sincronización perfecta entre análisis y respuesta
+                    # - SIEMPRE agregar resultados relevantes al contexto
+                    # ================================================================
 
-                        self.logger.info(f"🎯 CONTEXTO ACTIVADO - Auto-reflexión detecta continuación esperada: {tipo_esperado}")
+                    # Preparar datos para el stack
+                    stack_data = {
+                        "data": data,
+                        "row_count": len(data),
+                        "sql_executed": result.parameters.get("sql_executed", ""),
+                        "action_type": result.action,
+                        "query_type": "search_results"
+                    }
 
-                        # Agregar a conversation_stack
-                        self.add_to_conversation_stack(
-                            consulta_para_procesar,
-                            {**result.parameters, **datos_recordar},
-                            tipo_esperado
-                        )
+                    # Determinar tipo de continuación esperada basado en los datos
+                    if len(data) == 1:
+                        awaiting_type = "action"  # Un elemento específico - probable acción
+                    elif len(data) > 1 and len(data) <= 50:
+                        awaiting_type = "filter"  # Lista manejable - probable filtro
                     else:
-                        self.logger.info("🎯 CONTEXTO EVALUADO - No se espera continuación para esta consulta")
+                        awaiting_type = "analysis"  # Lista grande - probable análisis
+
+                    self.logger.info(f"🧠 [MASTER DECIDE] Agregando {len(data)} resultados al contexto (esperando: {awaiting_type})")
+
+                    # SIEMPRE agregar al conversation_stack
+                    self.add_to_conversation_stack(
+                        consulta_para_procesar,
+                        stack_data,
+                        awaiting_type
+                    )
 
                     # 🎯 CONFIGURAR DATOS ESTRUCTURADOS PARA DATADISPLAYMANAGER
                     # (data ya extraído arriba)
@@ -293,6 +346,7 @@ class MessageProcessor:
                 elif result.action in ["ayuda_proporcionada", "ayuda_funcionalidades", "ayuda_solucion", "ayuda_ejemplo",
                                      "conversacion_general", "estadisticas_generadas",
                                      "constancia_generada", "constancia_requiere_aclaracion"]:
+                    self.logger.info(f"🔍 [DEBUG] Entrando en condición ayuda/conversación para '{result.action}'")
                     # 🛠️ USAR EL MENSAJE REAL GENERADO POR EL HELPINTERPRETER
                     message = result.parameters.get("message",
                                                    result.parameters.get("mensaje", "Respuesta procesada"))
@@ -304,23 +358,116 @@ class MessageProcessor:
 
                 # 🆕 NUEVAS ACCIONES DE CONSTANCIA
                 elif result.action == "constancia_preview":
+                    self.logger.info("🎯 [DEBUG] CONSTANCIA_PREVIEW DETECTADA - Procesando...")
                     message = result.parameters.get("message", "Vista previa de constancia generada")
 
-                    # Procesar auto-reflexión para constancias
-                    auto_reflexion = result.parameters.get("auto_reflexion", {})
-                    if auto_reflexion.get("espera_continuacion", False):
-                        datos_recordar = auto_reflexion.get("datos_recordar", {})
+                    # 🧠 MASTER DECIDE - SIEMPRE AGREGAR CONSTANCIAS AL CONVERSATION_STACK
+                    # Extraer información del alumno para el contexto
+                    raw_data = result.parameters.get("data", {})
 
-                        self.logger.debug(f"Constancia con auto-reflexión: {auto_reflexion.get('razonamiento', '')}")
+                    # 🔧 MANEJAR TANTO DICT COMO LIST
+                    alumno_data = None
+                    if isinstance(raw_data, list) and len(raw_data) > 0:
+                        # Si es lista, tomar el primer elemento
+                        first_item = raw_data[0]
+                        if isinstance(first_item, dict) and "data" in first_item:
+                            # Estructura: [{"data": {"alumno": {...}, "ruta_archivo": "..."}}]
+                            alumno_data = first_item["data"].get("alumno", {})
+                            ruta_archivo = first_item["data"].get("ruta_archivo", "")
+                        elif isinstance(first_item, dict) and "alumno" in first_item:
+                            # Estructura: [{"alumno": {...}, "ruta_archivo": "..."}]
+                            alumno_data = first_item.get("alumno", {})
+                            ruta_archivo = first_item.get("ruta_archivo", "")
+                    elif isinstance(raw_data, dict):
+                        # Si es dict directo
+                        if "alumno" in raw_data:
+                            alumno_data = raw_data.get("alumno", {})
+                            ruta_archivo = raw_data.get("ruta_archivo", "")
+                        else:
+                            alumno_data = raw_data
+                            ruta_archivo = raw_data.get("ruta_archivo", "")
+
+                    self.logger.info(f"🔧 [DEBUG] Estructura detectada - raw_data type: {type(raw_data)}, alumno_data: {bool(alumno_data)}")
+
+                    if alumno_data and isinstance(alumno_data, dict) and alumno_data.get("nombre"):
+                        # Crear datos para el conversation_stack
+                        stack_data = {
+                            "data": [alumno_data],  # Lista con el alumno específico
+                            "row_count": 1,
+                            "sql_executed": f"Constancia generada para {alumno_data.get('nombre')}",
+                            "action_type": "constancia_preview",
+                            "query_type": "constancia_generated"
+                        }
+
+                        self.logger.info(f"🧠 [MASTER DECIDE] Agregando constancia al contexto: {alumno_data.get('nombre')} (ID: {alumno_data.get('id')})")
                         self.add_to_conversation_stack(
                             consulta_para_procesar,
-                            {**result.parameters, **datos_recordar},
-                            "confirmation"  # Espera confirmación para constancia
+                            stack_data,
+                            "action"  # Espera acción sobre este alumno específico
                         )
+                        # Nota: La pausa #9 se ejecuta automáticamente en add_to_conversation_stack()
 
-                    # 🎯 AGREGAR ACCIÓN A LOS PARÁMETROS PARA QUE LLEGUE AL CHATENGINE
+                    # 🎯 AGREGAR ACCIÓN Y ARCHIVO A LOS PARÁMETROS PARA QUE LLEGUE AL CHATENGINE
                     parameters_with_action = result.parameters.copy()
                     parameters_with_action["action"] = result.action  # ← PRESERVAR ACCIÓN
+
+                    # 🔧 CRÍTICO: Preservar ruta_archivo y alumno para que ChatEngine pueda mostrar PDF
+                    if alumno_data and isinstance(alumno_data, dict):
+                        # Preservar datos del alumno para el contexto del panel
+                        parameters_with_action["alumno"] = alumno_data
+                        self.logger.info(f"🔧 [DEBUG] Datos del alumno agregados para contexto del panel: {alumno_data.get('nombre')}")
+
+                        # Buscar ruta_archivo en la estructura original
+                        if isinstance(raw_data, list) and len(raw_data) > 0:
+                            first_item = raw_data[0]
+                            if isinstance(first_item, dict) and "data" in first_item and "ruta_archivo" in first_item["data"]:
+                                parameters_with_action["ruta_archivo"] = first_item["data"]["ruta_archivo"]
+                                self.logger.info(f"🔧 [DEBUG] Archivo PDF agregado a parámetros: {first_item['data']['ruta_archivo']}")
+                            elif isinstance(first_item, dict) and "ruta_archivo" in first_item:
+                                parameters_with_action["ruta_archivo"] = first_item["ruta_archivo"]
+                                self.logger.info(f"🔧 [DEBUG] Archivo PDF agregado a parámetros: {first_item['ruta_archivo']}")
+                    else:
+                        self.logger.warning(f"🚨 [DEBUG] NO se encontró alumno_data válido: {raw_data}")
+
+                    # 🛑 PAUSA ESTRATÉGICA #7: CONVERSATION_STACK DESPUÉS DE PROCESAR
+                    import os
+                    if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
+                        print(f"\n🛑 [CONVERSATION_STACK] ESTADO DESPUÉS DE PROCESAR:")
+                        print(f"    ├── 📝 Consulta procesada: '{consulta_para_procesar}'")
+                        print(f"    ├── 🎯 Acción ejecutada: {result.action}")
+                        print(f"    ├── 📊 Niveles en stack: {len(self.conversation_stack)}")
+                        print(f"    ├── 🧠 Master decidió agregar resultado al contexto")
+
+                        if self.conversation_stack:
+                            print(f"    ├── 📋 CONTEXTO ACTUALIZADO:")
+                            for i, nivel in enumerate(self.conversation_stack, 1):
+                                query = nivel.get('query', 'N/A')
+                                data_count = nivel.get('row_count', 0)
+                                awaiting = nivel.get('awaiting', 'N/A')
+                                action_type = nivel.get('action_type', 'N/A')
+                                query_type = nivel.get('query_type', 'N/A')
+
+                                print(f"    │   NIVEL {i}: '{query}'")
+                                print(f"    │   ├── Elementos: {data_count}")
+                                print(f"    │   ├── Esperando: {awaiting}")
+                                print(f"    │   ├── Tipo acción: {action_type}")
+                                print(f"    │   ├── Tipo query: {query_type}")
+
+                                if nivel.get('data') and len(nivel['data']) <= 3:
+                                    print(f"    │   └── Datos disponibles:")
+                                    for j, item in enumerate(nivel['data'][:3], 1):
+                                        nombre = item.get('nombre', 'N/A')
+                                        id_alumno = item.get('id', item.get('alumno_id', 'N/A'))
+                                        print(f"    │       {j}. {nombre} (ID: {id_alumno})")
+                                elif nivel.get('data') and len(nivel['data']) > 3:
+                                    print(f"    │   └── Lista grande: {data_count} elementos")
+                                print(f"    │")
+                        else:
+                            print(f"    └── Stack VACÍO")
+
+                        print(f"    └── 🎯 PRÓXIMA CONSULTA podrá usar ESTE contexto")
+                        print(f"    └── Presiona ENTER para continuar...")
+                        input()
 
                     self.add_to_conversation(consulta_para_procesar, message, parameters_with_action)
                     return True, message, parameters_with_action
@@ -353,10 +500,7 @@ class MessageProcessor:
                     parameters_with_action = result.parameters.copy()
                     parameters_with_action["action"] = result.action  # ← PRESERVAR ACCIÓN
 
-                    # 🔍 DEBUG: Verificar que la acción se está agregando
-                    self.logger.info(f"🔍 [DEBUG] TRANSFORMATION_PREVIEW - Acción agregada: {parameters_with_action.get('action')}")
-                    self.logger.info(f"🔍 [DEBUG] TRANSFORMATION_PREVIEW - Mensaje: {message}")
-                    self.logger.info(f"🔍 [DEBUG] TRANSFORMATION_PREVIEW - Parameters keys: {list(parameters_with_action.keys())}")
+
 
                     self._handle_transformation_preview(parameters_with_action)
                     return True, message, parameters_with_action
@@ -397,16 +541,18 @@ class MessageProcessor:
                     # NUEVO: Manejo de continuación inteligente
                     message = result.parameters.get("message", "Continuación procesada")
 
-                    # Procesar auto-reflexión si está disponible
-                    auto_reflexion = result.parameters.get("auto_reflexion", {})
-                    if auto_reflexion.get("espera_continuacion", False):
-                        tipo_esperado = auto_reflexion.get("tipo_esperado", "action")
-                        datos_recordar = auto_reflexion.get("datos_recordar", {})
+                    # 🧠 MASTER DECIDE - Agregar continuaciones inteligentes al contexto
+                    # Las continuaciones inteligentes siempre se agregan para mantener contexto
+                    stack_data = {
+                        "data": result.parameters.get("data", []),
+                        "row_count": result.parameters.get("row_count", 0),
+                        "sql_executed": result.parameters.get("sql_executed", "Continuación inteligente"),
+                        "action_type": result.action,
+                        "query_type": "intelligent_continuation"
+                    }
 
-                        self.logger.debug(f"Continuación inteligente con auto-reflexión: {auto_reflexion.get('razonamiento', '')}")
-                        self.add_to_conversation_stack(consulta_para_procesar, {**result.parameters, **datos_recordar}, tipo_esperado)
-                    else:
-                        self.logger.debug(f"Continuación inteligente completada: {result.parameters.get('razonamiento', '')}")
+                    self.logger.info(f"🧠 [MASTER DECIDE] Agregando continuación inteligente al contexto")
+                    self.add_to_conversation_stack(consulta_para_procesar, stack_data, "action")
 
                     # 🔧 IMPORTANTE: Agregar return que faltaba
                     self.add_to_conversation(consulta_para_procesar, message, result.parameters)
@@ -431,18 +577,25 @@ class MessageProcessor:
                     return True, message, parameters_with_action
 
                 else:
+                    self.logger.info(f"🔍 [DEBUG] Entrando en condición ELSE (otros resultados) para '{result.action}'")
                     # Otros tipos de resultado
                     message = result.parameters.get("mensaje",
                                                    result.parameters.get("message", "Consulta procesada"))
 
-                    # NUEVO: Procesar auto-reflexión si está disponible (para otros tipos de resultado)
-                    auto_reflexion = result.parameters.get("auto_reflexion", {})
-                    if auto_reflexion.get("espera_continuacion", False):
-                        tipo_esperado = auto_reflexion.get("tipo_esperado", "action")
-                        datos_recordar = auto_reflexion.get("datos_recordar", {})
+                    # 🧠 MASTER DECIDE - Evaluar si otros resultados necesitan contexto
+                    # Solo agregar al stack si hay datos relevantes
+                    data = result.parameters.get("data", [])
+                    if data and len(data) > 0:
+                        stack_data = {
+                            "data": data,
+                            "row_count": len(data),
+                            "sql_executed": result.parameters.get("sql_executed", f"Resultado: {result.action}"),
+                            "action_type": result.action,
+                            "query_type": "other_result"
+                        }
 
-                        self.logger.debug(f"Auto-reflexión en resultado '{result.action}': {auto_reflexion.get('razonamiento', '')}")
-                        self.add_to_conversation_stack(consulta_para_procesar, {**result.parameters, **datos_recordar}, tipo_esperado)
+                        self.logger.info(f"🧠 [MASTER DECIDE] Agregando resultado '{result.action}' al contexto ({len(data)} elementos)")
+                        self.add_to_conversation_stack(consulta_para_procesar, stack_data, "action")
 
                     self.add_to_conversation(consulta_para_procesar, message, result.parameters)
                     return True, message, result.parameters
@@ -483,19 +636,33 @@ class MessageProcessor:
 
 
 
+        # 🔧 NORMALIZAR DATOS: SIEMPRE LISTA
+        raw_data = result_data.get("data", [])
+        if isinstance(raw_data, dict):
+            # Si es diccionario, convertir a lista con un elemento
+            normalized_data = [raw_data]
+            self.logger.info(f"🔧 [STACK] Normalizando diccionario a lista: {list(raw_data.keys())}")
+        elif isinstance(raw_data, list):
+            # Si ya es lista, usar tal como está
+            normalized_data = raw_data
+        else:
+            # Si es otro tipo, crear lista vacía
+            normalized_data = []
+            self.logger.warning(f"🔧 [STACK] Tipo de datos no reconocido: {type(raw_data)}")
+
         # Estructura según PROTOCOLO_COMUNICACION_BIDIRECCIONAL.md
         level = {
             "id": len(self.conversation_stack) + 1,
             "query": query,
-            "data": result_data.get("data", []),
-            "row_count": result_data.get("row_count", 0),
+            "data": normalized_data,  # ✅ SIEMPRE LISTA
+            "row_count": result_data.get("row_count", len(normalized_data)),
             "sql_executed": result_data.get("sql_executed", ""),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "awaiting": awaiting_type,
             "active": True,
             "context_available": {
-                "positions": len(result_data.get("data", [])) > 0,  # "el segundo", "el tercero"
-                "names": len(result_data.get("data", [])) > 0,      # "FRANCO", "VALERIA"
+                "positions": len(normalized_data) > 0,  # "el segundo", "el tercero"
+                "names": len(normalized_data) > 0,      # "FRANCO", "VALERIA"
                 "actions": awaiting_type in ["confirmation", "action"],  # "constancia para"
                 "filters": awaiting_type in ["analysis", "selection"]    # "que tengan"
             },
@@ -515,7 +682,137 @@ class MessageProcessor:
         self.logger.info(f"    ├── Esperando: {awaiting_type}")
         self.logger.info(f"    └── Total niveles: {len(self.conversation_stack)}")
 
+        # 🔔 VERIFICAR SALUD DE LA SESIÓN
+        session_warning = self._check_session_health()
+        if session_warning:
+            self.logger.info(f"🔔 [SESSION_HEALTH] {session_warning['type'].upper()}: {session_warning['message']}")
+            self._show_session_warning(session_warning)
 
+            # 🧹 LIMPIEZA AUTOMÁTICA EN CASO CRÍTICO
+            if session_warning['type'] == 'critical':
+                self._auto_cleanup_context()
+
+        # 🛑 PAUSA ESPECÍFICA PARA AGREGAR AL CONVERSATION_STACK
+        import os
+        if os.environ.get('DEBUG_PAUSES', 'false').lower() == 'true':
+            print(f"\n🛑 [CONVERSATION_STACK] NUEVO NIVEL AGREGADO:")
+            print(f"    ├── 📝 Query: '{query}'")
+            print(f"    ├── 📊 Datos: {len(result_data.get('data', []))} elementos")
+            print(f"    ├── 🎯 Esperando: {awaiting_type}")
+            print(f"    ├── 📋 Total niveles: {len(self.conversation_stack)}")
+            print(f"    ├── 🧠 NUEVA ARQUITECTURA: Master decidió agregar este resultado")
+
+            # Mostrar el nivel que se acaba de agregar
+            if result_data.get('data'):
+                action_type = result_data.get('action_type', 'N/A')
+                query_type = result_data.get('query_type', 'N/A')
+                print(f"    ├── 🔧 Tipo acción: {action_type}")
+                print(f"    ├── 🔧 Tipo query: {query_type}")
+                print(f"    ├── 📋 Datos agregados:")
+
+                for i, item in enumerate(result_data['data'][:3], 1):
+                    nombre = item.get('nombre', 'N/A')
+                    id_alumno = item.get('id', item.get('alumno_id', 'N/A'))
+                    print(f"    │   {i}. {nombre} (ID: {id_alumno})")
+
+                if len(result_data['data']) > 3:
+                    print(f"    │   ... y {len(result_data['data']) - 3} más")
+
+            print(f"    ├── 🎯 PRÓXIMAS CONSULTAS podrán usar este contexto")
+            print(f"    └── Presiona ENTER para continuar...")
+            input()
+
+
+
+    def _check_session_health(self):
+        """
+        🔔 VERIFICAR SALUD DE LA SESIÓN
+        Analiza el estado del conversation_stack y genera avisos apropiados
+        """
+        try:
+            levels = len(self.conversation_stack)
+
+            # Calcular tamaño aproximado del contexto
+            context_size_kb = self._estimate_context_size()
+
+            if levels >= 20:
+                return {
+                    "type": "critical",
+                    "message": f"🚨 Esta sesión está muy cargada ({levels} niveles, {context_size_kb:.1f}KB). Te recomiendo crear una nueva sesión para mejor rendimiento.",
+                    "action": "suggest_new_session",
+                    "levels": levels,
+                    "size_kb": context_size_kb
+                }
+            elif levels >= 15:
+                return {
+                    "type": "warning",
+                    "message": f"⚠️ Esta sesión tiene mucho contexto ({levels} niveles, {context_size_kb:.1f}KB). ¿Quieres continuar o prefieres una nueva sesión?",
+                    "action": "offer_choice",
+                    "levels": levels,
+                    "size_kb": context_size_kb
+                }
+            elif levels >= 12:
+                return {
+                    "type": "info",
+                    "message": f"💡 Esta sesión está acumulando contexto ({levels} niveles). Considera crear nueva sesión para consultas independientes.",
+                    "action": "gentle_suggestion",
+                    "levels": levels,
+                    "size_kb": context_size_kb
+                }
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error verificando salud de sesión: {e}")
+            return None
+
+    def _estimate_context_size(self):
+        """Estima el tamaño del contexto en KB"""
+        try:
+            import sys
+            total_size = 0
+
+            # Tamaño del conversation_stack
+            for level in self.conversation_stack:
+                total_size += sys.getsizeof(str(level))
+
+            # Tamaño del conversation_history
+            for message in self.conversation_history:
+                total_size += sys.getsizeof(str(message))
+
+            return total_size / 1024  # Convertir a KB
+
+        except Exception as e:
+            self.logger.error(f"Error estimando tamaño de contexto: {e}")
+            return 0.0
+
+    def _show_session_warning(self, warning_data):
+        """
+        🔔 MOSTRAR AVISO DE SESIÓN EN EL CHAT
+        Agrega un mensaje del sistema informando sobre el estado de la sesión
+        """
+        try:
+            # Crear mensaje del sistema con el aviso
+            warning_message = {
+                "role": "system",
+                "content": warning_data["message"],
+                "timestamp": datetime.now().isoformat(),
+                "type": "session_warning",
+                "warning_type": warning_data["type"],
+                "metadata": {
+                    "levels": warning_data.get("levels", 0),
+                    "size_kb": warning_data.get("size_kb", 0.0),
+                    "action": warning_data.get("action", "none")
+                }
+            }
+
+            # Agregar al historial conversacional
+            self.conversation_history.append(warning_message)
+
+            self.logger.info(f"🔔 [SESSION_WARNING] Aviso mostrado en chat: {warning_data['type']}")
+
+        except Exception as e:
+            self.logger.error(f"Error mostrando aviso de sesión: {e}")
 
     def clear_conversation_stack(self):
         """Limpiar pila conversacional"""
@@ -527,6 +824,39 @@ class MessageProcessor:
         self.awaiting_continuation = False
 
         self.logger.info(f"🗑️ [CONVERSATION_STACK] Limpiado - {niveles_eliminados} niveles eliminados")
+
+    def _auto_cleanup_context(self):
+        """
+        🧹 LIMPIEZA AUTOMÁTICA DEL CONTEXTO
+        Mantiene solo los niveles más recientes cuando se alcanza el límite
+        """
+        try:
+            max_levels = 15
+            if len(self.conversation_stack) > max_levels:
+                # Mantener solo los últimos 10 niveles
+                keep_levels = 10
+                removed_levels = len(self.conversation_stack) - keep_levels
+
+                self.conversation_stack = self.conversation_stack[-keep_levels:]
+
+                self.logger.info(f"🧹 [AUTO_CLEANUP] Contexto optimizado: {removed_levels} niveles antiguos eliminados, {keep_levels} mantenidos")
+
+                # Mostrar aviso de limpieza automática
+                cleanup_message = {
+                    "role": "system",
+                    "content": f"🧹 Contexto optimizado automáticamente. Mantuve los últimos {keep_levels} niveles de conversación para mejor rendimiento.",
+                    "timestamp": datetime.now().isoformat(),
+                    "type": "auto_cleanup",
+                    "metadata": {
+                        "removed_levels": removed_levels,
+                        "kept_levels": keep_levels
+                    }
+                }
+
+                self.conversation_history.append(cleanup_message)
+
+        except Exception as e:
+            self.logger.error(f"Error en limpieza automática: {e}")
 
 
 
@@ -649,4 +979,3 @@ EJEMPLOS DE CUÁNDO USAR CONTEXTO:
 
     # 🗑️ MÉTODOS DEL SISTEMA DE MEMORIA PROBLEMÁTICO ELIMINADOS
     # El sistema de plantillas SQL los reemplaza completamente
-

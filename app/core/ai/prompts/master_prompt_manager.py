@@ -30,6 +30,134 @@ class MasterPromptManager(BasePromptManager):
         self._school_context_cache = None
         self._database_context_cache = None
 
+
+
+    def _get_intentions_config_text(self) -> str:
+        """
+        Genera el texto de configuración de intenciones usando SystemCatalog (fuente única de verdad)
+        """
+        try:
+            from app.core.ai.system_catalog import SystemCatalog
+            return SystemCatalog.generate_intentions_section()
+        except Exception as e:
+            # Fallback en caso de error
+            return """
+🎯 **INTENCIONES Y SUB-INTENCIONES VÁLIDAS:**
+
+**CONSULTA_ALUMNOS** - Todo lo relacionado con datos de estudiantes
+Especialista: StudentQueryInterpreter
+Sub-intenciones:
+   - **busqueda_simple**: 1-2 criterios básicos (nombre, grado, grupo, turno)
+   - **busqueda_compleja**: 3+ criterios combinados O campos especiales
+   - **estadisticas**: Números, conteos, promedios, distribuciones
+   - **generar_constancia**: Documentos oficiales PDF
+   - **transformacion_pdf**: Conversión entre formatos de constancia
+
+**AYUDA_SISTEMA** - Soporte y explicaciones del sistema
+Especialista: HelpInterpreter
+Sub-intenciones:
+   - **explicacion_general**: Capacidades generales del sistema
+   - **tutorial_funciones**: Guías paso a paso de uso
+   - **sobre_creador**: Información sobre Angel
+   - **auto_consciencia**: Identidad del asistente IA
+   - **ventajas_sistema**: Beneficios vs métodos tradicionales
+   - **casos_uso_avanzados**: Funcionalidades impresionantes
+   - **limitaciones_honestas**: Transparencia sobre limitaciones
+
+**CONVERSACION_GENERAL** - Chat casual y saludos
+Especialista: MasterInterpreter
+Sub-intenciones:
+   - **saludo**: Saludos y presentaciones
+   - **chat_casual**: Conversación no relacionada al sistema
+
+🚨 **CRÍTICO**: SOLO usar estas intenciones y sub-intenciones. NO crear nuevas.
+🚨 **MAPEO ESPECIAL**: 'información completa', 'datos de', 'dame todo sobre' → busqueda_simple
+"""
+
+    def _get_examples_section(self) -> str:
+        """
+        Genera ejemplos específicos usando SystemCatalog
+        """
+        try:
+            from app.core.ai.system_catalog import SystemCatalog
+            examples = SystemCatalog.generate_examples_section()
+
+            # 🔍 DEBUG: Verificar que los ejemplos de constancia estén incluidos
+            if "generale una constancia" in examples:
+                print("✅ [DEBUG] Ejemplos de constancia cargados correctamente en MasterPromptManager")
+            else:
+                print("❌ [DEBUG] Ejemplos de constancia NO encontrados en SystemCatalog")
+
+            return examples
+        except Exception as e:
+            print(f"❌ [DEBUG] Error cargando SystemCatalog: {e}")
+            # Fallback básico
+            return """
+🎯 **EJEMPLOS BÁSICOS:**
+- "Dame 3 alumnos" → limite_resultados: 3
+- "alumnos de 2do A" → filtros: ["grado: 2", "grupo: A"]
+- "constancia para Juan" → generar_constancia, nombres: ["Juan"]
+"""
+
+    def _get_context_rules(self) -> str:
+        """
+        Genera reglas de contexto usando SystemCatalog
+        """
+        try:
+            from app.core.ai.system_catalog import SystemCatalog
+            return SystemCatalog.generate_context_rules()
+        except Exception as e:
+            # Fallback básico
+            return """
+🧠 **REGLAS DE CONTEXTO:**
+- "de esos" → filtrar lista anterior
+- "el segundo" → elemento en posición 2
+- NIVEL 1 = MÁS RECIENTE = MÁXIMA PRIORIDAD
+"""
+
+    def _get_student_capabilities(self) -> str:
+        """
+        Genera capacidades del Student usando SystemCatalog
+        """
+        try:
+            from app.core.ai.system_catalog import SystemCatalog
+            return SystemCatalog.generate_student_capabilities_section()
+        except Exception as e:
+            # Fallback básico
+            return """
+- BUSCAR_UNIVERSAL: Encontrar alumnos por cualquier criterio
+- CALCULAR_ESTADISTICA: Análisis, conteos, distribuciones, promedios
+- CONTAR_UNIVERSAL: Conteos específicos y rápidos
+- GENERAR_CONSTANCIA: Crear documentos oficiales PDF
+- BUSCAR_Y_FILTRAR: Filtrar resultados previos
+"""
+
+    def _get_intentions_routing(self) -> str:
+        """
+        Genera intenciones y routing usando SystemCatalog
+        """
+        try:
+            from app.core.ai.system_catalog import SystemCatalog
+            return SystemCatalog.generate_intentions_section()
+        except Exception as e:
+            # Fallback básico
+            return """
+**CONSULTA_ALUMNOS** → StudentQueryInterpreter
+- busqueda_simple: 1-2 criterios básicos (nombre, grado, grupo)
+- busqueda_compleja: 3+ criterios combinados
+- estadisticas: Conteos, análisis, distribuciones
+- generar_constancia: Documentos oficiales PDF
+
+**AYUDA_SISTEMA** → HelpInterpreter
+- explicacion_general: Capacidades del sistema
+- tutorial_funciones: Guías de uso
+- sobre_creador: Información sobre Angel
+
+**CONVERSACION_GENERAL** → GeneralInterpreter
+- saludo: Saludos y cortesías
+- chat_casual: Conversación no escolar
+"""
+
     @property
     def school_context(self) -> str:
         """
@@ -39,13 +167,18 @@ class MasterPromptManager(BasePromptManager):
         para garantizar consistencia total entre prompts
         """
         if self._school_context_cache is None:
-            self._school_context_cache = """
+            # 🎯 CONTEXTO DINÁMICO: Se adapta automáticamente a cualquier escuela
+            school_name = self.school_config.get_school_name()
+            education_level = self.school_config.get_education_level().lower()
+            total_students = self.school_config.get_total_students()
+
+            self._school_context_cache = f"""
 CONTEXTO COMPLETO DEL SISTEMA:
-- Sistema de gestión escolar para la escuela primaria "PROF. MAXIMO GAMIZ FERNANDEZ"
+- Sistema de gestión escolar para la escuela {education_level} "{school_name}"
 - Maneja datos de alumnos, información académica y generación de constancias
 - Los usuarios son personal administrativo que necesita información precisa
 - TODO el sistema ES la escuela - no hay nada más
-- TODA la base de datos SON los alumnos de esta escuela (211 estudiantes)
+- TODA la base de datos SON los alumnos de esta escuela ({total_students} estudiantes)
 - TODAS las estadísticas, datos, información de "la escuela" SON sobre los alumnos
 
 RAZONAMIENTO INTELIGENTE ESCOLAR:
@@ -106,223 +239,133 @@ ESTRUCTURA DISPONIBLE:
 
 CONSULTA DEL USUARIO: "{user_query}"
 
-🚨 VERIFICACIÓN OBLIGATORIA ANTES DE RESPONDER:
-¿La consulta "{user_query}" menciona un NOMBRE COMPLETO de persona?
-- SI menciona NOMBRE COMPLETO → intention_type: "consulta_alumnos" (OBLIGATORIO)
-- SI es vaga sin nombre → intention_type: "aclaracion_requerida"
-- SI es pregunta explícita con "¿" → intention_type: "ayuda_sistema"
+{self._get_examples_section()}
 
-🎯 MI TAREA ESPECÍFICA:
-Analizar la consulta del usuario y determinar qué módulo especializado debe manejarla.
-Mantengo el contexto de nuestra conversación para detectar continuaciones y referencias.
+🎯 **MI TAREA ESPECÍFICA:**
+{self.get_unified_prompt_header("MASTER INTELIGENTE del sistema escolar")}
 
-TIPOS DE INTENCIÓN DISPONIBLES:
+🧠 **RAZONAMIENTO SEMÁNTICO HUMANO:**
+Como un director de escuela experimentado, entiendo el CONTEXTO y las NECESIDADES.
 
-1. **consulta_alumnos**: Gestión de datos de estudiantes y constancias
-   - Sub-intenciones OFICIALES (según INTENCIONES_ACCIONES_DEFINITIVAS.md):
-     * **busqueda_simple**: Búsquedas con 1-2 criterios básicos y directos
-     * **busqueda_compleja**: Búsquedas con múltiples criterios (3+) o campos especiales
-     * **estadisticas**: Cálculos, conteos y análisis estadísticos
-     * **generar_constancia**: Generación de documentos oficiales PDF
-     * **transformacion_pdf**: Transformación de constancias entre formatos
+🎯 **CAPACIDADES DEL STUDENT QUE DIRIJO:**
+{self._get_student_capabilities()}
 
-   🎯 **CRITERIOS DE CLASIFICACIÓN CONSOLIDADOS**:
+🧠 **PROCESO MENTAL COMPLETO EN 6 PASOS OBLIGATORIOS:**
 
-   **INTENCIONES PRINCIPALES:**
-   - **consulta_alumnos**: Búsquedas, estadísticas, reportes, constancias de estudiantes
-   - **ayuda_sistema**: Explicaciones de funcionalidad del sistema
-   - **transformacion_pdf**: Conversión de formatos de documentos
-   - **conversacion_general**: Charla casual, saludos
+**PASO 1: ANÁLISIS SEMÁNTICO PURO**
+- ¿QUÉ acción quiere? (buscar, contar, generar, ayudar, conversar)
+- ¿DE QUIÉN/QUÉ? (nombres, criterios, filtros específicos)
+- ¿CUÁNTO? (límites numéricos explícitos)
 
-   **SUB-INTENCIONES (si es consulta_alumnos):**
-   - **busqueda_simple**: 1-2 criterios básicos (nombre, grado, grupo, turno)
-   - **busqueda_compleja**: 3+ criterios combinados O campos especiales (promedio)
-   - **estadisticas**: Solicita números, conteos, promedios ("cuántos", "total")
-   - **generar_constancia**: Solicita documentos ("constancia", "certificado")
+**PASO 2: EXTRACCIÓN DE ENTIDADES ESPECÍFICAS**
+- **LÍMITES**: Detectar números explícitos ("3", "5", "primeros 2") → limite_resultados
+- **FILTROS**: Detectar criterios ("segundo grado", "grupo A") → filtros array
+- **NOMBRES**: Detectar nombres propios ("Juan Pérez") → nombres array
+- **TIPOS**: Detectar tipos de constancia ("estudios") → tipo_constancia
 
-   🆕 **CATEGORIZACIÓN ESPECÍFICA (si es consulta_alumnos):**
-   - **categoria**: busqueda|estadistica|reporte|constancia|transformacion|continuacion
-   - **sub_tipo**: simple|complejo|listado|conteo|generacion|conversion|referencia|confirmacion
-   - **complejidad**: baja|media|alta
-   - **flujo_optimo**: sql_directo|analisis_datos|listado_completo|generacion_docs|procesamiento_contexto
+**PASO 3: VERIFICACIÓN DE INFORMACIÓN SUFICIENTE**
+- ¿Tengo criterios claros y específicos?
+- ¿Necesito aclaración del usuario?
+- ¿Puedo proceder con la información disponible?
 
-   📋 **EJEMPLOS POR SUB-INTENCIÓN**:
-   - **busqueda_simple**: "buscar García", "alumnos de 2do A", "turno matutino"
-   - **busqueda_compleja**: "alumnos de 2do A turno matutino", "García del vespertino con calificaciones"
-   - **estadisticas**: "cuántos alumnos hay", "total por grado", "distribución de estudiantes"
-   - **generar_constancia**: "constancia para Juan Pérez", "certificado de María García"
-   - **transformacion_pdf**: "convertir PDF", "cambiar formato de constancia"
+**PASO 4: ANÁLISIS DE CONTEXTO CONVERSACIONAL (CRÍTICO)**
+- ¿Se refiere a algo de la conversación anterior?
+- ¿Puedo resolver referencias como "de esos", "el segundo", "a ese alumno"?
+- ¿Necesito información del contexto previo?
 
-   🎯 **FORMATO ESPECÍFICO DE FILTROS**:
-   - "cuántos hay en 3° A" → filtros: ["grado: 3", "grupo: A"]
-   - "alumnos de 2do B" → filtros: ["grado: 2", "grupo: B"]
-   - "estudiantes del turno matutino" → filtros: ["turno: MATUTINO"]
-   - "niños de 1° grado turno vespertino" → filtros: ["grado: 1", "turno: VESPERTINO"]
+**RESOLUCIÓN INTELIGENTE DE CONTEXTO:**
+- "a ese alumno" + contexto con 1 alumno → alumno_resuelto: [datos completos del alumno]
+- "para él" + contexto con 1 alumno → alumno_resuelto: [datos completos del alumno]
+- "al estudiante" + contexto con 1 alumno → alumno_resuelto: [datos completos del alumno]
+- "generale una constancia a ese alumno" + Franco Alexander en contexto → generar_constancia + alumno_resuelto: Franco Alexander
 
-2. **transformacion_pdf**: Procesar PDFs de constancias en el panel integrado
-   - Sub-intenciones: cargar_pdf, transformar_formato, comparar_formatos
-   - ✅ Ejemplos: "transformar este PDF", "convertir al formato estándar", "comparar con original"
-   - ✅ Contexto: Usuario tiene PDF cargado en el panel y quiere procesarlo
+**PASO 5: VERIFICACIÓN DE CAPACIDADES**
+- ¿Student puede manejar consultas de alumnos?
+- ¿Help puede explicar el sistema?
+- ¿General puede conversar casualmente?
 
-3. **ayuda_sistema**: Información sobre capacidades y uso del sistema
-   - Sub-intenciones: entender_capacidades, tutorial_uso, tipos_constancias, como_usar
-   - ✅ Capacidades: "qué puedes hacer", "qué tipos de constancias generas"
-   - ✅ Tutoriales: "cómo buscar alumnos", "cómo generar constancias"
-   - ✅ Información: Preguntas sobre tipos, procesos, funcionalidades SIN ejecutar acciones
+**PASO 6: PREPARACIÓN DE INSTRUCCIÓN COMPLETA**
+- Mapear a intention_type y sub_intention específicos
+- Incluir TODAS las entidades detectadas
+- Preparar categorización completa para Student
 
-4. **conversacion_general**: Interacción social y temas fuera del dominio escolar
-   - Sub-intenciones: chat_casual, saludo, despedida, agradecimiento
-   - ✅ Ejemplos: "hola", "buenos días", "gracias", "adiós", "cómo estás"
+🎯 **INTENCIONES Y ROUTING:**
+{self._get_intentions_routing()}
 
-REGLAS ESPECIALES PARA CONTINUACIONES:
-- Si hay contexto conversacional previo, analiza si es continuación
-- Continuaciones de alumnos → SIEMPRE "consulta_alumnos" con "busqueda_simple"
-- Palabras como "sí", "generala", "para él" → continuaciones
-- Filtros sobre datos previos → "busqueda_simple" (usar BUSCAR_UNIVERSAL)
-- Usa "fuente_datos": "conversacion_previa" para continuaciones
+🎯 **FORMATO ESTÁNDAR PARA STUDENT:**
 
-REGLAS CRÍTICAS PARA EVITAR CONFUSIONES:
+SIEMPRE incluir información COMPLETA y ESPECÍFICA:
 
-🎯 **PRINCIPIO FUNDAMENTAL CORREGIDO**:
-- **PREGUNTA EXPLÍCITA** sobre capacidades → ayuda_sistema (¿qué puedes hacer?)
-- **ACCIÓN COMPLETA** con criterios → consulta_alumnos (buscar García)
-- **ACCIÓN INCOMPLETA** sin criterios → aclaracion_requerida (dame información)
+**EJEMPLO 1 - BÚSQUEDA SIMPLE:**
+```json
+{{
+  "intention_type": "consulta_alumnos",
+  "sub_intention": "busqueda_simple",
+  "confidence": 0.95,
+  "reasoning": "Usuario solicita 3 alumnos de segundo grado - criterios claros",
+  "detected_entities": {{
+    "filtros": ["grado: 2"],
+    "limite_resultados": 3,
+    "accion_principal": "buscar",
+    "nombres": [],
+    "tipo_constancia": null,
+    "incluir_foto": false,
+    "alumno_resuelto": null
+  }},
+  "student_categorization": {{
+    "categoria": "busqueda",
+    "sub_tipo": "simple",
+    "requiere_contexto": false,
+    "flujo_optimo": "sql_directo"
+  }}
+}}
+```
 
-🔍 **AYUDA_SISTEMA** (Preguntas explícitas sobre capacidades):
-- ❓ "¿qué tipos de constancias puedes generar?" → Pregunta explícita sobre opciones
-- ❓ "¿cómo buscar alumnos por grado?" → Pregunta explícita sobre proceso
-- ❓ "¿qué puedes hacer?" → Pregunta explícita sobre capacidades
-- ❓ "explícame las funciones" → Solicitud explícita de tutorial
-- 🔑 **Indicadores**: Preguntas directas con "¿qué?", "¿cómo?", "explícame", "cuáles son"
+**EJEMPLO 2 - CONSTANCIA CON CONTEXTO RESUELTO:**
+```json
+{{
+  "intention_type": "consulta_alumnos",
+  "sub_intention": "generar_constancia",
+  "confidence": 0.95,
+  "reasoning": "Usuario solicita constancia para alumno específico del contexto - Franco Alexander ya identificado",
+  "detected_entities": {{
+    "filtros": [],
+    "limite_resultados": null,
+    "accion_principal": "generar_constancia",
+    "nombres": [],
+    "tipo_constancia": "traslado",
+    "incluir_foto": false,
+    "alumno_resuelto": {{"id": 1, "nombre": "Franco Alexander", "posicion": "contexto nivel 1"}}
+  }},
+  "student_categorization": {{
+    "categoria": "constancia",
+    "sub_tipo": "individual",
+    "requiere_contexto": true,
+    "flujo_optimo": "alumno_resuelto"
+  }}
+}}
+```
 
-🔍 **CONSULTA_ALUMNOS** (Acciones específicas con datos):
-- ✅ "constancia de estudios para Juan Pérez" → Acción específica con destinatario
-- ✅ "buscar García" → Acción específica con criterio
-- ✅ "cuántos alumnos hay en 3er grado" → Acción específica con parámetro
-- ✅ "mostrar todos los alumnos" → Acción específica completa
-- 🔑 **Indicadores**: Acciones directas con criterios específicos
+⚠️ **REGLAS CRÍTICAS OBLIGATORIAS:**
+- NUNCA enviar campos vacíos o null sin razón
+- SIEMPRE detectar límites numéricos explícitos
+- SIEMPRE detectar filtros de grado/grupo/turno
+- SIEMPRE incluir reasoning detallado
 
-🔍 **ACLARACION_REQUERIDA** (Acciones incompletas):
-- ❓ "dame información" → Acción incompleta (¿información de qué?)
-- ❓ "buscar información" → Acción incompleta (¿información de qué?)
-- ❓ "generar documento" → Acción incompleta (¿qué documento? ¿para quién?)
-- ❓ "mostrar datos" → Acción incompleta (¿qué datos?)
-- 🔑 **Indicadores**: Verbos de acción + objetos vagos sin especificar
+🚨 **DETECCIÓN DE CONSTANCIAS - OBLIGATORIO:**
+- Si la consulta contiene "constancia", "certificado", "documento", "generale", "genera", "crea" → sub_intention: "generar_constancia"
+- Si hay contexto con 1 alumno + solicitud de constancia → alumno_resuelto: [datos del alumno del contexto]
+- NUNCA usar "busqueda_simple" para solicitudes de constancias
+- SIEMPRE resolver "a ese alumno", "para él", "al estudiante" usando el contexto
 
-🔍 **TRANSFORMACION_PDF** (Procesamiento de archivos):
-- 📄 "transformar este PDF" → Usuario tiene archivo cargado
-- 📄 "convertir al formato estándar" → Procesar PDF actual
-- 📄 "comparar formatos" → Análisis de PDF cargado
+🎯 **EJEMPLOS CRÍTICOS DE DETECCIÓN:**
+- "generale una constancia" → generar_constancia
+- "genera constancia" → generar_constancia
+- "crea una constancia" → generar_constancia
+- "constancia para ese alumno" → generar_constancia + alumno_resuelto
+- "documento oficial" → generar_constancia
 
-⚠️ **CASOS LÍMITE COMUNES**:
-- "generar constancia" (sin nombre) → **ayuda_sistema** (falta información específica)
-- "buscar alumno" (sin nombre) → **ayuda_sistema** (pregunta general sobre proceso)
-- "constancia para Juan" (con nombre) → **consulta_alumnos** (solicitud específica)
-- "cómo generar constancia para Juan" → **consulta_alumnos** (acción específica con tutorial)
-
-🚨 REGLA CRÍTICA OBLIGATORIA - LEER PRIMERO:
-
-SI LA CONSULTA ES VAGA O INCOMPLETA → SIEMPRE usar intention_type: "aclaracion_requerida"
-NO usar "ayuda_sistema" para consultas vagas. Solo para preguntas explícitas con "¿".
-
-PRINCIPIO CLAVE: Evaluar si especifica QUÉ/QUIÉN/CUÁL, no palabras específicas.
-
-🧠 DETECCIÓN INTELIGENTE DE AMBIGÜEDADES (ANÁLISIS SEMÁNTICO):
-
-IDENTIDAD: Master del sistema escolar "PROF. MAXIMO GAMIZ FERNANDEZ"
-CONTEXTO: 211 alumnos en grados 1° a 6°, capacidades de búsqueda, constancias, estadísticas
-
-🎯 **ANÁLISIS SEMÁNTICO INTELIGENTE:**
-
-1. **COMPLETITUD SEMÁNTICA**: ¿La consulta especifica claramente la acción y el objeto?
-
-   **PATRONES COMPLETOS** (VERBO + OBJETO_ESPECÍFICO):
-   - ✅ "buscar alumnos García" → Acción clara + criterio específico
-   - ✅ "constancia para Juan Pérez" → Acción clara + destinatario específico
-   - ✅ "cuántos alumnos en segundo grado" → Acción clara + parámetro específico
-   - ✅ "estadísticas del turno matutino" → Acción clara + criterio específico
-
-   **PATRONES INCOMPLETOS** (VERBO + OBJETO_SIN_ESPECIFICAR):
-   - ❓ "dame información" → Falta especificar DE QUÉ/QUIÉN
-   - ❓ "buscar estudiante" → Falta especificar CUÁL estudiante
-   - ❓ "generar documento" → Falta especificar QUÉ documento y PARA QUIÉN
-   - ❓ "mostrar datos" → Falta especificar QUÉ datos
-   - ❓ "cuántos hay" → Falta especificar QUÉ contar y DÓNDE
-
-2. **VERIFICACIÓN CONTEXTUAL**: Solo si la consulta es semánticamente incompleta
-   - ¿El contexto conversacional proporciona el objeto/criterio faltante?
-   - ¿La referencia es explícita y resoluble? ("del segundo", "para él")
-   - ¿Tiene más sentido con contexto que sin él?
-
-3. **DECISIÓN INTELIGENTE**:
-   - **Semánticamente completa** → Procesar normalmente (confianza 0.7-0.95)
-   - **Incompleta + contexto resuelve** → Usar contexto (confianza 0.6-0.8)
-   - **Incompleta sin resolución** → intention_type: "aclaracion_requerida" (confianza 0.3-0.5)
-
-🚨 **REGLA CRÍTICA REFINADA**:
-- Si falta especificar DE QUÉ/QUIÉN/CUÁL → aclaracion_requerida
-- Si especifica claramente el objeto/persona → consulta_alumnos
-- Si es pregunta explícita sobre capacidades → ayuda_sistema
-
-**EJEMPLOS CRÍTICOS DE APLICACIÓN:**
-- "información" → aclaracion_requerida (falta especificar DE QUIÉN)
-- "datos" → aclaracion_requerida (falta especificar DE QUIÉN)
-- "información de Juan García" → consulta_alumnos (especifica DE QUIÉN)
-- "datos de María López" → consulta_alumnos (especifica DE QUIÉN)
-- "detalles de Pedro Sánchez" → consulta_alumnos (especifica DE QUIÉN)
-- "¿qué información puedes dar?" → ayuda_sistema (pregunta sobre capacidades)
-
-**REGLA ABSOLUTA**: Si menciona un NOMBRE COMPLETO de persona, es consulta_alumnos.
-
-**PARA CONSULTAS QUE REQUIEREN ACLARACIÓN:**
-- intention_type: "aclaracion_requerida"
-- confidence: 0.3-0.5
-- reasoning: "Falta especificar [QUÉ/QUIÉN/CUÁL] en la consulta"
-- detected_entities.clarification_needed: Pregunta específica
-
-**PRINCIPIO FUNDAMENTAL**: Evaluar si la consulta especifica claramente QUÉ/QUIÉN/CUÁL, no las palabras exactas usadas.
-
-DETECCIÓN DE TIPO DE CONSTANCIA:
-- "constancia de estudios" → tipo_constancia: "estudio"
-- "constancia de calificaciones" → tipo_constancia: "calificaciones"
-- "constancia de traslado" → tipo_constancia: "traslado"
-- "certificado de estudios" → tipo_constancia: "estudios"
-- "certificado de calificaciones" → tipo_constancia: "calificaciones"
-- "constancia" (sin especificar) → tipo_constancia: "estudios" (por defecto)
-- "genera una constancia" → tipo_constancia: "estudios" (por defecto)
-
-DETECCIÓN DE FOTO:
-- "constancia con foto" → incluir_foto: true
-- "constancia de traslado con foto" → incluir_foto: true
-- "generar constancia con fotografía" → incluir_foto: true
-- "constancia sin foto" → incluir_foto: false
-- Si no se menciona foto → incluir_foto: false
-
-{self.get_unified_json_instructions({
-    "intention_type": "consulta_alumnos|transformacion_pdf|ayuda_sistema|conversacion_general",
-    "sub_intention": "busqueda_simple|busqueda_compleja|estadisticas|generar_constancia|transformacion_pdf|pregunta_capacidades|chat_casual",
-    "confidence": "0.0-1.0",
-    "reasoning": "Explicación detallada de la decisión manteniendo mi personalidad",
-    "detected_entities": {
-        "nombres": ["lista de nombres detectados"],
-        "tipo_constancia": "estudios|calificaciones|traslado|null",
-        "accion_principal": "buscar|generar|contar|listar|transformar|ayudar",
-        "fuente_datos": "base_datos|conversacion_previa|pdf_cargado|sistema",
-        "contexto_especifico": "información adicional relevante",
-        "filtros": ["formato: campo: valor (ej: grado: 3, grupo: A, turno: MATUTINO)"],
-        "incluir_foto": "true|false",
-        "alumno_resuelto": "objeto con id, nombre y posicion O null si no aplica",
-        "campo_solicitado": "campo específico solicitado (curp, nombre, etc.) O null si no aplica",
-        "parametros_extra": "cualquier parámetro adicional relevante"
-    },
-    "student_categorization": {
-        "categoria": "busqueda|estadistica|reporte|constancia|transformacion|continuacion",
-        "sub_tipo": "simple|complejo|listado|conteo|generacion|conversion|referencia|confirmacion",
-        "complejidad": "baja|media|alta",
-        "requiere_contexto": "true|false",
-        "flujo_optimo": "sql_directo|analisis_datos|listado_completo|generacion_docs|procesamiento_contexto"
-    }
-})}
+{self.get_unified_json_instructions_dynamic()}
 """
 
     def format_conversation_context(self, conversation_stack: list) -> str:
@@ -371,25 +414,28 @@ DETECCIÓN DE FOTO:
                 context += f"📋 NIVEL {i}: {str(level)}\n"
 
         context += """
-🧠 APLICACIÓN DEL ANÁLISIS SEMÁNTICO CON CONTEXTO:
 
-Usar el mismo proceso de análisis semántico definido arriba, pero considerando el contexto disponible.
-
-🎯 RESOLUCIÓN INTELIGENTE DE REFERENCIAS:
-
-Cuando detectes una referencia explícita en la consulta:
-
-**REFERENCIAS POSICIONALES**: "primero", "segundo", "tercero", "último", "número X"
-**REFERENCIAS PRONOMINALES**: "él/ella", "ese/esa", "este/esta"
-
-**PROCESO DE RESOLUCIÓN**:
-1. Identifica la referencia en la consulta
-2. Localiza los datos correspondientes en el contexto
-3. Extrae la información específica del elemento referenciado
-4. Incluye los datos completos en detected_entities.alumno_resuelto
-5. Cambia requiere_contexto a "false" (ya resuelto por Master)
-
-**RESULTADO**: El Student recibe la información completa sin necesidad de interpretar referencias.
+**CON CONTEXTO:**
+Si hay información previa, la uso inteligentemente para entender referencias como:
+- "de esos" = filtrar la lista anterior
+- "el segundo" = segundo elemento de la lista
+- "para Juan" = Juan mencionado en el contexto
+- "ahora dame 3" = límite de 3 de la lista actual
 """
+
+        return context
+
+    # ✅ MÉTODO ELIMINADO: get_forced_routing_prompt() - Reemplazado por análisis unificado con SystemCatalog
+
+    def _format_conversation_context(self, conversation_stack: list) -> str:
+        """Formatea el contexto conversacional para prompts"""
+        if not conversation_stack:
+            return "No hay contexto conversacional previo."
+
+        context = "Conversación reciente:\n"
+        for i, entry in enumerate(conversation_stack[-3:], 1):  # Últimas 3 interacciones
+            query = entry.get('query', '')[:100] + "..." if len(entry.get('query', '')) > 100 else entry.get('query', '')
+            specialist = entry.get('specialist_used', 'unknown')
+            context += f"{i}. Usuario: {query} (Atendido por: {specialist})\n"
 
         return context

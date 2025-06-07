@@ -527,14 +527,87 @@ class PDFPanel(QWidget):
             file_url = f"file:///{os.path.abspath(self.current_pdf).replace(os.sep, '/')}"
             webbrowser.open(file_url)
 
-            # Mostrar mensaje de confirmación mejorado
-            QMessageBox.information(self, "PDF Abierto",
-                                  f"✅ El PDF se ha abierto en tu navegador web.\n\n"
-                                  f"📄 Archivo: {os.path.basename(self.current_pdf)}\n\n"
-                                  f"💡 Para imprimir: Usa Ctrl+P en el navegador")
+            # Mostrar mensaje de confirmación mejorado con estilo claro
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("PDF Abierto")
+            msg_box.setText(f"✅ El PDF se ha abierto en tu navegador web.\n\n"
+                           f"📄 Archivo: {os.path.basename(self.current_pdf)}\n\n"
+                           f"💡 Para imprimir: Usa Ctrl+P en el navegador")
+            msg_box.setIcon(QMessageBox.Information)
+
+            # 🔧 APLICAR ESTILO CLARO AL MENSAJE
+            msg_box.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                    color: #2C3E50;
+                    font-size: 14px;
+                    border: 1px solid #BDC3C7;
+                    border-radius: 8px;
+                }
+                QMessageBox QLabel {
+                    color: #2C3E50;
+                    font-size: 14px;
+                    background-color: transparent;
+                }
+                QMessageBox QPushButton {
+                    background-color: #3498DB;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-weight: bold;
+                    min-width: 80px;
+                    font-size: 13px;
+                }
+                QMessageBox QPushButton:hover {
+                    background-color: #2980B9;
+                }
+                QMessageBox QPushButton:pressed {
+                    background-color: #1F618D;
+                }
+            """)
+
+            msg_box.exec_()
         except Exception as e:
-            QMessageBox.critical(self, "Error",
-                               f"No se pudo abrir el PDF en el navegador:\n{str(e)}")
+            # Mensaje de error con estilo claro
+            error_box = QMessageBox(self)
+            error_box.setWindowTitle("Error")
+            error_box.setText(f"No se pudo abrir el PDF en el navegador:\n{str(e)}")
+            error_box.setIcon(QMessageBox.Critical)
+
+            # 🔧 APLICAR ESTILO CLARO AL MENSAJE DE ERROR
+            error_box.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                    color: #2C3E50;
+                    font-size: 14px;
+                    border: 1px solid #E74C3C;
+                    border-radius: 8px;
+                }
+                QMessageBox QLabel {
+                    color: #2C3E50;
+                    font-size: 14px;
+                    background-color: transparent;
+                }
+                QMessageBox QPushButton {
+                    background-color: #E74C3C;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    font-weight: bold;
+                    min-width: 80px;
+                    font-size: 13px;
+                }
+                QMessageBox QPushButton:hover {
+                    background-color: #C0392B;
+                }
+                QMessageBox QPushButton:pressed {
+                    background-color: #A93226;
+                }
+            """)
+
+            error_box.exec_()
 
 
 
@@ -1148,6 +1221,40 @@ class PDFPanel(QWidget):
 
         layout.addWidget(text_edit)
 
+        # 🆕 AGREGAR FOTO COMO WIDGET SEPARADO SI EXISTE
+        if self.alumno_data and self.alumno_data.get('curp'):
+            import os
+            from PyQt5.QtWidgets import QLabel
+            from PyQt5.QtGui import QPixmap
+            from PyQt5.QtCore import Qt
+
+            foto_path = os.path.join("resources", "photos", f"{self.alumno_data.get('curp')}.jpg")
+
+            if os.path.exists(foto_path):
+                # Crear contenedor para la foto
+                foto_container = QLabel()
+                foto_container.setAlignment(Qt.AlignCenter)
+                foto_container.setStyleSheet("""
+                    QLabel {
+                        background-color: #F8F9FA;
+                        border: 2px solid #27AE60;
+                        border-radius: 8px;
+                        padding: 10px;
+                        margin: 10px;
+                    }
+                """)
+
+                # Cargar y redimensionar la imagen
+                pixmap = QPixmap(foto_path)
+                if not pixmap.isNull():
+                    # Redimensionar a 60x80 píxeles
+                    scaled_pixmap = pixmap.scaled(60, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    foto_container.setPixmap(scaled_pixmap)
+                    foto_container.setToolTip("Foto del alumno desde la base de datos")
+
+                    # Agregar la foto al layout
+                    layout.addWidget(foto_container)
+
         # Botón cerrar
         close_btn = QPushButton("Cerrar")
         close_btn.clicked.connect(dialog.accept)
@@ -1403,6 +1510,13 @@ class PDFPanel(QWidget):
 
     def _format_alumno_data_for_display(self, alumno_data):
         """Formatea los datos del alumno para mostrar en el diálogo"""
+
+        # 🔍 VERIFICAR SI TIENE FOTO
+        foto_info = self._check_alumno_photo(alumno_data.get('curp'))
+
+        # 🔍 VERIFICAR SI TIENE CALIFICACIONES
+        tiene_calificaciones = bool(alumno_data.get('calificaciones'))
+
         html = f"""
         <div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.6;">
             <h2 style="color: #27AE60; margin-top: 0; margin-bottom: 20px; text-align: center; font-size: 22px;">
@@ -1415,19 +1529,23 @@ class PDFPanel(QWidget):
                 </h3>
                 <p style="margin: 8px 0;">
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Nombre:</span>
-                    <span style="color: #34495E;">{alumno_data.get('nombre', 'No disponible')}</span>
+                    <span style="color: #34495E;">{alumno_data.get('nombre', 'No registrado')}</span>
                 </p>
                 <p style="margin: 8px 0;">
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">CURP:</span>
-                    <span style="color: #34495E;">{alumno_data.get('curp', 'No disponible')}</span>
+                    <span style="color: #34495E;">{alumno_data.get('curp', 'No registrado')}</span>
                 </p>
                 <p style="margin: 8px 0;">
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Matrícula:</span>
-                    <span style="color: #34495E;">{alumno_data.get('matricula', 'No disponible')}</span>
+                    <span style="color: #34495E;">{alumno_data.get('matricula', 'No registrada')}</span>
                 </p>
                 <p style="margin: 8px 0;">
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Fecha de Nacimiento:</span>
-                    <span style="color: #34495E;">{alumno_data.get('fecha_nacimiento', 'No disponible')}</span>
+                    <span style="color: #34495E;">{alumno_data.get('fecha_nacimiento', 'No registrada')}</span>
+                </p>
+                <p style="margin: 8px 0;">
+                    <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Foto:</span>
+                    <span style="color: {foto_info['color']};">{foto_info['texto']}</span>
                 </p>
             </div>
 
@@ -1437,15 +1555,15 @@ class PDFPanel(QWidget):
                 </h3>
                 <p style="margin: 8px 0;">
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Grado:</span>
-                    <span style="color: #34495E;">{alumno_data.get('grado', 'No disponible')}</span>
+                    <span style="color: #34495E;">{self._format_field_value(alumno_data.get('grado'), 'grado')}</span>
                 </p>
                 <p style="margin: 8px 0;">
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Grupo:</span>
-                    <span style="color: #34495E;">{alumno_data.get('grupo', 'No disponible')}</span>
+                    <span style="color: #34495E;">{self._format_field_value(alumno_data.get('grupo'), 'grupo')}</span>
                 </p>
                 <p style="margin: 8px 0;">
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Turno:</span>
-                    <span style="color: #34495E;">{alumno_data.get('turno', 'No disponible')}</span>
+                    <span style="color: #34495E;">{self._format_field_value(alumno_data.get('turno'), 'turno')}</span>
                 </p>
                 <p style="margin: 8px 0;">
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Ciclo Escolar:</span>
@@ -1455,6 +1573,15 @@ class PDFPanel(QWidget):
                     <span style="font-weight: bold; color: #2C3E50; min-width: 120px; display: inline-block;">Escuela:</span>
                     <span style="color: #34495E;">PROF. MAXIMO GAMIZ FERNANDEZ</span>
                 </p>
+            </div>
+
+            <div style="background-color: {('#E8F8F5' if tiene_calificaciones else '#FDEDEC')}; border-left: 4px solid {('#1ABC9C' if tiene_calificaciones else '#E74C3C')}; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                <h3 style="color: {('#16A085' if tiene_calificaciones else '#C0392B')}; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
+                    📊 Calificaciones <span style="color: {('#27AE60' if tiene_calificaciones else '#E74C3C')};">{'✓' if tiene_calificaciones else '✗'}</span>
+                </h3>
+                <p style="margin: 8px 0; color: {('#16A085' if tiene_calificaciones else '#C0392B')};">
+                    {('Se pueden generar constancias de calificaciones y traslado.' if tiene_calificaciones else 'Solo se pueden generar constancias de estudios.')}
+                </p>
             </div>"""
 
         # Agregar calificaciones si están disponibles
@@ -1463,25 +1590,46 @@ class PDFPanel(QWidget):
             <div style="background-color: #FDF2E9; border-left: 4px solid #E67E22; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
                 <h3 style="color: #D35400; margin-top: 0; margin-bottom: 15px; font-size: 18px;">
                     📊 Calificaciones
-                </h3>"""
+                </h3>
+                <div style="margin-top: 15px; margin-bottom: 15px;">
+                    <h4 style="color: #D35400; margin-top: 0; margin-bottom: 10px; font-size: 15px; text-align: center;">
+                        Tabla de Calificaciones
+                    </h4>
+                    <div style="box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 14px; background-color: white;">
+                            <thead>
+                                <tr style="background-color: #E67E22; color: white;">
+                                    <th style="padding: 12px 15px; text-align: left; border: 1px solid #F5B041; font-weight: bold;">Materia</th>
+                                    <th style="padding: 12px 15px; text-align: center; border: 1px solid #F5B041; font-weight: bold;">Periodo 1</th>
+                                    <th style="padding: 12px 15px; text-align: center; border: 1px solid #F5B041; font-weight: bold;">Periodo 2</th>
+                                    <th style="padding: 12px 15px; text-align: center; border: 1px solid #F5B041; font-weight: bold;">Periodo 3</th>
+                                    <th style="padding: 12px 15px; text-align: center; border: 1px solid #F5B041; font-weight: bold; background-color: #D35400;">Promedio</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            """
 
-            for i, materia in enumerate(alumno_data['calificaciones'], 1):
+            for i, cal in enumerate(alumno_data['calificaciones']):
+                bg_color = "#FEF9E7" if i % 2 == 0 else "#FDF2E9"
+                promedio_color = "#27AE60" if cal.get('promedio', 0) >= 8 else "#F39C12" if cal.get('promedio', 0) >= 6 else "#E74C3C"
+
                 html += f"""
-                <div style="background-color: #FFFFFF; border: 1px solid #E8E8E8; border-radius: 4px; padding: 10px; margin-bottom: 10px;">
-                    <h4 style="color: #2C3E50; margin: 0 0 8px 0; font-size: 16px;">{i}. {materia.get('nombre', 'N/A')}</h4>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-size: 14px; color: #34495E;">
-                            <span style="margin-right: 15px;">Periodo I: <strong>{materia.get('i', 'N/A')}</strong></span>
-                            <span style="margin-right: 15px;">Periodo II: <strong>{materia.get('ii', 'N/A')}</strong></span>
-                            <span style="margin-right: 15px;">Periodo III: <strong>{materia.get('iii', 'N/A')}</strong></span>
-                        </div>
-                        <div style="background-color: #E8F8F5; color: #27AE60; padding: 4px 8px; border-radius: 4px; font-weight: bold;">
-                            ➤ PROMEDIO: {materia.get('promedio', 'N/A')}
-                        </div>
-                    </div>
-                </div>"""
+                                <tr style="background-color: {bg_color};">
+                                    <td style="padding: 12px 15px; border: 1px solid #F5B041; font-weight: bold;">{cal.get('nombre', '')}</td>
+                                    <td style="padding: 12px 15px; text-align: center; border: 1px solid #F5B041;">{cal.get('i', '')}</td>
+                                    <td style="padding: 12px 15px; text-align: center; border: 1px solid #F5B041;">{cal.get('ii', '')}</td>
+                                    <td style="padding: 12px 15px; text-align: center; border: 1px solid #F5B041;">{cal.get('iii', '')}</td>
+                                    <td style="padding: 12px 15px; text-align: center; font-weight: bold; border: 1px solid #F5B041; color: {promedio_color};">{cal.get('promedio', '')}</td>
+                                </tr>
+                """
 
-            html += "</div>"
+            html += """
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            """
 
         html += f"""
             <div style="background-color: #FEF9E7; border-left: 4px solid #F39C12; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
@@ -1501,6 +1649,39 @@ class PDFPanel(QWidget):
         </div>
         """
         return html
+
+    def _check_alumno_photo(self, curp):
+        """Verifica si el alumno tiene foto guardada"""
+        if not curp:
+            return {"texto": "❌ No disponible (sin CURP)", "color": "#95A5A6"}
+
+        import os
+        foto_path = os.path.join("resources", "photos", f"{curp}.jpg")
+
+        if os.path.exists(foto_path):
+            return {"texto": "✅ Disponible (30x40px)", "color": "#27AE60"}
+        else:
+            return {"texto": "❌ No registrada", "color": "#E74C3C"}
+
+    def _format_field_value(self, value, field_type):
+        """Formatea valores de campos con mensajes apropiados"""
+        if value is None or value == "" or str(value).strip() == "":
+            if field_type == "grado":
+                return "No registrado"
+            elif field_type == "grupo":
+                return "No registrado"
+            elif field_type == "turno":
+                return "No registrado"
+            else:
+                return "No registrado"
+
+        # Si tiene valor, formatearlo apropiadamente
+        if field_type == "grado":
+            return f"{value}°"
+        elif field_type == "turno":
+            return value.upper() if isinstance(value, str) else str(value)
+        else:
+            return str(value)
 
     def set_constancia_context(self, alumno_data):
         """Establece el contexto para vista previa de constancia generada"""

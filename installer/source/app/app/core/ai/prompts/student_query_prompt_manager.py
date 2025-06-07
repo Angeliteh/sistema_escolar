@@ -646,18 +646,9 @@ SUGERENCIAS INTELIGENTES DE CONSTANCIAS:
 - Si mostré muchos alumnos (6+): Esperar refinamiento de búsqueda
 - Si mostré estadísticas: No sugerir constancias
 
-🔮 PREDICCIÓN DE PRÓXIMA CONSULTA:
-Basándote en tu respuesta, predice qué podría preguntar el usuario a continuación:
-- "¿Podría pedir constancia para [alumno específico]?"
-- "¿Podría referenciar un elemento de la lista?"
-- "¿Podría pedir más detalles o información adicional?"
-- "¿Podría confirmar una acción sugerida?"
-
-DECISIÓN CONVERSACIONAL:
-Si tu respuesta espera continuación, especifica:
-- Tipo esperado: "selection" (selección de lista), "action" (acción sobre alumno), "confirmation" (confirmación), "specification" (especificación), "constancia_suggestion" (sugerir constancia)
-- Datos a recordar: información relevante para futuras referencias
-- Razonamiento: por qué esperas esta continuación y cómo el contexto ayudará al próximo prompt
+🎯 REPORTE TÉCNICO AL MASTER:
+Genera un reporte técnico simple sobre los resultados obtenidos.
+El Master se encargará de toda la interacción conversacional con el usuario.
 
 FORMATO DE RESPUESTA COMPLETA:
 {{
@@ -730,12 +721,9 @@ Ejemplo 3 - Consulta estadística (SIN CONTEXTO CONVERSACIONAL):
 CONTEXTO CONVERSACIONAL DISPONIBLE:
 {conversation_context}
 
-🧠 ANÁLISIS CONVERSACIONAL:
-Si hay contexto conversacional disponible, analiza si la consulta actual hace referencia a información anterior:
-- Referencias directas: "ese alumno", "el tercero", "para él", "número 5"
-- Referencias implícitas: "sí", "ok", "generar", "constancia"
-- Continuaciones: "también", "además", "y qué tal", "más información"
-- Especificaciones: "de estudios", "con foto", "completa"
+ℹ️ INFORMACIÓN CONTEXTUAL:
+El Master ya analizó toda la información conversacional.
+Esta información es solo para referencia técnica.
 
 """ if conversation_context.strip() else ""
 
@@ -855,6 +843,14 @@ El Master ya analizó la consulta y detectó:
         return f"""
 Soy el ESTRATEGA DE ACCIONES para consultas de alumnos.
 
+🚨 **ORDEN DIRECTA DEL MASTER:**
+CATEGORÍA: {categoria}
+
+🎯 **MI ÚNICA TAREA:**
+Ejecutar la acción técnica más eficiente para esta categoría.
+El Master ya analizó el contexto y tomó todas las decisiones.
+Yo solo ejecuto y reporto.
+
 ESTRUCTURA DE LA BASE DE DATOS:
 {database_context}
 
@@ -863,7 +859,6 @@ ESTRUCTURA DE LA BASE DE DATOS:
 {context_section}
 
 CONSULTA DEL USUARIO: "{user_query}"
-CATEGORÍA DETECTADA: {categoria}
 
 {actions_formatted}
 

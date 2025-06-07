@@ -159,6 +159,20 @@ class ActionCatalog:
             requires_combination=False
         )
 
+        actions["TRANSFORMAR_PDF"] = ActionDefinition(
+            name="TRANSFORMAR_PDF",
+            description="Transforma un PDF cargado a una constancia del tipo especificado",
+            category="transformacion",
+            input_params={
+                "tipo_constancia": "Tipo de constancia destino (estudio, calificaciones, traslado)",
+                "incluir_foto": "Si incluir foto del alumno (true/false)",
+                "guardar_alumno": "Si guardar datos del alumno en BD (true/false)"
+            },
+            output_type="constancia_transformada",
+            usage_example="Para 'transformar PDF a constancia de traslado' o 'convertir a formato estándar'",
+            requires_combination=False
+        )
+
         actions["CALCULAR_ESTADISTICA"] = ActionDefinition(
             name="CALCULAR_ESTADISTICA",
             description="Calcula estadísticas AGREGADAS: distribuciones, promedios, rankings. USAR para comparaciones tipo 'X vs Y' (ej: con calificaciones vs sin calificaciones)",
